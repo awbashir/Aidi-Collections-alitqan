@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/colors.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/typography.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/effects.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/base.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/styles.css">
+<script src="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/_ds_bundle.js"></script>
+<style>
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap;size-adjust:130%}
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap;size-adjust:130%}
+:root{
+  --e-page:#FAFCFD; --e-surface:#FFFFFF; --e-surface-2:#FAFCFD; --e-fill:#F2F6F8; --e-tint:#DFEEF2;
+  --e-border:#D7E1E8; --e-border-strong:#B8C4CE; --e-border-hair:#E7EEF2;
+  --e-text-strong:#070A4B; --e-text-body:#2E3450; --e-text-muted:#6B7482; --e-text-subtle:#8A929F;
+  --e-accent-solid:#070A4B; --e-accent-hover:#14184F;
+  --e-azure:#2F5FD6; --e-azure-tint:#EEF3FD; --e-azure-border:#B3C8F4; --e-link:#234BB0;
+  --e-signal:#FF6600; --e-signal-tint:#FFF4EC;
+  --e-success:#0F7A52; --e-success-tint:#E4F2EC; --e-danger:#B3261E; --e-danger-tint:#F9E6E4;
+  --e-warning:#B25A00; --e-warn-tint:#FBEBDD; --e-info:#234BB0; --e-info-tint:#E7EDFA;
+  --e-viz-1:#070A4B; --e-viz-2:#2F5FD6; --e-viz-3:#5B93C9; --e-viz-4:#8FB9CE; --e-viz-6:#B2AAC4;
+  --e-el-1:0 1px 2px rgba(7,10,75,.06); --e-el-2:0 8px 24px rgba(7,10,75,.10);
+}
+[data-theme="dark"]{
+  --e-page:#060820; --e-surface:#0C1033; --e-surface-2:#080B26; --e-fill:#141A45; --e-tint:#141A45;
+  --e-border:#262C5E; --e-border-strong:#3A4179; --e-border-hair:#1B2049;
+  --e-text-strong:#F2F5FB; --e-text-body:#C7CDE4; --e-text-muted:#8D95B8; --e-text-subtle:#6E769B;
+  --e-accent-solid:#2F5FD6; --e-accent-hover:#4272E0;
+  --e-azure:#7D9DEA; --e-azure-tint:#151B47; --e-azure-border:#3A4179; --e-link:#7D9DEA;
+  --e-signal:#FF8433; --e-signal-tint:#241634;
+  --e-success:#3FBF8F; --e-success-tint:#0E2A22; --e-danger:#F1786E; --e-danger-tint:#2E1412;
+  --e-warning:#E29A55; --e-warn-tint:#2B1B0C; --e-info:#7D9DEA; --e-info-tint:#151B47;
+  --e-viz-1:#7D9DEA; --e-viz-2:#5B93C9; --e-viz-3:#8FB9CE; --e-viz-4:#B2AAC4; --e-viz-6:#8E86B8;
+  --e-el-1:0 1px 2px rgba(0,0,0,.45); --e-el-2:0 8px 24px rgba(0,0,0,.5);
+}
+[data-theme="dark"] img[src*="navy"]{filter:brightness(0) invert(1)}
+[lang="ar"]{font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0}
+[lang="ar"] h1,[lang="ar"] h2,[lang="ar"] h3{letter-spacing:0}
+@keyframes aidiDriftA{0%{transform:translate3d(-10%,-6%,0) scale(1) rotate(0deg)}33%{transform:translate3d(9%,4%,0) scale(1.25) rotate(6deg)}66%{transform:translate3d(4%,10%,0) scale(1.08) rotate(-4deg)}100%{transform:translate3d(-10%,-6%,0) scale(1) rotate(0deg)}}
+@keyframes aidiDriftB{0%{transform:translate3d(10%,10%,0) scale(1.15) rotate(0deg)}40%{transform:translate3d(-9%,-8%,0) scale(1) rotate(-7deg)}70%{transform:translate3d(-2%,7%,0) scale(1.2) rotate(5deg)}100%{transform:translate3d(10%,10%,0) scale(1.15) rotate(0deg)}}
+@media (prefers-reduced-motion:reduce){.aidi-drift-a,.aidi-drift-b{animation:none!important}}
+body{margin:0;background:var(--e-page);font-family:"Anodina","Segoe UI",system-ui,sans-serif;font-weight:400;color:var(--e-text-body);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+a{color:var(--e-link);text-decoration:none}
+a:hover{color:#1A3A8A}
+table{border-collapse:collapse}
+</style>
+</helmet>
+
+<div lang="{{ lang }}" dir="{{ dir }}" data-theme="{{ theme }}" style="height:900px;display:flex;flex-direction:column;background:var(--e-page);color:var(--e-text-body);overflow:hidden">
+
+  <div style="height:50px;flex:0 0 50px;background:var(--e-surface);border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:14px;padding:0 16px">
+    <button onClick="{{ toggleNav }}" style="width:32px;height:32px;border:none;background:transparent;border-radius:6px;color:var(--e-text-strong);display:flex;align-items:center;justify-content:center;cursor:pointer">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="menu" size="19" hint-size="19px,19px"></x-import>
+    </button>
+    <img src="assets/logo/aidi-wordmark-navy.svg" style="height:17px" alt="aidi">
+    <div style="width:1px;height:18px;background:var(--e-border)"></div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-muted)">{{ t.workspaceName }}</div>
+    <div style="flex:1;max-width:460px;margin-inline:auto;height:32px;border:1px solid var(--e-border);border-radius:6px;background:var(--e-surface-2);display:flex;align-items:center;gap:9px;padding:0 12px;font-size:12.5px;color:var(--e-text-subtle)">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="15" hint-size="15px,15px"></x-import>{{ t.search }}
+    </div>
+    <button onClick="{{ toggleLang }}" style="height:28px;padding:0 11px;border:1px solid var(--e-border);border-radius:6px;background:var(--e-surface);color:var(--e-text-strong);font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">{{ t.langSwitch }}</button>
+    <button onClick="{{ toggleTheme }}" style="width:28px;height:28px;border:1px solid var(--e-border);border-radius:6px;background:var(--e-surface);color:var(--e-text-strong);display:flex;align-items:center;justify-content:center;cursor:pointer">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ themeIcon }}" size="15" hint-size="15px,15px"></x-import>
+    </button>
+    <button onClick="{{ toggleContext }}" style="{{ contextToggleStyle }}">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="panel-right" size="15" hint-size="15px,15px"></x-import>
+    </button>
+    <span style="width:28px;height:28px;border-radius:6px;background:var(--e-tint);color:var(--e-text-strong);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">HA</span>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0">
+
+    <div onClick="{{ toggleNav }}" style="{{ scrimStyle }}"></div>
+    <div style="{{ navStyle }}">
+      <div style="display:flex;align-items:center;gap:8px;padding:2px 6px 8px">
+        <img src="assets/logo/aidi-wordmark-navy.svg" style="height:16px" alt="aidi">
+        <button onClick="{{ toggleNav }}" style="margin-inline-start:auto;width:28px;height:28px;border:none;background:transparent;border-radius:6px;color:var(--e-text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="x" size="16" hint-size="16px,16px"></x-import>
+        </button>
+      </div>
+      <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="14">
+        <div style="{{ item.style }}" onClick="{{ item.go }}">
+          <sc-if value="{{ item.icon }}" hint-placeholder-val="{{ true }}">
+            <span style="display:flex;flex:0 0 auto;color:{{ item.iconColor }}"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ item.icon }}" size="17" hint-size="17px,17px"></x-import></span>
+          </sc-if>{{ item.label }}<sc-if value="{{ item.dot }}" hint-placeholder-val="{{ false }}"><span style="margin-inline-start:auto;width:6px;height:6px;border-radius:50%;background:var(--e-signal)"></span></sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;min-width:0;display:flex;overflow:hidden">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow-y:auto">
+
+      <div style="{{ pageHeaderStyle }}">
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <div style="flex:1;min-width:0">
+            <h1 style="font-size:20px;font-weight:800;letter-spacing:-.018em;color:var(--e-text-strong)">{{ t.pageTitle }}</h1>
+            <p style="margin-top:6px;font-size:13.5px;color:var(--e-text-muted);max-width:720px">{{ t.pageDesc }}</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="height:36px;padding:0 15px;display:flex;align-items:center;gap:7px;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:13.5px;font-weight:800">
+              <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ pageActionIcon }}" size="15" hint-size="15px,15px"></x-import>{{ t.pageAction }}
+            </span>
+          </div>
+        </div>
+        <sc-if value="{{ hasPageTabs }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:0;align-items:center;margin-top:16px;border-bottom:1px solid var(--e-border)">
+            <sc-for list="{{ pageTabs }}" as="tab" hint-placeholder-count="4">
+              <span style="{{ tab.style }}">{{ tab.label }}</span>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="{{ pageBodyStyle }}">
+
+        <sc-if value="{{ isExplorer }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:18px 20px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+                <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:7px">
+                  <span style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.question }}</span>
+                  <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:13.5px;color:var(--e-text-body);background:var(--e-surface)">{{ t.questionSample }}</div>
+                </div>
+                <div style="width:190px;display:flex;flex-direction:column;gap:7px">
+                  <span style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.dataSource }}</span>
+                  <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;gap:9px;padding:0 12px;font-size:13.5px;color:var(--e-text-body);background:var(--e-surface)">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import>{{ t.defaultSource }}
+                    <span style="margin-inline-start:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="chevron-down" size="14" hint-size="14px,14px"></x-import></span>
+                  </div>
+                </div>
+                <span style="height:36px;padding:0 16px;display:flex;align-items:center;border-radius:6px;border:1px solid var(--e-border-strong);background:var(--e-surface);font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ t.planQuery }}</span>
+                <span style="height:36px;padding:0 18px;display:flex;align-items:center;gap:7px;border-radius:6px;background:var(--e-signal);color:#fff;font-size:13.5px;font-weight:800">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="play" size="14" hint-size="14px,14px"></x-import>{{ t.run }}
+                </span>
+              </div>
+
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+                <div style="padding:12px 18px;border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:10px">
+                  <span style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.generatedSql }}</span>
+                  <span style="margin-inline-start:auto;display:flex;align-items:center;gap:6px;height:22px;padding:0 10px 0 8px;border-radius:999px;background:var(--e-success-tint);color:var(--e-success);font-size:12px;font-weight:800">
+                    <i style="width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block"></i>{{ t.validated }}
+                  </span>
+                </div>
+                <pre dir="ltr" style="margin:0;padding:16px 18px;background:var(--e-surface-2);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.7;color:var(--e-text-body);white-space:pre-wrap">SELECT r.region_name,
+       COUNT(o.order_id)      AS orders,
+       SUM(o.net_amount)      AS revenue
+FROM   sales.orders o
+JOIN   sales.regions r ON r.region_id = o.region_id
+WHERE  o.order_date &gt;= $1 AND o.order_date &lt; $2
+GROUP  BY r.region_name
+ORDER  BY revenue DESC
+LIMIT  1000;</pre>
+              </div>
+
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+                <div style="padding:14px 20px;border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:10px">
+                  <div style="font-size:15px;font-weight:800;color:var(--e-text-strong)">{{ t.results }}</div>
+                  <div style="font-size:12.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ t.rowCount }}</div>
+                  <span style="margin-inline-start:auto;height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="download" size="14" hint-size="14px,14px"></x-import>{{ t.exportCsv }}
+                  </span>
+                </div>
+                <table style="width:100%">
+                  <thead>
+                    <tr style="background:var(--e-tint);height:38px">
+                      <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colRegion }}</th>
+                      <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colOrders }}</th>
+                      <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colRevenue }}</th>
+                      <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colShare }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{ explorerRows }}" as="row" hint-placeholder-count="5">
+                      <tr style="height:44px;border-bottom:1px solid var(--e-border-hair)">
+                        <td style="padding:0 20px;font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ row.region }}</td>
+                        <td style="padding:0 20px;font-size:13.5px;text-align:end;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ row.orders }}</td>
+                        <td style="padding:0 20px;font-size:13.5px;text-align:end;color:var(--e-text-strong);font-weight:800;font-variant-numeric:tabular-nums">{{ row.revenue }}</td>
+                        <td style="padding:0 20px;font-size:13.5px;text-align:end;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ row.share }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+                <div style="padding:12px 20px;border-top:1px solid var(--e-border);background:var(--e-surface-2);font-size:12.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ t.rowRange }}</div>
+              </div>
+            </div>
+
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isLibrary }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
+            <sc-for list="{{ dashboards }}" as="d" hint-placeholder-count="6">
+              <div onClick="{{ d.go }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;min-height:168px;cursor:pointer" style-hover="border-color:var(--e-signal)">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:14.5px;font-weight:800;color:var(--e-text-strong);letter-spacing:-.008em">{{ d.name }}</div>
+                    <div style="margin-top:4px;font-size:12.5px;color:var(--e-text-muted)">{{ d.owner }}</div>
+                  </div>
+                  <span style="{{ d.badgeStyle }}">{{ d.badge }}</span>
+                </div>
+                <svg viewBox="0 0 240 46" preserveAspectRatio="none" style="width:100%;height:46px">
+                  <polyline points="{{ d.spark }}" fill="none" stroke="var(--e-viz-2)" stroke-width="2"></polyline>
+                </svg>
+                <div style="margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--e-text-subtle);font-variant-numeric:tabular-nums">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="clock" size="13" hint-size="13px,13px"></x-import>{{ d.updated }}
+                  <span style="margin-inline-start:auto">{{ d.views }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isDashboardView }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-bottom:1px solid var(--e-border);background:var(--e-surface);padding:14px 22px">
+              <h1 style="min-width:0;font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--e-text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.pageTitle }}</h1>
+              <span style="flex:0 0 auto;display:flex;color:var(--e-azure)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="star" size="16" hint-size="16px,16px"></x-import></span>
+              <span style="display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:var(--e-info-tint);color:var(--e-info);font-size:12px;font-weight:800"><i style="width:8px;height:8px;border-radius:50%;background:currentColor"></i>{{ t.published }}</span>
+              <span style="display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:var(--e-success-tint);color:var(--e-success);font-size:12px;font-weight:800"><i style="width:8px;height:8px;border-radius:50%;background:currentColor"></i>{{ t.certified }}</span>
+              <span style="margin-inline-start:auto;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">
+                <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="rotate-cw" size="14" hint-size="14px,14px"></x-import>{{ t.refreshedAgo }}
+              </span>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="height:32px;padding:0 11px;display:flex;align-items:center;gap:7px;border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="refresh-cw" size="14" hint-size="14px,14px"></x-import>{{ t.refresh }}
+                </span>
+                <span style="height:32px;padding:0 11px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border-strong);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="pencil" size="14" hint-size="14px,14px"></x-import>{{ t.editDraft }}
+                </span>
+                <span style="height:32px;padding:0 11px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border-strong);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="calendar-clock" size="14" hint-size="14px,14px"></x-import>{{ t.schedule }}
+                </span>
+                <span style="height:32px;padding:0 13px;display:flex;align-items:center;gap:7px;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:12.5px;font-weight:800">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="share-2" size="14" hint-size="14px,14px"></x-import>{{ t.share }}
+                </span>
+                <span style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--e-text-muted)">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import>
+                </span>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--e-border);background:var(--e-surface);padding:0 22px">
+              <span style="display:flex;margin-inline-end:6px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="filter" size="15" hint-size="15px,15px"></x-import></span>
+              <sc-for list="{{ dashPages }}" as="p" hint-placeholder-count="3">
+                <span style="{{ p.style }}">{{ p.label }}</span>
+              </sc-for>
+            </div>
+
+            <div style="flex:1;min-height:660px;background:var(--e-page);padding:16px 22px 90px;position:relative">
+            <div style="width:100%;display:grid;grid-template-columns:repeat(12,1fr);gap:12px">
+              <sc-for list="{{ dashKpis }}" as="k" hint-placeholder-count="4">
+                <div style="{{ k.cardStyle }}">
+                  <div style="font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-subtle)">{{ k.label }}</div>
+                  <div style="margin-top:8px;font-size:28px;font-weight:800;letter-spacing:-.022em;color:var(--e-text-strong);font-variant-numeric:tabular-nums">{{ k.value }}</div>
+                  <div style="{{ k.deltaStyle }}">{{ k.delta }}</div>
+                </div>
+              </sc-for>
+              <div style="{{ selectedWidgetStyle }}">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;border-bottom:1px solid var(--e-border);padding:14px 20px">
+                  <div style="min-width:0">
+                    <h3 style="font-size:15px;font-weight:800;line-height:1.2;color:var(--e-text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.chartTrend }}</h3>
+                    <p style="margin-top:2px;font-size:12.5px;color:var(--e-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.chartTrendSub }}</p>
+                  </div>
+                  <span style="flex-shrink:0;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+                </div>
+                <div style="flex:1;min-height:0;padding:16px 20px 14px;display:flex;flex-direction:column;gap:14px">
+                <svg viewBox="0 0 620 190" preserveAspectRatio="none" style="width:100%;height:190px">
+                  <g stroke="var(--e-border-hair)" stroke-width="1">
+                    <line x1="0" y1="30" x2="620" y2="30"></line><line x1="0" y1="75" x2="620" y2="75"></line>
+                    <line x1="0" y1="120" x2="620" y2="120"></line><line x1="0" y1="165" x2="620" y2="165"></line>
+                  </g>
+                  <polyline points="0,150 62,138 124,142 186,118 248,126 310,96 372,108 434,72 496,84 558,58 620,44" fill="none" stroke="var(--e-viz-1)" stroke-width="2.4"></polyline>
+                  <polyline points="434,72 496,84 558,58 620,44" fill="none" stroke="var(--e-signal)" stroke-width="2.4" stroke-dasharray="5 4"></polyline>
+                </svg>
+                <div style="display:flex;gap:16px;font-size:11.5px;color:var(--e-text-muted);padding-top:10px;border-top:1px solid var(--e-border-hair)">
+                  <span style="display:flex;align-items:center;gap:7px"><i style="width:14px;height:2px;background:var(--e-viz-1);display:inline-block"></i>{{ t.actual }}</span>
+                  <span style="display:flex;align-items:center;gap:7px"><i style="width:14px;height:2px;background:var(--e-signal);display:inline-block"></i>{{ t.forecast }}</span>
+                </div>
+                </div>
+                <div style="position:absolute;inset-inline:0;bottom:12px;z-index:10;margin:0 auto;width:fit-content;display:flex;align-items:center;gap:2px;border-radius:8px;background:rgba(7,10,75,.92);padding:4px;box-shadow:var(--e-el-2)">
+                  <sc-for list="{{ widgetTools }}" as="tool" hint-placeholder-count="4">
+                    <span style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:rgba(255,255,255,.7)">
+                      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ tool.icon }}" size="14" hint-size="14px,14px"></x-import>
+                    </span>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="grid-column:span 4;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;display:flex;flex-direction:column;overflow:hidden">
+                <div style="border-bottom:1px solid var(--e-border);padding:14px 20px">
+                  <h3 style="font-size:15px;font-weight:800;line-height:1.2;color:var(--e-text-strong)">{{ t.chartRegion }}</h3>
+                </div>
+                <div style="flex:1;padding:16px 20px;display:flex;flex-direction:column;gap:11px">
+                  <sc-for list="{{ regionBars }}" as="b" hint-placeholder-count="5">
+                    <div style="display:flex;flex-direction:column;gap:5px">
+                      <div style="display:flex;align-items:baseline;gap:10px;font-size:12.5px">
+                        <span style="flex:1;color:var(--e-text-body)">{{ b.label }}</span>
+                        <span style="color:var(--e-text-strong);font-weight:800;font-variant-numeric:tabular-nums">{{ b.value }}</span>
+                      </div>
+                      <div style="height:8px;border-radius:4px;background:var(--e-fill);overflow:hidden"><div style="{{ b.barStyle }}"></div></div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            <div style="grid-column:span 12;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+              <div style="padding:14px 20px;border-bottom:1px solid var(--e-border);font-size:14px;font-weight:800;color:var(--e-text-strong)">{{ t.topCustomers }}</div>
+              <table style="width:100%">
+                <thead>
+                  <tr style="background:var(--e-tint);height:38px">
+                    <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colRegion }}</th>
+                    <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colOrders }}</th>
+                    <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colRevenue }}</th>
+                    <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colShare }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ explorerRows }}" as="row" hint-placeholder-count="5">
+                    <tr style="height:44px;border-bottom:1px solid var(--e-border-hair)">
+                      <td style="padding:0 20px;font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ row.region }}</td>
+                      <td style="padding:0 20px;font-size:13.5px;text-align:end;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ row.orders }}</td>
+                      <td style="padding:0 20px;font-size:13.5px;text-align:end;color:var(--e-text-strong);font-weight:800;font-variant-numeric:tabular-nums">{{ row.revenue }}</td>
+                      <td style="padding:0 20px;font-size:13.5px;text-align:end;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ row.share }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            </div>
+            <span style="position:absolute;inset-block-end:22px;inset-inline-end:22px;height:44px;padding:0 18px;display:flex;align-items:center;gap:9px;border-radius:999px;background:var(--e-accent-solid);color:#fff;font-size:13.5px;font-weight:800;box-shadow:var(--e-el-2)">
+              <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="sparkles" size="16" hint-size="16px,16px"></x-import>{{ t.askAidi }}
+            </span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isReports }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="width:280px;flex:0 0 280px;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+              <div style="padding:13px 16px;border-bottom:1px solid var(--e-border);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.allReports }}</div>
+              <sc-for list="{{ reports }}" as="r" hint-placeholder-count="5">
+                <div style="{{ r.style }}">
+                  <div style="font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ r.name }}</div>
+                  <div style="margin-top:3px;font-size:12px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ r.meta }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="flex:1;min-width:0;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:26px 30px;display:flex;flex-direction:column;gap:20px">
+              <div>
+                <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.narrative }}</div>
+                <h2 style="margin-top:8px;font-size:22px;font-weight:800;letter-spacing:-.015em;color:var(--e-text-strong)">{{ t.reportTitle }}</h2>
+                <p style="margin-top:12px;font-size:15px;line-height:1.6;color:var(--e-text-body);max-width:70ch;text-wrap:pretty">{{ t.reportBody1 }}</p>
+                <p style="margin-top:12px;font-size:15px;line-height:1.6;color:var(--e-text-body);max-width:70ch;text-wrap:pretty">{{ t.reportBody2 }}</p>
+              </div>
+              <div style="border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+                <div style="padding:12px 18px;background:var(--e-tint);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.evidence }}</div>
+                <table style="width:100%">
+                  <tbody>
+                    <sc-for list="{{ evidenceRows }}" as="row" hint-placeholder-count="4">
+                      <tr style="height:44px;border-bottom:1px solid var(--e-border-hair)">
+                        <td style="padding:0 18px;font-size:13.5px;color:var(--e-text-strong);font-weight:800">{{ row.k }}</td>
+                        <td style="padding:0 18px;font-size:13.5px;text-align:end;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ row.v }}</td>
+                        <td style="padding:0 18px;font-size:13px;text-align:end;color:var(--e-text-muted)">{{ row.note }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.recommendations }}</div>
+                <sc-for list="{{ recommendations }}" as="rec" hint-placeholder-count="3">
+                  <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--e-border);border-radius:6px;font-size:13.5px;color:var(--e-text-body);line-height:1.5">
+                    <span style="flex:0 0 auto;width:22px;height:22px;border-radius:4px;background:var(--e-azure-tint);color:var(--e-azure);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums">{{ rec.n }}</span>{{ rec.text }}
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAlerts }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ alerts }}" as="a" hint-placeholder-count="5">
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px;padding:14px">
+                <span style="{{ a.iconStyle }}"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ a.icon }}" size="16" hint-size="16px,16px"></x-import></span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+                    <h3 style="font-size:14px;font-weight:800;color:var(--e-text-strong);letter-spacing:-.008em">{{ a.name }}</h3>
+                    <span style="{{ a.badgeStyle }}"><i style="{{ a.glyphStyle }}"></i>{{ a.status }}</span>
+                    <span style="display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;background:var(--e-fill);color:var(--e-text-muted);font-size:11.5px;font-weight:800">{{ a.type }}</span>
+                  </div>
+                  <p style="margin-top:5px;font-size:12.5px;color:var(--e-text-muted);line-height:1.5">{{ a.condition }}</p>
+                  <div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:4px 18px;font-size:11.5px;color:var(--e-text-subtle);font-variant-numeric:tabular-nums">
+                    <span>{{ a.evaluated }}</span>
+                    <span>{{ a.channels }}</span>
+                    <span>{{ a.lastValue }}</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-shrink:0;align-items:center;gap:6px">
+                  <span style="height:30px;padding:0 12px;display:flex;align-items:center;border:1px solid var(--e-border-strong);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">{{ t.evaluate }}</span>
+                  <span style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--e-text-muted)">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ a.pauseIcon }}" size="15" hint-size="15px,15px"></x-import>
+                  </span>
+                  <span style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--e-text-muted)">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="trash-2" size="15" hint-size="15px,15px"></x-import>
+                  </span>
+                  <span style="height:30px;padding:0 10px;display:flex;align-items:center;border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-link)">{{ t.history }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isDeliveries }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+            <table style="width:100%">
+              <thead>
+                <tr style="background:var(--e-tint);height:38px">
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colDelivery }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colSchedule }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colRecipients }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colLastSent }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colStatus }}</th>
+                  <th style="padding:0 20px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ deliveries }}" as="d" hint-placeholder-count="5">
+                  <tr style="height:56px;border-bottom:1px solid var(--e-border-hair)">
+                    <td style="padding:0 20px">
+                      <div style="font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ d.name }}</div>
+                      <div style="margin-top:3px;font-size:12px;color:var(--e-text-muted)">{{ d.target }}</div>
+                    </td>
+                    <td style="padding:0 20px;font-size:13.5px;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ d.schedule }}</td>
+                    <td style="padding:0 20px;font-size:13.5px;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ d.recipients }}</td>
+                    <td style="padding:0 20px;font-size:13.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ d.last }}</td>
+                    <td style="padding:0 20px"><span style="{{ d.badgeStyle }}"><i style="{{ d.glyphStyle }}"></i>{{ d.status }}</span></td>
+                    <td style="padding:0 20px;text-align:end">
+                      <span style="height:30px;padding:0 12px;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">
+                        <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="send" size="14" hint-size="14px,14px"></x-import>{{ t.sendNow }}
+                      </span>
+                    </td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isRuns }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="flex:1;min-width:0;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+              <table style="width:100%">
+                <thead>
+                  <tr style="background:var(--e-tint);height:38px">
+                    <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.request }}</th>
+                    <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colStatus }}</th>
+                    <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.duration }}</th>
+                    <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.tokens }}</th>
+                    <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.started }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ runs }}" as="r" hint-placeholder-count="6">
+                    <tr style="{{ r.rowStyle }}" onClick="{{ r.go }}">
+                      <td style="padding:0 20px;font-size:13.5px;color:var(--e-text-strong);font-weight:800;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.request }}</td>
+                      <td style="padding:0 20px"><span style="{{ r.badgeStyle }}"><i style="{{ r.glyphStyle }}"></i>{{ r.status }}</span></td>
+                      <td style="padding:0 20px;text-align:end;font-size:13.5px;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ r.duration }}</td>
+                      <td style="padding:0 20px;text-align:end;font-size:13.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ r.tokens }}</td>
+                      <td style="padding:0 20px;text-align:end;font-size:13px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ r.started }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isRunDetail }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+              <sc-for list="{{ runStats }}" as="s" hint-placeholder-count="4">
+                <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:14px;display:flex;align-items:center;gap:12px">
+                  <span style="flex:0 0 auto;width:32px;height:32px;border-radius:6px;background:var(--e-fill);color:var(--e-text-muted);display:flex;align-items:center;justify-content:center">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ s.icon }}" size="16" hint-size="16px,16px"></x-import>
+                  </span>
+                  <div style="min-width:0">
+                    <div style="font-size:17px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums;line-height:1.1">{{ s.value }}</div>
+                    <div style="margin-top:4px;font-size:12px;color:var(--e-text-muted)">{{ s.label }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:flex-start">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.executionTimeline }}</div>
+                <sc-for list="{{ runSteps }}" as="s" hint-placeholder-count="6">
+                  <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:14px;display:flex;gap:12px;align-items:flex-start">
+                    <span style="{{ s.numStyle }}">{{ s.n }}</span>
+                    <div style="flex:1;min-width:0">
+                      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+                        <span style="font-size:13px;font-weight:800;color:var(--e-text-strong)">{{ s.name }}</span>
+                        <span style="{{ s.badgeStyle }}"><i style="{{ s.glyphStyle }}"></i>{{ s.status }}</span>
+                        <span style="display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;background:var(--e-azure-tint);color:var(--e-link);font-size:11.5px;font-weight:800">{{ s.intent }}</span>
+                        <span style="margin-inline-start:auto;font-size:11.5px;color:var(--e-text-subtle);font-variant-numeric:tabular-nums">{{ s.ms }}</span>
+                      </div>
+                      <p style="margin-top:5px;font-size:12.5px;color:var(--e-text-muted);line-height:1.5">{{ s.summary }}</p>
+                    </div>
+                  </div>
+                </sc-for>
+                <p style="margin-top:4px;font-size:11.5px;line-height:1.55;color:var(--e-text-subtle)">{{ t.redactionNote }}</p>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:8px">
+                  <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.runDetails }}</div>
+                  <sc-for list="{{ runMeta }}" as="row" hint-placeholder-count="3">
+                    <div style="display:flex;justify-content:space-between;gap:12px;font-size:12px">
+                      <span style="color:var(--e-text-muted)">{{ row.k }}</span>
+                      <span style="color:var(--e-text-strong);font-variant-numeric:tabular-nums" dir="ltr">{{ row.v }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:9px">
+                  <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.detectedIntents }}</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <sc-for list="{{ runIntents }}" as="i" hint-placeholder-count="3">
+                      <span style="display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;background:var(--e-azure-tint);color:var(--e-link);font-size:11.5px;font-weight:800">{{ i.label }}</span>
+                    </sc-for>
+                  </div>
+                </div>
+                <span style="height:36px;display:flex;align-items:center;justify-content:center;border:1px solid var(--e-border-strong);border-radius:6px;font-size:13px;font-weight:800;color:var(--e-text-strong)">{{ t.openConversation }}</span>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isCatalog }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="width:290px;flex:0 0 290px;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+              <div style="padding:12px 14px;border-bottom:1px solid var(--e-border)">
+                <div style="height:32px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;gap:9px;padding:0 11px;font-size:12.5px;color:var(--e-text-subtle)">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="14" hint-size="14px,14px"></x-import>{{ t.filterAssets }}
+                </div>
+              </div>
+              <sc-for list="{{ assets }}" as="a" hint-placeholder-count="6">
+                <div style="{{ a.style }}">
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <span style="display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table" size="14" hint-size="14px,14px"></x-import></span>
+                    <span dir="ltr" style="font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ a.name }}</span>
+                    <sc-if value="{{ a.certified }}" hint-placeholder-val="{{ false }}"><span style="margin-inline-start:auto;width:7px;height:7px;border-radius:50%;background:var(--e-success)"></span></sc-if>
+                  </div>
+                  <div style="margin-top:4px;font-size:12px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ a.meta }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px">
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+                <div style="padding:14px 20px;border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:12px">
+                  <div style="font-size:15px;font-weight:800;color:var(--e-text-strong)" dir="ltr">sales.orders</div>
+                  <span style="display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:var(--e-success-tint);color:var(--e-success);font-size:12px;font-weight:800"><i style="width:8px;height:8px;border-radius:50%;background:currentColor"></i>{{ t.certified }}</span>
+                  <div style="margin-inline-start:auto;font-size:12.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ t.lastSyncedValue }}</div>
+                </div>
+                <table style="width:100%">
+                  <thead>
+                    <tr style="background:var(--e-tint);height:38px">
+                      <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.column }}</th>
+                      <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.type }}</th>
+                      <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.role }}</th>
+                      <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.aiVisibility }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{ columns }}" as="c" hint-placeholder-count="6">
+                      <tr style="height:44px;border-bottom:1px solid var(--e-border-hair)">
+                        <td style="padding:0 20px;font-size:13.5px;font-weight:800;color:var(--e-text-strong)" dir="ltr">{{ c.name }}</td>
+                        <td style="padding:0 20px;font-size:13px;color:var(--e-text-muted);font-family:ui-monospace,Menlo,Consolas,monospace" dir="ltr">{{ c.type }}</td>
+                        <td style="padding:0 20px;font-size:13.5px;color:var(--e-text-body)">{{ c.role }}</td>
+                        <td style="padding:0 20px;text-align:end"><span style="{{ c.visStyle }}">{{ c.vis }}</span></td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSemantic }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="flex:1;min-width:0;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+              <table style="width:100%">
+                <thead>
+                  <tr style="background:var(--e-tint);height:38px">
+                    <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.measure }}</th>
+                    <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.expression }}</th>
+                    <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.synonyms }}</th>
+                    <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colStatus }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ measures }}" as="m" hint-placeholder-count="6">
+                    <tr style="height:52px;border-bottom:1px solid var(--e-border-hair)">
+                      <td style="padding:0 20px;font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ m.name }}</td>
+                      <td style="padding:0 20px;font-size:12.5px;color:var(--e-text-body);font-family:ui-monospace,Menlo,Consolas,monospace" dir="ltr">{{ m.expr }}</td>
+                      <td style="padding:0 20px;font-size:13px;color:var(--e-text-muted)">{{ m.syn }}</td>
+                      <td style="padding:0 20px;text-align:end"><span style="{{ m.badgeStyle }}"><i style="{{ m.glyphStyle }}"></i>{{ m.status }}</span></td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <div style="width:300px;flex:0 0 300px;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:20px;display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.whyItMatters }}</div>
+              <p style="font-size:13.5px;line-height:1.6;color:var(--e-text-body)">{{ t.whyItMattersBody }}</p>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isLineage }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div dir="ltr" style="flex:1;min-width:0;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:24px;overflow:hidden">
+              <svg viewBox="0 0 760 330" style="width:100%;height:330px">
+                <g stroke="var(--e-border-strong)" stroke-width="1.5" fill="none">
+                  <path d="M186 70 C 250 70 250 120 300 120"></path>
+                  <path d="M186 150 C 250 150 250 130 300 130"></path>
+                  <path d="M186 240 C 250 240 250 210 300 205"></path>
+                  <path d="M450 125 C 510 125 510 70 570 70"></path>
+                  <path d="M450 130 C 510 130 510 160 570 160"></path>
+                  <path d="M450 205 C 510 205 510 250 570 250"></path>
+                </g>
+                <g>
+                  <rect x="30" y="48" width="156" height="44" rx="6" fill="var(--e-surface-2)" stroke="var(--e-border)"></rect>
+                  <text x="46" y="70" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="ui-monospace,Menlo,monospace">sales.orders</text>
+                  <text x="46" y="84" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">TABLE · 12.4M rows</text>
+                  <rect x="30" y="128" width="156" height="44" rx="6" fill="var(--e-surface-2)" stroke="var(--e-border)"></rect>
+                  <text x="46" y="150" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="ui-monospace,Menlo,monospace">sales.regions</text>
+                  <text x="46" y="164" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">TABLE · 5 rows</text>
+                  <rect x="30" y="218" width="156" height="44" rx="6" fill="var(--e-surface-2)" stroke="var(--e-border)"></rect>
+                  <text x="46" y="240" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="ui-monospace,Menlo,monospace">crm.accounts</text>
+                  <text x="46" y="254" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">TABLE · 8.2K rows</text>
+
+                  <rect x="300" y="100" width="150" height="50" rx="6" fill="var(--e-signal-tint)" stroke="var(--e-signal)" stroke-width="1.5"></rect>
+                  <text x="316" y="124" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="Anodina,sans-serif">Total Revenue</text>
+                  <text x="316" y="139" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">MEASURE · focused</text>
+                  <rect x="300" y="184" width="150" height="44" rx="6" fill="var(--e-surface-2)" stroke="var(--e-border)"></rect>
+                  <text x="316" y="206" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="Anodina,sans-serif">Account Tier</text>
+                  <text x="316" y="220" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">DIMENSION</text>
+
+                  <rect x="570" y="48" width="160" height="44" rx="6" fill="var(--e-surface-2)" stroke="var(--e-border)"></rect>
+                  <text x="586" y="70" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="Anodina,sans-serif">Sales summary</text>
+                  <text x="586" y="84" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">DASHBOARD</text>
+                  <rect x="570" y="138" width="160" height="44" rx="6" fill="var(--e-surface-2)" stroke="var(--e-border)"></rect>
+                  <text x="586" y="160" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="Anodina,sans-serif">Daily revenue drop</text>
+                  <text x="586" y="174" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">ALERT</text>
+                  <rect x="570" y="228" width="160" height="44" rx="6" fill="var(--e-surface-2)" stroke="var(--e-border)"></rect>
+                  <text x="586" y="250" font-size="12.5" font-weight="800" fill="var(--e-text-strong)" font-family="Anodina,sans-serif">Executive weekly</text>
+                  <text x="586" y="264" font-size="10" fill="var(--e-text-subtle)" font-family="Anodina,sans-serif">DELIVERY</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isDocuments }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="width:290px;flex:0 0 290px;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+              <div style="padding:13px 16px;border-bottom:1px solid var(--e-border);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.library }}</div>
+              <sc-for list="{{ documents }}" as="d" hint-placeholder-count="5">
+                <div style="{{ d.style }}">
+                  <div style="font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ d.name }}</div>
+                  <div style="margin-top:3px;font-size:12px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ d.meta }}</div>
+                </div>
+              </sc-for>
+              <div style="padding:14px 16px;border-top:1px solid var(--e-border)">
+                <div style="height:64px;border:1px dashed var(--e-border-strong);border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12.5px;color:var(--e-text-subtle);padding:0 14px">{{ t.dropHere }}</div>
+              </div>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px">
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;gap:10px;align-items:center">
+                  <div style="flex:1;height:36px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:13.5px;color:var(--e-text-subtle)">{{ t.askPlaceholder }}</div>
+                  <span style="height:36px;padding:0 16px;display:flex;align-items:center;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:13.5px;font-weight:800">{{ t.ask }}</span>
+                </div>
+                <p style="font-size:14.5px;line-height:1.6;color:var(--e-text-body);max-width:70ch;text-wrap:pretty">{{ t.docAnswer }}</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <sc-for list="{{ citations }}" as="c" hint-placeholder-count="3">
+                    <span style="display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 11px;border-radius:999px;border:1px solid var(--e-azure-border);background:var(--e-azure-tint);color:var(--e-link);font-size:12px;font-weight:800;font-variant-numeric:tabular-nums">{{ c.label }}</span>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:22px 24px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.extractedTables }}</div>
+                <table style="width:100%;margin-top:12px">
+                  <thead>
+                    <tr style="background:var(--e-tint);height:38px">
+                      <th style="text-align:start;padding:0 16px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colSegment }}</th>
+                      <th style="text-align:end;padding:0 16px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">Q2</th>
+                      <th style="text-align:end;padding:0 16px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">Q3</th>
+                      <th style="text-align:end;padding:0 16px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colChange }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{ docTable }}" as="row" hint-placeholder-count="4">
+                      <tr style="height:44px;border-bottom:1px solid var(--e-border-hair)">
+                        <td style="padding:0 16px;font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ row.k }}</td>
+                        <td style="padding:0 16px;text-align:end;font-size:13.5px;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ row.q2 }}</td>
+                        <td style="padding:0 16px;text-align:end;font-size:13.5px;color:var(--e-text-body);font-variant-numeric:tabular-nums">{{ row.q3 }}</td>
+                        <td style="padding:0 16px;text-align:end;font-size:13.5px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">{{ row.chg }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSourcesTab }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ sources }}" as="s" hint-placeholder-count="4">
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px;padding:14px">
+                <span style="flex:0 0 auto;width:32px;height:32px;border-radius:6px;background:var(--e-fill);color:var(--e-text-muted);display:flex;align-items:center;justify-content:center">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="16" hint-size="16px,16px"></x-import>
+                </span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+                    <span style="font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ s.name }}</span>
+                    <span style="{{ s.badgeStyle }}"><i style="{{ s.glyphStyle }}"></i>{{ s.status }}</span>
+                    <span style="display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;background:var(--e-fill);color:var(--e-text-muted);font-size:11.5px;font-weight:800">{{ t.readOnly }}</span>
+                  </div>
+                  <div dir="ltr" style="margin-top:5px;font-size:12px;color:var(--e-text-muted);font-family:ui-monospace,Menlo,Consolas,monospace">{{ s.host }}</div>
+                  <div style="margin-top:5px;font-size:11.5px;color:var(--e-text-subtle);font-variant-numeric:tabular-nums">{{ s.synced }}</div>
+                </div>
+                <div style="display:flex;flex-shrink:0;gap:6px">
+                  <span style="height:30px;padding:0 12px;display:flex;align-items:center;border:1px solid var(--e-border-strong);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">{{ t.test }}</span>
+                  <span style="height:30px;padding:0 12px;display:flex;align-items:center;border:1px solid var(--e-border-strong);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)">{{ t.sync }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isMembersTab }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+            <table style="width:100%">
+              <thead>
+                <tr style="background:var(--e-tint);height:38px">
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colMember }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colRole }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.colLastActive }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ members }}" as="m" hint-placeholder-count="4">
+                  <tr style="height:44px;border-bottom:1px solid var(--e-border-hair)">
+                    <td style="padding:0 20px">
+                      <div style="font-size:13.5px;font-weight:800;color:var(--e-text-strong)">{{ m.name }}</div>
+                      <div dir="ltr" style="margin-top:2px;font-size:12px;color:var(--e-text-muted)">{{ m.email }}</div>
+                    </td>
+                    <td style="padding:0 20px;font-size:13.5px;color:var(--e-text-body)">{{ m.role }}</td>
+                    <td style="padding:0 20px;font-size:13px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ m.active }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAuditTab }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;overflow:auto">
+            <table style="width:100%">
+              <thead>
+                <tr style="background:var(--e-tint);height:38px">
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.action }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.actor }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.resource }}</th>
+                  <th style="text-align:start;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.outcome }}</th>
+                  <th style="text-align:end;padding:0 20px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong)">{{ t.when }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ auditRows }}" as="row" hint-placeholder-count="5">
+                  <tr style="height:44px;border-bottom:1px solid var(--e-border-hair)">
+                    <td dir="ltr" style="padding:0 20px;font-size:13px;font-weight:800;color:var(--e-text-strong);font-family:ui-monospace,Menlo,Consolas,monospace;text-align:start">{{ row.action }}</td>
+                    <td style="padding:0 20px;font-size:13.5px;color:var(--e-text-body)">{{ row.actor }}</td>
+                    <td dir="ltr" style="padding:0 20px;font-size:13px;color:var(--e-text-muted);font-family:ui-monospace,Menlo,Consolas,monospace;text-align:start">{{ row.resource }}</td>
+                    <td style="padding:0 20px"><span style="{{ row.badgeStyle }}"><i style="{{ row.glyphStyle }}"></i>{{ row.status }}</span></td>
+                    <td style="padding:0 20px;text-align:end;font-size:13px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ row.when }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isPlatformTab }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:18px 20px;display:flex;flex-direction:column;gap:12px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.aiConfiguration }}</div>
+                <sc-for list="{{ aiConfig }}" as="row" hint-placeholder-count="4">
+                  <div style="display:flex;gap:14px;align-items:baseline;padding-bottom:9px;border-bottom:1px solid var(--e-border-hair)">
+                    <span style="flex:0 0 130px;font-size:12.5px;color:var(--e-text-muted)">{{ row.k }}</span>
+                    <span dir="ltr" style="flex:1;font-size:13px;font-weight:800;color:var(--e-text-strong);text-align:start">{{ row.v }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:18px 20px;display:flex;flex-direction:column;gap:12px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.querySafety }}</div>
+                <sc-for list="{{ safetyConfig }}" as="row" hint-placeholder-count="4">
+                  <div style="display:flex;gap:14px;align-items:baseline;padding-bottom:9px;border-bottom:1px solid var(--e-border-hair)">
+                    <span style="flex:0 0 130px;font-size:12.5px;color:var(--e-text-muted)">{{ row.k }}</span>
+                    <span dir="ltr" style="flex:1;font-size:13px;font-weight:800;color:var(--e-text-strong);text-align:start;font-variant-numeric:tabular-nums">{{ row.v }}</span>
+                  </div>
+                </sc-for>
+              </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAsk }}" hint-placeholder-val="{{ false }}">
+          <div style="position:relative;flex:1;min-height:850px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden">
+            <div style="position:absolute;inset:0;overflow:hidden;pointer-events:none">
+              <div class="aidi-drift-a" style="position:absolute;inset:-40%;background:radial-gradient(40% 40% at 30% 38%, rgba(255,102,0,.34) 0%, rgba(255,102,0,0) 66%);filter:blur(18px);animation:aidiDriftA 19s ease-in-out infinite"></div>
+              <div class="aidi-drift-b" style="position:absolute;inset:-40%;background:radial-gradient(44% 44% at 72% 64%, rgba(255,132,51,.28) 0%, rgba(255,132,51,0) 64%);filter:blur(22px);animation:aidiDriftB 25s ease-in-out infinite"></div>
+              <div class="aidi-drift-a" style="position:absolute;inset:-45%;background:radial-gradient(34% 34% at 56% 86%, rgba(255,178,120,.26) 0%, rgba(255,178,120,0) 62%);filter:blur(26px);animation:aidiDriftB 31s ease-in-out infinite reverse"></div>
+              <div style="position:absolute;inset:0;background:radial-gradient(130% 80% at 50% 12%, var(--e-page) 8%, rgba(0,0,0,0) 74%)"></div>
+            </div>
+
+            <div style="position:relative;width:100%;max-width:760px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 24px">
+              <img src="assets/logo/aidi-mark-navy.svg" style="height:44px;margin-bottom:14px" alt="aidi">
+              <h1 style="font-size:34px;font-weight:800;letter-spacing:-.02em;color:var(--e-text-strong);text-align:center">{{ t.askHeadline }}</h1>
+              <p style="font-size:15px;color:var(--e-text-muted);text-align:center">{{ t.askSub }}</p>
+
+              <div style="margin-top:22px;width:100%;background:var(--e-surface);border:1px solid var(--e-border);border-radius:12px;box-shadow:var(--e-el-2);padding:18px 20px 14px;display:flex;flex-direction:column;gap:16px">
+                <div style="font-size:15px;color:var(--e-text-subtle)">{{ t.askComposer }}</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 15px;border-radius:999px;border:1px solid var(--e-border);color:var(--e-text-body);font-size:13.5px;font-weight:800">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="15" hint-size="15px,15px"></x-import>{{ t.askSearch }}
+                  </span>
+                  <span style="display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 15px;border-radius:999px;border:1px solid var(--e-signal);background:var(--e-signal-tint);color:var(--e-signal);font-size:13.5px;font-weight:800">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="15" hint-size="15px,15px"></x-import>{{ t.askMode }}
+                  </span>
+                  <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:999px;border:1px solid var(--e-border);color:var(--e-text-muted)">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="15" hint-size="15px,15px"></x-import>
+                  </span>
+                  <span style="margin-inline-start:auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:999px;background:var(--e-accent-solid);color:#fff">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="arrow-up" size="16" hint-size="16px,16px"></x-import>
+                  </span>
+                </div>
+              </div>
+
+              <div style="margin-top:18px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px">
+                <sc-for list="{{ askActions }}" as="a" hint-placeholder-count="4">
+                  <span style="display:inline-flex;align-items:center;gap:9px;height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-strong);font-size:13.5px;font-weight:800">
+                    <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ a.icon }}" size="15" hint-size="15px,15px"></x-import>{{ a.label }}
+                  </span>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isElsewhere }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:40px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+            <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.separateTemplate }}</div>
+            <p style="font-size:15px;line-height:1.6;color:var(--e-text-body);max-width:60ch">{{ t.separateTemplateBody }}</p>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+      <div style="{{ contextStyle }}">
+        <div style="height:44px;flex:0 0 44px;border-bottom:1px solid var(--e-border);display:flex;align-items:stretch;padding-inline-end:4px">
+          <sc-for list="{{ contextTabs }}" as="tab" hint-placeholder-count="2">
+            <span style="{{ tab.style }}">
+              <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="{{ tab.icon }}" size="14" hint-size="14px,14px"></x-import>{{ tab.label }}
+            </span>
+          </sc-for>
+          <button onClick="{{ toggleContext }}" style="margin-inline-start:auto;align-self:center;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:6px;color:var(--e-text-muted);cursor:pointer">
+            <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="x" size="15" hint-size="15px,15px"></x-import>
+          </button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:18px">
+
+          <sc-if value="{{ isExplorer }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.query }}</div>
+              <sc-for list="{{ specRows }}" as="row" hint-placeholder-count="5">
+                <div style="display:flex;gap:14px;align-items:baseline">
+                  <span style="flex:0 0 88px;font-size:12px;color:var(--e-text-muted)">{{ row.k }}</span>
+                  <span style="flex:1;font-size:12.5px;color:var(--e-text-strong);font-weight:800;font-variant-numeric:tabular-nums" dir="ltr">{{ row.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.selectedFields }}</div>
+              <sc-for list="{{ selectedFields }}" as="f" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+                  <span style="{{ f.badgeStyle }}">{{ f.agg }}</span>
+                  <span dir="ltr" style="flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--e-text-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.field }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;padding-top:16px;border-top:1px solid var(--e-border-hair)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.guarantees }}</div>
+              <sc-for list="{{ safetyPoints }}" as="point" hint-placeholder-count="5">
+                <div style="display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:var(--e-text-body);line-height:1.5">
+                  <span style="flex:0 0 auto;display:flex;color:var(--e-success);margin-top:2px"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="check" size="13" hint-size="13px,13px"></x-import></span>{{ point.text }}
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isLineage }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:22px">
+              <div><div style="font-size:26px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">8</div><div style="font-size:12px;color:var(--e-text-muted)">{{ t.nodes }}</div></div>
+              <div><div style="font-size:26px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">6</div><div style="font-size:12px;color:var(--e-text-muted)">{{ t.edges }}</div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding-top:16px;border-top:1px solid var(--e-border-hair)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.nodeTypes }}</div>
+              <sc-for list="{{ nodeTypes }}" as="n" hint-placeholder-count="5">
+                <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--e-text-body)">
+                  <i style="{{ n.swatch }}"></i>{{ n.label }}
+                  <span style="margin-inline-start:auto;font-size:12.5px;color:var(--e-text-subtle);font-variant-numeric:tabular-nums">{{ n.count }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isDashboardView }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.properties }}</div>
+              <sc-for list="{{ dashProps }}" as="row" hint-placeholder-count="6">
+                <div style="display:flex;gap:14px;align-items:baseline">
+                  <span style="flex:1;font-size:12.5px;color:var(--e-text-muted)">{{ row.k }}</span>
+                  <span style="font-size:13px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">{{ row.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;padding-top:16px;border-top:1px solid var(--e-border-hair)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.tags }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ dashTags }}" as="tag" hint-placeholder-count="3">
+                  <span style="display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:4px;background:var(--e-fill);color:var(--e-text-muted);font-size:11.5px;font-weight:800">{{ tag.label }}</span>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isAsk }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.recentConversations }}</div>
+              <sc-for list="{{ conversations }}" as="c" hint-placeholder-count="4">
+                <div style="{{ c.style }}">
+                  <div style="font-size:13px;font-weight:800;color:var(--e-text-strong);line-height:1.4">{{ c.name }}</div>
+                  <div style="margin-top:3px;font-size:11.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">{{ c.when }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding-top:16px;border-top:1px solid var(--e-border-hair)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.sourcesLabel }}</div>
+              <sc-for list="{{ askSources }}" as="s" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--e-text-body)">
+                  <span style="display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import></span>
+                  <span dir="ltr" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+                  <span style="{{ s.badgeStyle }}"><i style="{{ s.glyphStyle }}"></i>{{ s.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isCatalog }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.businessMeaning }}</div>
+              <div style="min-height:84px;border:1px solid var(--e-border-strong);border-radius:6px;padding:11px 12px;font-size:13px;line-height:1.55;color:var(--e-text-body)">{{ t.businessMeaningValue }}</div>
+              <div style="font-size:12px;color:var(--e-text-subtle);line-height:1.5">{{ t.businessMeaningHint }}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding-top:16px;border-top:1px solid var(--e-border-hair)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">{{ t.statistics }}</div>
+              <sc-for list="{{ catalogStats }}" as="row" hint-placeholder-count="4">
+                <div style="display:flex;gap:14px;align-items:baseline">
+                  <span style="flex:1;font-size:12.5px;color:var(--e-text-muted)">{{ row.k }}</span>
+                  <span style="font-size:13px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums" dir="ltr">{{ row.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const EN = {
+  workspaceName: "Demo Workspace", search: "Search dashboards, datasets, reports…", langSwitch: "العربية",
+  groups: { workspace: "Workspace", data: "Data", automation: "Automation", admin: "Administration" },
+  nav: { discover: "Discover", ask: "Ask Aidi", dashboards: "Dashboards", reports: "Reports",
+    dataExplorer: "Data Explorer", catalog: "Data Catalog", semanticModels: "Semantic Models",
+    lineage: "Lineage", documents: "Documents", alerts: "Alerts", deliveries: "Deliveries",
+    agentRuns: "Agent Runs", settings: "Settings" },
+  filters: "Filters",
+  pages: {
+    explorer: { title: "Data Explorer", desc: "Ask a question in plain language. Aidi AI plans a safe, read-only query you can inspect before running.", action: "New query", tabs: ["Query", "History", "Saved"] },
+    library: { title: "Dashboards", desc: "Interactive, filterable analysis across multiple pages.", action: "New dashboard", tabs: ["All dashboards", "Certified", "Mine"] },
+    reports: { title: "Reports", desc: "Saved analytical results with narrative, evidence and recommendations.", action: "Run an analysis", tabs: ["All reports", "Scheduled", "Drafts"] },
+    alerts: { title: "Alerts", desc: "Threshold, change, anomaly and freshness monitors evaluated on a schedule.", action: "Create with Aidi", tabs: ["All alerts", "Needs attention", "Paused"] },
+    deliveries: { title: "Deliveries", desc: "Scheduled distribution of dashboards and reports over email and webhooks.", action: "New delivery", tabs: ["Scheduled", "History", "Endpoints"] },
+    agentRuns: { title: "Agent runs", desc: "Every natural-language request, the agents it used, and how it was executed.", action: "Export log", tabs: ["All runs", "Failed", "Running"] },
+    catalog: { title: "Data Catalog", desc: "Select a dataset to inspect its columns, preview rows, and document what it means.", action: "Sync catalog", tabs: ["Columns", "Data preview", "Usage"] },
+    semantic: { title: "Semantic models", desc: "Measures, dimensions and relationships that give business meaning to raw tables.", action: "Add measure", tabs: ["Measures", "Dimensions", "Relationships"] },
+    lineage: { title: "Data lineage", desc: "Where every metric comes from, and everything that breaks when it changes.", action: "Clear focus", tabs: ["Graph", "Overview", "Edges"] },
+    documents: { title: "Documents", desc: "Upload reports and spreadsheets, then ask questions with page-level citations.", action: "Upload document", tabs: ["Library", "Citations", "Extracted tables"] },
+    settings: { title: "Settings", desc: "Sources, users, platform configuration and audit.", action: "Connect source", tabs: ["Data sources", "Platform", "Members", "Audit log"] },
+    runDetail: { title: "Build an executive sales dashboard with a 90-day forecast", desc: "Succeeded · run_8f21c04e · started 14:32:08 AST", action: "Export log", tabs: [] },
+    ask: { title: "Ask Aidi", desc: "", action: "", tabs: [] }
+  },
+  question: "Question", questionSample: "Total revenue by region for last quarter",
+  dataSource: "Data source", defaultSource: "Default source", planQuery: "Plan query", run: "Run",
+  generatedSql: "Generated SQL (read-only)", validated: "Validated", results: "Results",
+  rowCount: "5 rows · 340 ms", exportCsv: "Export CSV", rowRange: "Rows 1–5 of 5 · limit 1,000",
+  colRegion: "Region", colOrders: "Orders", colRevenue: "Revenue (SAR)", colShare: "Share",
+  specification: "Specification", guarantees: "Guarantees",
+  spec: { dataset: "Dataset", fields: "Fields", joins: "Joins", filters: "Filters", limit: "Limit" },
+  safety: ["Only SELECT statements are ever generated.", "Identifiers are validated against catalog allowlists.",
+    "Every literal is bound as a parameter.", "Row and time limits are enforced by the platform.",
+    "Hidden and sensitive columns are unavailable to the assistant."],
+  regions: ["Central", "Western", "Eastern", "Northern", "Southern"],
+  certified: "Certified", draft: "Draft",
+  dashboards: [
+    { name: "Sales summary & forecast", owner: "Hassan Al-Otaibi", updated: "Updated 2 h ago", views: "1,284 views" },
+    { name: "Revenue by region", owner: "Data Platform", updated: "Updated yesterday", views: "946 views" },
+    { name: "Customer retention", owner: "Noura Al-Harbi", updated: "Updated 3 d ago", views: "612 views" },
+    { name: "Pipeline health", owner: "Revenue Ops", updated: "Updated 4 d ago", views: "480 views" },
+    { name: "Inventory turnover", owner: "Supply Chain", updated: "Updated 6 d ago", views: "318 views" },
+    { name: "Support load", owner: "Customer Success", updated: "Updated 1 w ago", views: "204 views" }
+  ],
+  allReports: "All reports", narrative: "Narrative", evidence: "Evidence", recommendations: "Recommendations",
+  reports: [
+    { name: "Q3 revenue review", meta: "Saved 12 Aug · 6 sections" },
+    { name: "Churn drivers, enterprise tier", meta: "Saved 09 Aug · 4 sections" },
+    { name: "Forecast accuracy audit", meta: "Saved 02 Aug · 5 sections" },
+    { name: "Central region deep dive", meta: "Saved 28 Jul · 7 sections" },
+    { name: "Discount policy impact", meta: "Saved 21 Jul · 3 sections" }
+  ],
+  reportTitle: "Q3 revenue review",
+  reportBody1: "Revenue closed the quarter at SAR 738.7M, 6.2% above plan and 11.4% above the same quarter last year. Growth came almost entirely from the Central region, where the enterprise tier added 34 accounts.",
+  reportBody2: "Profit did not follow at the same rate. Discounting on renewals rose from 8.1% to 12.6% of contract value, which held margin flat despite the revenue gain.",
+  evidenceRows: [
+    { k: "Total revenue", v: "738,712,400", note: "+6.2% vs plan" },
+    { k: "Total profit", v: "240,418,900", note: "+0.4% vs plan" },
+    { k: "New enterprise accounts", v: "34", note: "Central region" },
+    { k: "Average discount", v: "12.6%", note: "up from 8.1%" }
+  ],
+  recommendations: [
+    "Cap renewal discounting at 10% without regional director approval.",
+    "Re-forecast Q4 on the Central region's realised run rate, not the plan curve.",
+    "Review the 12 accounts carrying discounts above 20% before renewal opens."
+  ],
+  evaluate: "Evaluate", pause: "Pause", resume: "Resume", sendNow: "Send now",
+  request: "Request", duration: "Duration", tokens: "Tokens", started: "Started",
+  runDetails: "Run details", executionTimeline: "Execution timeline", estimatedCost: "Est. cost (SAR)",
+  colStatus: "Status", colDelivery: "Delivery", colSchedule: "Schedule", colRecipients: "Recipients", colLastSent: "Last sent",
+  status: { ok: "Healthy", attention: "Needs attention", paused: "Paused", failed: "Failed", succeeded: "Succeeded", running: "Running", active: "Active" },
+  alerts: [
+    { name: "Daily revenue drop", condition: "Triggers when the value falls more than 15% below its 7-day average.", evaluated: "Evaluated 14:32 AST", channels: "2 channels · triggered 4 times", st: "attention" },
+    { name: "Order volume anomaly", condition: "Triggers when hourly orders deviate more than 3σ from the seasonal baseline.", evaluated: "Evaluated 14:30 AST", channels: "1 channel · triggered 0 times", st: "ok" },
+    { name: "Warehouse feed freshness", condition: "Triggers when inventory.stock_levels has not refreshed for 6 hours.", evaluated: "Evaluated 14:00 AST", channels: "3 channels · triggered 1 time", st: "ok" },
+    { name: "Gross margin floor", condition: "Triggers when weekly gross margin falls below 32% of net revenue.", evaluated: "Evaluated 09:00 AST", channels: "2 channels · triggered 2 times", st: "paused" },
+    { name: "Refund spike, Central", condition: "Triggers when daily refunds exceed 2.5% of daily revenue.", evaluated: "Evaluated 14:32 AST", channels: "1 channel · triggered 7 times", st: "attention" }
+  ],
+  deliveries: [
+    { name: "Executive weekly", target: "Sales summary & forecast · PDF", schedule: "Mondays at 07:00", recipients: "12 recipients", last: "04 Aug, 07:00", st: "active" },
+    { name: "Regional pack", target: "Revenue by region · XLSX", schedule: "Day 1 of each month at 06:30", recipients: "8 recipients", last: "01 Aug, 06:30", st: "active" },
+    { name: "Ops daily digest", target: "Pipeline health · Email", schedule: "Daily at 08:15", recipients: "24 recipients", last: "08 Aug, 08:15", st: "active" },
+    { name: "Finance close pack", target: "Q3 revenue review · PDF", schedule: "Manual", recipients: "5 recipients", last: "31 Jul, 18:40", st: "paused" },
+    { name: "Warehouse webhook", target: "Inventory turnover · Webhook", schedule: "Daily at 23:00", recipients: "1 endpoint", last: "07 Aug, 23:00", st: "failed" }
+  ],
+  runs: [
+    { request: "Build an executive sales dashboard with a 90-day forecast", duration: "4.2s", tokens: "7,412", started: "14:32:08", st: "succeeded" },
+    { request: "What is total revenue by region for last quarter?", duration: "1.8s", tokens: "2,140", started: "14:28:51", st: "succeeded" },
+    { request: "Show the top 10 customers by revenue this year", duration: "2.1s", tokens: "2,880", started: "14:21:03", st: "succeeded" },
+    { request: "Alert me when daily revenue drops 15% below the 7-day average", duration: "3.4s", tokens: "4,015", started: "13:58:44", st: "running" },
+    { request: "Why did Northern region margin fall in July?", duration: "6.9s", tokens: "11,204", started: "13:40:12", st: "failed" },
+    { request: "Summarise the Q3 board pack and cite page numbers", duration: "5.1s", tokens: "9,330", started: "13:12:37", st: "succeeded" }
+  ],
+  runRequest: "Build an executive sales dashboard with a 90-day forecast",
+  runSteps: [
+    { name: "Account and source check", ms: "40 ms", pct: 6 },
+    { name: "Intent detection", ms: "310 ms", pct: 18 },
+    { name: "Semantic resolution", ms: "620 ms", pct: 34 },
+    { name: "Query planning", ms: "1,180 ms", pct: 62 },
+    { name: "Execution", ms: "1,640 ms", pct: 88 },
+    { name: "Narrative composition", ms: "410 ms", pct: 24 }
+  ],
+  redactionNote: "Output summaries are redacted and bounded. Aidi AI never records or displays hidden model reasoning.",
+  filterAssets: "Filter assets…", column: "Column", type: "Type", role: "Role", aiVisibility: "AI visibility",
+  visible: "Visible", hidden: "Hidden", lastSyncedValue: "Last synced 14:00 AST",
+  businessMeaning: "Business meaning",
+  businessMeaningValue: "One row per confirmed customer order, including refunds as negative net amounts. Cancelled baskets never reach this table.",
+  businessMeaningHint: "Better descriptions improve how accurately Aidi AI resolves business language.",
+  assets: [
+    { name: "sales.orders", meta: "Table · Sales · 12.4M rows", certified: true },
+    { name: "sales.regions", meta: "Table · Sales · 5 rows", certified: true },
+    { name: "sales.order_items", meta: "Table · Sales · 41.8M rows", certified: false },
+    { name: "crm.accounts", meta: "Table · Customer Success · 8.2K rows", certified: true },
+    { name: "inventory.stock_levels", meta: "Table · Inventory · 96K rows", certified: false },
+    { name: "finance.gl_entries", meta: "View · Finance · 2.1M rows", certified: false }
+  ],
+  columns: [
+    { name: "order_id", type: "bigint", role: "Primary key", vis: "Visible" },
+    { name: "order_date", type: "timestamptz", role: "Time dimension", vis: "Visible" },
+    { name: "region_id", type: "int", role: "Foreign key", vis: "Visible" },
+    { name: "net_amount", type: "numeric(14,2)", role: "Measure", vis: "Visible" },
+    { name: "customer_email", type: "text", role: "Attribute · sensitive", vis: "Hidden" },
+    { name: "discount_pct", type: "numeric(5,2)", role: "Measure", vis: "Visible" }
+  ],
+  measure: "Measure", expression: "Expression", synonyms: "Synonyms",
+  whyItMatters: "Why this matters",
+  whyItMattersBody: "The semantic layer is how Aidi AI turns business language into safe queries. Every synonym you add here makes natural-language questions more reliable.",
+  approved: "Approved", draftStatus: "Draft",
+  measures: [
+    { name: "Total Revenue", expr: "SUM(orders.net_amount)", syn: "revenue, sales, net sales", ok: true },
+    { name: "Total Profit", expr: "SUM(orders.net_amount - orders.cost)", syn: "profit, margin value", ok: true },
+    { name: "Order Count", expr: "COUNT(orders.order_id)", syn: "orders, transactions", ok: true },
+    { name: "Average Order Value", expr: "SUM(net_amount) / COUNT(order_id)", syn: "AOV, basket size", ok: true },
+    { name: "Refund Rate", expr: "SUM(refunds.amount) / SUM(net_amount)", syn: "returns rate", ok: false },
+    { name: "Gross Margin %", expr: "1 - SUM(cost) / SUM(net_amount)", syn: "margin, GM", ok: false }
+  ],
+  overview: "Overview", nodes: "Nodes", edges: "Edges", nodeTypes: "Node types",
+  nodeTypeRows: [
+    { label: "Tables", count: "3", color: "var(--e-viz-1)" },
+    { label: "Measures", count: "1", color: "var(--e-signal)" },
+    { label: "Dimensions", count: "1", color: "var(--e-viz-3)" },
+    { label: "Dashboards", count: "1", color: "var(--e-viz-2)" },
+    { label: "Alerts & deliveries", count: "2", color: "var(--e-viz-6)" }
+  ],
+  library: "Library", dropHere: "Drop a file here, or use the upload button",
+  ask: "Ask", askPlaceholder: "What were the key risks mentioned?",
+  extractedTables: "Extracted tables", colSegment: "Segment", colChange: "Change",
+  docAnswer: "The board pack names three risks: concentration in the Central region, renewal discounting above policy, and a delayed warehouse migration that keeps inventory reporting on a six-hour lag.",
+  documents: [
+    { name: "Q3 board pack.pdf", meta: "42 pages · 318 chunks" },
+    { name: "Supplier agreement 2026.docx", meta: "18 pages · 96 chunks" },
+    { name: "Warehouse migration plan.pdf", meta: "24 pages · 140 chunks" },
+    { name: "Regional pricing policy.pdf", meta: "9 pages · 52 chunks" },
+    { name: "FY26 budget.xlsx", meta: "6 sheets · 210 chunks" }
+  ],
+  citations: ["p. 4 · 0.91 score", "p. 12 · 0.88 score", "p. 27 · 0.74 score"],
+  docTable: [
+    { k: "Enterprise", q2: "184,200,000", q3: "212,480,900", chg: "+15.4%" },
+    { k: "Mid-market", q2: "142,900,000", q3: "148,930,500", chg: "+4.2%" },
+    { k: "Small business", q2: "98,400,000", q3: "94,712,300", chg: "−3.7%" },
+    { k: "Public sector", q2: "61,800,000", q3: "82,588,700", chg: "+33.6%" }
+  ],
+  dataSources: "Data sources", connectSource: "Connect source", connectedSources: "4 connected sources",
+  readOnly: "Read-only", test: "Test", sync: "Sync",
+  aiConfiguration: "AI configuration", querySafety: "Query safety",
+  sources: [
+    { name: "Production sales database", host: "postgres://sales-prod.internal:5432", st: "ok" },
+    { name: "CRM replica", host: "postgres://crm-replica.internal:5432", st: "ok" },
+    { name: "Warehouse lake", host: "trino://lake.internal:8080", st: "attention" },
+    { name: "Finance ledger", host: "mysql://ledger.internal:3306", st: "paused" }
+  ],
+  aiConfig: [
+    { k: "Provider", v: "Built-in (offline)" }, { k: "Model", v: "aidi-analyst-v2" },
+    { k: "Embeddings", v: "aidi-embed-small" }, { k: "Environment", v: "production" }
+  ],
+  safetyConfig: [
+    { k: "Row limit", v: "1,000" }, { k: "Timeout", v: "30 s" },
+    { k: "Max upload", v: "50 MB" }, { k: "Statement types", v: "SELECT only" }
+  ],
+  query: "Query", selectedFields: "Selected fields", statistics: "Statistics",
+  history: "History", alertTypes: ["Threshold", "Anomaly", "Freshness", "Threshold", "Change"],
+  lastValues: ["Last value 38,412", "Last value 1,284", "Last value 6.2 h", "Last value 31.4%", "Last value 2.9%"],
+  catalogStats: [
+    { k: "Rows", v: "12,412,880" }, { k: "Columns", v: "18" },
+    { k: "Query usage (30 d)", v: "1,284" }, { k: "Downstream assets", v: "9" }
+  ],
+  selected: [
+    { agg: "group", field: "r.region_name" }, { agg: "COUNT", field: "o.order_id" },
+    { agg: "SUM", field: "o.net_amount" }
+  ],
+  runStatLabels: { duration: "Duration", steps: "Steps", tokens: "Tokens", cost: "Est. cost" },
+  detectedIntents: "Detected intents", openConversation: "Open the conversation",
+  runIntents: ["dashboard.create", "metric.resolve", "forecast.run"],
+  runStepRows: [
+    { name: "Security agent", intent: "Account and source check", ms: "40 ms", summary: "Workspace membership and source visibility confirmed.", ok: true },
+    { name: "Planner agent", intent: "Intent detection", ms: "310 ms", summary: "Resolved to dashboard.create with a forecast sub-task.", ok: true },
+    { name: "Semantic agent", intent: "Semantic resolution", ms: "620 ms", summary: "Mapped “revenue” to Total Revenue, “90-day” to a date window.", ok: true },
+    { name: "Query agent", intent: "Query planning", ms: "1,180 ms", summary: "Four specifications validated against catalog allowlists.", ok: true },
+    { name: "Execution agent", intent: "Execution", ms: "1,640 ms", summary: "4 queries executed read-only, 12,480 rows scanned.", ok: true },
+    { name: "Narrative agent", intent: "Narrative composition", ms: "410 ms", summary: "Summary and forecast note composed from the results.", ok: true }
+  ],
+  runMeta: [{ k: "Started", v: "14:32:08" }, { k: "Finished", v: "14:32:12" }, { k: "Sources", v: "2" }],
+  colMember: "Member", colRole: "Role", colLastActive: "Last active",
+  action: "Action", actor: "Actor", resource: "Resource", outcome: "Outcome", when: "When",
+  members: [
+    { name: "Hassan Al-Otaibi", email: "hassan@demo.sa", role: "Admin", active: "2 min ago" },
+    { name: "Noura Al-Harbi", email: "noura@demo.sa", role: "Data Steward", active: "1 h ago" },
+    { name: "Faisal Al-Qahtani", email: "faisal@demo.sa", role: "Analyst", active: "yesterday" },
+    { name: "Layla Al-Dossary", email: "layla@demo.sa", role: "Viewer", active: "3 d ago" }
+  ],
+  auditRows: [
+    { action: "query.execute", actor: "Hassan Al-Otaibi", resource: "sales.orders", when: "14:32:12", st: "ok" },
+    { action: "source.sync", actor: "system", resource: "Warehouse lake", when: "14:00:04", st: "attention" },
+    { action: "dashboard.share", actor: "Noura Al-Harbi", resource: "Sales summary", when: "13:41:55", st: "ok" },
+    { action: "member.role.update", actor: "Hassan Al-Otaibi", resource: "faisal@demo.sa", when: "11:18:30", st: "ok" },
+    { action: "query.execute", actor: "Faisal Al-Qahtani", resource: "finance.gl_entries", when: "10:02:19", st: "failed" }
+  ],
+  sourceSynced: ["Synced 14:00 AST", "Synced 13:30 AST", "Sync failed 14:00 AST", "Sync paused"],
+  recentConversations: "Recent conversations", sourcesLabel: "Sources",
+  conversations: [
+    { name: "Revenue by region, last quarter", when: "2 min ago" },
+    { name: "Why did Northern margin fall in July?", when: "1 h ago" },
+    { name: "Top 10 customers this year", when: "Yesterday" },
+    { name: "Refund spike in the Central region", when: "3 d ago" }
+  ],
+  published: "Published", refreshedAgo: "Refreshed 12 min ago", refresh: "Refresh",
+  editDraft: "Edit draft", schedule: "Schedule", share: "Share", askAidi: "Ask Aidi",
+  editChart: "Edit chart", properties: "Properties", tags: "Tags",
+  dashPages: ["Summary", "Region breakdown", "Account details"],
+  dashProps: [
+    { k: "Status", v: "Published" }, { k: "Domain", v: "Sales" }, { k: "Pages", v: "3" },
+    { k: "Widgets", v: "7" }, { k: "Views", v: "1,284" }, { k: "Last refreshed", v: "14:20 AST" }
+  ],
+  dashTags: ["executive", "revenue", "forecast"],
+  chartTrend: "Monthly revenue trend", chartTrendSub: "Net revenue by month, with a 90-day forecast",
+  chartRegion: "Revenue by region", actual: "Actual", forecast: "Forecast", topCustomers: "Revenue detail",
+  dashKpis: [
+    { label: "Total revenue", value: "738.7M", delta: "+6.2% vs plan", up: true },
+    { label: "Total profit", value: "240.4M", delta: "+0.4% vs plan", up: true },
+    { label: "Total orders", value: "4,842", delta: "+11.8% YoY", up: true },
+    { label: "Average order value", value: "154.7K", delta: "−2.1% QoQ", up: false }
+  ],
+  regionBars: [
+    { label: "Central", value: "312.5M", pct: 100 }, { label: "Western", value: "196.2M", pct: 63 },
+    { label: "Eastern", value: "148.9M", pct: 48 }, { label: "Northern", value: "49.7M", pct: 16 },
+    { label: "Southern", value: "31.4M", pct: 10 }
+  ],
+  askHeadline: "How can I help you?",
+  askSub: "Ask anything about your data — in Arabic or English.",
+  askComposer: "Ask a question…", askSearch: "Search", askMode: "Ask",
+  askActions: [
+    { icon: "layout-dashboard", label: "Build a dashboard" },
+    { icon: "table", label: "Explore a dataset" },
+    { icon: "calendar-clock", label: "Schedule a report" },
+    { icon: "bell", label: "Set an alert" }
+  ],
+  separateTemplate: "Templated separately",
+  separateTemplateBody: "Discover and Ask Aidi have their own reference designs — see Aidi Chat Enterprise for the conversational surface and the BI dashboard template for a dashboard view."
+};
+
+const AR = {
+  workspaceName: "مساحة العمل التجريبية", search: "ابحث في اللوحات ومجموعات البيانات والتقارير…", langSwitch: "English",
+  groups: { workspace: "مساحة العمل", data: "البيانات", automation: "الأتمتة", admin: "الإدارة" },
+  nav: { discover: "استكشاف", ask: "اسأل أَيدي", dashboards: "لوحات المعلومات", reports: "التقارير",
+    dataExplorer: "مستكشف البيانات", catalog: "فهرس البيانات", semanticModels: "النماذج الدلالية",
+    lineage: "مسار البيانات", documents: "المستندات", alerts: "التنبيهات", deliveries: "عمليات الإرسال",
+    agentRuns: "عمليات الوكلاء", settings: "الإعدادات" },
+  filters: "التصفية",
+  pages: {
+    explorer: { title: "مستكشف البيانات", desc: "اطرح سؤالًا بلغة طبيعية. يخطط أَيدي استعلامًا آمنًا للقراءة فقط يمكنك مراجعته قبل تشغيله.", action: "استعلام جديد", tabs: ["الاستعلام", "السجل", "المحفوظة"] },
+    library: { title: "لوحات المعلومات", desc: "تحليل تفاعلي متعدد الصفحات قابل للتصفية.", action: "لوحة جديدة", tabs: ["كل اللوحات", "المعتمدة", "لوحاتي"] },
+    reports: { title: "التقارير", desc: "نتائج تحليلية محفوظة تتضمن السرد والأدلة والتوصيات.", action: "تشغيل تحليل", tabs: ["كل التقارير", "المجدولة", "المسودات"] },
+    alerts: { title: "التنبيهات", desc: "مراقبة الحدود والتغيّرات والحالات الشاذة وحداثة البيانات وفق جدول زمني.", action: "إنشاء بمساعدة أَيدي", tabs: ["كل التنبيهات", "يحتاج إلى انتباه", "المتوقفة"] },
+    deliveries: { title: "عمليات الإرسال", desc: "توزيع مجدول للوحات المعلومات والتقارير عبر البريد الإلكتروني وخطافات الويب.", action: "إرسال جديد", tabs: ["المجدولة", "السجل", "نقاط النهاية"] },
+    agentRuns: { title: "عمليات الوكلاء", desc: "كل طلب بلغة طبيعية، والوكلاء المستخدمون، وكيفية تنفيذه.", action: "تصدير السجل", tabs: ["كل العمليات", "الفاشلة", "قيد التشغيل"] },
+    catalog: { title: "فهرس البيانات", desc: "اختر مجموعة بيانات لمعاينة أعمدتها وصفوفها وتوثيق معناها.", action: "مزامنة الفهرس", tabs: ["الأعمدة", "معاينة البيانات", "الاستخدام"] },
+    semantic: { title: "النماذج الدلالية", desc: "المقاييس والأبعاد والعلاقات التي تمنح الجداول الخام معنى تجاريًا.", action: "إضافة مقياس", tabs: ["المقاييس", "الأبعاد", "العلاقات"] },
+    lineage: { title: "مسار البيانات", desc: "من أين يأتي كل مقياس، وكل ما يتأثر عند تغييره.", action: "إلغاء التركيز", tabs: ["الرسم البياني", "نظرة عامة", "الوصلات"] },
+    documents: { title: "المستندات", desc: "ارفع التقارير وجداول البيانات، ثم اطرح أسئلة مع استشهادات على مستوى الصفحة.", action: "رفع مستند", tabs: ["المكتبة", "الاستشهادات", "الجداول المستخرجة"] },
+    settings: { title: "الإعدادات", desc: "المصادر والمستخدمون وإعدادات المنصة وسجل التدقيق.", action: "ربط مصدر", tabs: ["مصادر البيانات", "المنصة", "الأعضاء", "سجل التدقيق"] },
+    runDetail: { title: "أنشئ لوحة مبيعات تنفيذية مع توقّع لتسعين يومًا", desc: "نجح · run_8f21c04e · بدأ 14:32:08", action: "تصدير السجل", tabs: [] },
+    ask: { title: "اسأل أَيدي", desc: "", action: "", tabs: [] }
+  },
+  question: "السؤال", questionSample: "إجمالي الإيرادات حسب المنطقة للربع الماضي",
+  dataSource: "مصدر البيانات", defaultSource: "المصدر الافتراضي", planQuery: "تخطيط الاستعلام", run: "تشغيل",
+  generatedSql: "SQL المُولَّد (للقراءة فقط)", validated: "تم التحقق", results: "النتائج",
+  rowCount: "5 صفوف · 340 مللي ثانية", exportCsv: "تصدير CSV", rowRange: "الصفوف 1–5 من 5 · الحد 1,000",
+  colRegion: "المنطقة", colOrders: "الطلبات", colRevenue: "الإيرادات (ر.س)", colShare: "الحصة",
+  specification: "المواصفات", guarantees: "الضمانات",
+  spec: { dataset: "مجموعة البيانات", fields: "الحقول", joins: "الروابط", filters: "المرشّحات", limit: "الحد" },
+  safety: ["لا يتم توليد سوى عبارات SELECT.", "يتم التحقق من المعرّفات مقابل قوائم السماح في الفهرس.",
+    "كل قيمة حرفية تُمرَّر كمعامل مرتبط.", "تفرض المنصة حدود الصفوف والوقت.",
+    "الأعمدة المخفية والحساسة غير متاحة للمساعد."],
+  regions: ["الوسطى", "الغربية", "الشرقية", "الشمالية", "الجنوبية"],
+  certified: "معتمد", draft: "مسودة",
+  dashboards: [
+    { name: "ملخّص المبيعات والتوقّعات", owner: "حسن العتيبي", updated: "حُدِّثت قبل ساعتين", views: "1,284 مشاهدة" },
+    { name: "الإيرادات حسب المنطقة", owner: "منصّة البيانات", updated: "حُدِّثت أمس", views: "946 مشاهدة" },
+    { name: "احتفاظ العملاء", owner: "نورة الحربي", updated: "حُدِّثت قبل 3 أيام", views: "612 مشاهدة" },
+    { name: "صحة خط المبيعات", owner: "عمليات الإيرادات", updated: "حُدِّثت قبل 4 أيام", views: "480 مشاهدة" },
+    { name: "دوران المخزون", owner: "سلسلة الإمداد", updated: "حُدِّثت قبل 6 أيام", views: "318 مشاهدة" },
+    { name: "حِمل الدعم", owner: "نجاح العملاء", updated: "حُدِّثت قبل أسبوع", views: "204 مشاهدة" }
+  ],
+  allReports: "كل التقارير", narrative: "السرد", evidence: "الأدلة", recommendations: "التوصيات",
+  reports: [
+    { name: "مراجعة إيرادات الربع الثالث", meta: "حُفظ 12 أغسطس · 6 أقسام" },
+    { name: "أسباب فقدان العملاء — الفئة المؤسسية", meta: "حُفظ 09 أغسطس · 4 أقسام" },
+    { name: "تدقيق دقة التوقّعات", meta: "حُفظ 02 أغسطس · 5 أقسام" },
+    { name: "تحليل معمّق للمنطقة الوسطى", meta: "حُفظ 28 يوليو · 7 أقسام" },
+    { name: "أثر سياسة الخصومات", meta: "حُفظ 21 يوليو · 3 أقسام" }
+  ],
+  reportTitle: "مراجعة إيرادات الربع الثالث",
+  reportBody1: "أغلقت الإيرادات الربع عند 738.7 مليون ريال، بزيادة 6.2% عن الخطة و11.4% عن الربع المماثل من العام الماضي. جاء النمو بالكامل تقريبًا من المنطقة الوسطى، حيث أضافت الفئة المؤسسية 34 حسابًا.",
+  reportBody2: "لم تتبع الأرباح الوتيرة نفسها. ارتفعت الخصومات على التجديدات من 8.1% إلى 12.6% من قيمة العقد، ما أبقى الهامش ثابتًا رغم نمو الإيرادات.",
+  evidenceRows: [
+    { k: "إجمالي الإيرادات", v: "738,712,400", note: "+6.2% عن الخطة" },
+    { k: "إجمالي الأرباح", v: "240,418,900", note: "+0.4% عن الخطة" },
+    { k: "حسابات مؤسسية جديدة", v: "34", note: "المنطقة الوسطى" },
+    { k: "متوسط الخصم", v: "12.6%", note: "ارتفاعًا من 8.1%" }
+  ],
+  recommendations: [
+    "تحديد سقف خصم التجديد عند 10% دون موافقة مدير المنطقة.",
+    "إعادة التوقّع للربع الرابع على معدّل المنطقة الوسطى الفعلي، لا على منحنى الخطة.",
+    "مراجعة الحسابات الاثني عشر التي تتجاوز خصوماتها 20% قبل فتح التجديد."
+  ],
+  evaluate: "تقييم", pause: "إيقاف مؤقت", resume: "استئناف", sendNow: "إرسال الآن",
+  request: "الطلب", duration: "المدة", tokens: "الرموز", started: "البداية",
+  runDetails: "تفاصيل التشغيل", executionTimeline: "الجدول الزمني للتنفيذ", estimatedCost: "التكلفة التقديرية (ر.س)",
+  colStatus: "الحالة", colDelivery: "عملية الإرسال", colSchedule: "الجدولة", colRecipients: "المستلمون", colLastSent: "آخر إرسال",
+  status: { ok: "سليم", attention: "يحتاج إلى انتباه", paused: "متوقف", failed: "فشل", succeeded: "نجح", running: "قيد التشغيل", active: "نشط" },
+  alerts: [
+    { name: "انخفاض الإيرادات اليومية", condition: "يتم التفعيل عندما تنخفض القيمة أكثر من 15% عن متوسط سبعة أيام.", evaluated: "آخر تقييم 14:32", channels: "قناتان · تم تفعيله 4 مرات", st: "attention" },
+    { name: "شذوذ في حجم الطلبات", condition: "يتم التفعيل عند انحراف الطلبات بالساعة أكثر من 3σ عن الأساس الموسمي.", evaluated: "آخر تقييم 14:30", channels: "قناة واحدة · لم يتم تفعيله", st: "ok" },
+    { name: "حداثة تغذية المستودع", condition: "يتم التفعيل عندما لا تُحدَّث inventory.stock_levels لمدة 6 ساعات.", evaluated: "آخر تقييم 14:00", channels: "3 قنوات · تم تفعيله مرة واحدة", st: "ok" },
+    { name: "الحد الأدنى لهامش الربح", condition: "يتم التفعيل عندما يقل الهامش الأسبوعي عن 32% من صافي الإيرادات.", evaluated: "آخر تقييم 09:00", channels: "قناتان · تم تفعيله مرتين", st: "paused" },
+    { name: "ارتفاع المرتجعات — الوسطى", condition: "يتم التفعيل عندما تتجاوز المرتجعات اليومية 2.5% من الإيرادات اليومية.", evaluated: "آخر تقييم 14:32", channels: "قناة واحدة · تم تفعيله 7 مرات", st: "attention" }
+  ],
+  deliveries: [
+    { name: "الحزمة التنفيذية الأسبوعية", target: "ملخّص المبيعات والتوقّعات · PDF", schedule: "الاثنين في 07:00", recipients: "12 مستلمًا", last: "04 أغسطس، 07:00", st: "active" },
+    { name: "حزمة المناطق", target: "الإيرادات حسب المنطقة · XLSX", schedule: "اليوم 1 من كل شهر في 06:30", recipients: "8 مستلمين", last: "01 أغسطس، 06:30", st: "active" },
+    { name: "ملخّص العمليات اليومي", target: "صحة خط المبيعات · بريد", schedule: "يوميًا في 08:15", recipients: "24 مستلمًا", last: "08 أغسطس، 08:15", st: "active" },
+    { name: "حزمة الإقفال المالي", target: "مراجعة إيرادات الربع الثالث · PDF", schedule: "يدوي", recipients: "5 مستلمين", last: "31 يوليو، 18:40", st: "paused" },
+    { name: "خطاف المستودع", target: "دوران المخزون · Webhook", schedule: "يوميًا في 23:00", recipients: "نقطة نهاية واحدة", last: "07 أغسطس، 23:00", st: "failed" }
+  ],
+  runs: [
+    { request: "أنشئ لوحة مبيعات تنفيذية مع توقّع لتسعين يومًا", duration: "4.2 ث", tokens: "7,412", started: "14:32:08", st: "succeeded" },
+    { request: "ما إجمالي الإيرادات حسب المنطقة للربع الماضي؟", duration: "1.8 ث", tokens: "2,140", started: "14:28:51", st: "succeeded" },
+    { request: "اعرض أعلى 10 عملاء بالإيرادات هذا العام", duration: "2.1 ث", tokens: "2,880", started: "14:21:03", st: "succeeded" },
+    { request: "نبّهني عند انخفاض الإيرادات اليومية 15% عن متوسط سبعة أيام", duration: "3.4 ث", tokens: "4,015", started: "13:58:44", st: "running" },
+    { request: "لماذا انخفض هامش المنطقة الشمالية في يوليو؟", duration: "6.9 ث", tokens: "11,204", started: "13:40:12", st: "failed" },
+    { request: "لخّص حزمة مجلس الإدارة للربع الثالث مع أرقام الصفحات", duration: "5.1 ث", tokens: "9,330", started: "13:12:37", st: "succeeded" }
+  ],
+  runRequest: "أنشئ لوحة مبيعات تنفيذية مع توقّع لتسعين يومًا",
+  runSteps: [
+    { name: "التحقّق من الحساب والمصادر", ms: "40 م.ث", pct: 6 },
+    { name: "اكتشاف النية", ms: "310 م.ث", pct: 18 },
+    { name: "الحل الدلالي", ms: "620 م.ث", pct: 34 },
+    { name: "تخطيط الاستعلام", ms: "1,180 م.ث", pct: 62 },
+    { name: "التنفيذ", ms: "1,640 م.ث", pct: 88 },
+    { name: "تكوين السرد", ms: "410 م.ث", pct: 24 }
+  ],
+  redactionNote: "ملخّصات المخرجات محجوبة ومحدودة. لا يسجّل أَيدي أو يعرض أي استدلال داخلي للنموذج.",
+  filterAssets: "تصفية الأصول…", column: "العمود", type: "النوع", role: "الدور", aiVisibility: "ظهور للذكاء الاصطناعي",
+  visible: "ظاهر", hidden: "مخفي", lastSyncedValue: "آخر مزامنة 14:00",
+  businessMeaning: "المعنى التجاري",
+  businessMeaningValue: "صف واحد لكل طلب عميل مؤكَّد، وتُسجَّل المرتجعات كمبالغ صافية سالبة. السلات الملغاة لا تصل إلى هذا الجدول.",
+  businessMeaningHint: "الأوصاف الأفضل تُحسّن دقة أَيدي في ربط لغة الأعمال بالبيانات.",
+  assets: [
+    { name: "sales.orders", meta: "جدول · المبيعات · 12.4M صف", certified: true },
+    { name: "sales.regions", meta: "جدول · المبيعات · 5 صفوف", certified: true },
+    { name: "sales.order_items", meta: "جدول · المبيعات · 41.8M صف", certified: false },
+    { name: "crm.accounts", meta: "جدول · نجاح العملاء · 8.2K صف", certified: true },
+    { name: "inventory.stock_levels", meta: "جدول · المخزون · 96K صف", certified: false },
+    { name: "finance.gl_entries", meta: "عرض · المالية · 2.1M صف", certified: false }
+  ],
+  columns: [
+    { name: "order_id", type: "bigint", role: "مفتاح أساسي", vis: "ظاهر" },
+    { name: "order_date", type: "timestamptz", role: "بُعد زمني", vis: "ظاهر" },
+    { name: "region_id", type: "int", role: "مفتاح خارجي", vis: "ظاهر" },
+    { name: "net_amount", type: "numeric(14,2)", role: "مقياس", vis: "ظاهر" },
+    { name: "customer_email", type: "text", role: "سمة · حسّاس", vis: "مخفي" },
+    { name: "discount_pct", type: "numeric(5,2)", role: "مقياس", vis: "ظاهر" }
+  ],
+  measure: "المقياس", expression: "التعبير", synonyms: "المرادفات",
+  whyItMatters: "لماذا هذا مهم",
+  whyItMattersBody: "الطبقة الدلالية هي ما يحوّل لغة الأعمال إلى استعلامات آمنة. كل مرادف تضيفه هنا يجعل الأسئلة بلغة طبيعية أكثر دقة.",
+  approved: "معتمد", draftStatus: "مسودة",
+  measures: [
+    { name: "إجمالي الإيرادات", expr: "SUM(orders.net_amount)", syn: "الإيرادات، المبيعات، صافي المبيعات", ok: true },
+    { name: "إجمالي الأرباح", expr: "SUM(orders.net_amount - orders.cost)", syn: "الأرباح، قيمة الهامش", ok: true },
+    { name: "عدد الطلبات", expr: "COUNT(orders.order_id)", syn: "الطلبات، المعاملات", ok: true },
+    { name: "متوسط قيمة الطلب", expr: "SUM(net_amount) / COUNT(order_id)", syn: "متوسط السلة", ok: true },
+    { name: "معدّل المرتجعات", expr: "SUM(refunds.amount) / SUM(net_amount)", syn: "نسبة الإرجاع", ok: false },
+    { name: "هامش الربح الإجمالي %", expr: "1 - SUM(cost) / SUM(net_amount)", syn: "الهامش", ok: false }
+  ],
+  overview: "نظرة عامة", nodes: "العقد", edges: "الوصلات", nodeTypes: "أنواع العقد",
+  nodeTypeRows: [
+    { label: "الجداول", count: "3", color: "var(--e-viz-1)" },
+    { label: "المقاييس", count: "1", color: "var(--e-signal)" },
+    { label: "الأبعاد", count: "1", color: "var(--e-viz-3)" },
+    { label: "لوحات المعلومات", count: "1", color: "var(--e-viz-2)" },
+    { label: "التنبيهات وعمليات الإرسال", count: "2", color: "var(--e-viz-6)" }
+  ],
+  library: "المكتبة", dropHere: "أفلت ملفًا هنا، أو استخدم زر الرفع",
+  ask: "اسأل", askPlaceholder: "ما المخاطر الرئيسية المذكورة؟",
+  extractedTables: "الجداول المستخرجة", colSegment: "الشريحة", colChange: "التغيّر",
+  docAnswer: "تذكر حزمة مجلس الإدارة ثلاثة مخاطر: تركّز الأعمال في المنطقة الوسطى، وخصومات التجديد التي تتجاوز السياسة، وتأخّر ترحيل المستودع الذي يُبقي تقارير المخزون متأخرة ست ساعات.",
+  documents: [
+    { name: "حزمة مجلس الإدارة — الربع الثالث.pdf", meta: "42 صفحة · 318 مقطعًا" },
+    { name: "اتفاقية المورّدين 2026.docx", meta: "18 صفحة · 96 مقطعًا" },
+    { name: "خطة ترحيل المستودع.pdf", meta: "24 صفحة · 140 مقطعًا" },
+    { name: "سياسة التسعير الإقليمية.pdf", meta: "9 صفحات · 52 مقطعًا" },
+    { name: "ميزانية 2026.xlsx", meta: "6 أوراق · 210 مقاطع" }
+  ],
+  citations: ["ص. 4 · درجة 0.91", "ص. 12 · درجة 0.88", "ص. 27 · درجة 0.74"],
+  docTable: [
+    { k: "المؤسسات", q2: "184,200,000", q3: "212,480,900", chg: "+15.4%" },
+    { k: "السوق المتوسط", q2: "142,900,000", q3: "148,930,500", chg: "+4.2%" },
+    { k: "الأعمال الصغيرة", q2: "98,400,000", q3: "94,712,300", chg: "−3.7%" },
+    { k: "القطاع الحكومي", q2: "61,800,000", q3: "82,588,700", chg: "+33.6%" }
+  ],
+  dataSources: "مصادر البيانات", connectSource: "ربط مصدر", connectedSources: "4 مصادر متصلة",
+  readOnly: "للقراءة فقط", test: "اختبار", sync: "مزامنة",
+  aiConfiguration: "إعدادات الذكاء الاصطناعي", querySafety: "أمان الاستعلامات",
+  sources: [
+    { name: "قاعدة بيانات المبيعات الإنتاجية", host: "postgres://sales-prod.internal:5432", st: "ok" },
+    { name: "نسخة CRM", host: "postgres://crm-replica.internal:5432", st: "ok" },
+    { name: "بحيرة المستودع", host: "trino://lake.internal:8080", st: "attention" },
+    { name: "دفتر الأستاذ المالي", host: "mysql://ledger.internal:3306", st: "paused" }
+  ],
+  aiConfig: [
+    { k: "المزوّد", v: "مدمج (دون اتصال)" }, { k: "النموذج", v: "aidi-analyst-v2" },
+    { k: "التضمينات", v: "aidi-embed-small" }, { k: "البيئة", v: "production" }
+  ],
+  safetyConfig: [
+    { k: "حد الصفوف", v: "1,000" }, { k: "المهلة", v: "30 ثانية" },
+    { k: "أقصى حجم رفع", v: "50 ميغابايت" }, { k: "أنواع العبارات", v: "SELECT فقط" }
+  ],
+  query: "الاستعلام", selectedFields: "الحقول المحددة", statistics: "الإحصاءات",
+  history: "السجل", alertTypes: ["حد", "شذوذ", "حداثة", "حد", "تغيّر"],
+  lastValues: ["آخر قيمة 38,412", "آخر قيمة 1,284", "آخر قيمة 6.2 ساعة", "آخر قيمة 31.4%", "آخر قيمة 2.9%"],
+  catalogStats: [
+    { k: "الصفوف", v: "12,412,880" }, { k: "الأعمدة", v: "18" },
+    { k: "الاستخدام (30 يومًا)", v: "1,284" }, { k: "الأصول التابعة", v: "9" }
+  ],
+  selected: [
+    { agg: "group", field: "r.region_name" }, { agg: "COUNT", field: "o.order_id" },
+    { agg: "SUM", field: "o.net_amount" }
+  ],
+  runStatLabels: { duration: "المدة", steps: "الخطوات", tokens: "الرموز", cost: "التكلفة التقديرية" },
+  detectedIntents: "النوايا المكتشفة", openConversation: "فتح المحادثة",
+  runIntents: ["dashboard.create", "metric.resolve", "forecast.run"],
+  runStepRows: [
+    { name: "وكيل الأمان", intent: "التحقّق من الحساب والمصادر", ms: "40 م.ث", summary: "تم تأكيد العضوية في مساحة العمل وظهور المصادر.", ok: true },
+    { name: "وكيل التخطيط", intent: "اكتشاف النية", ms: "310 م.ث", summary: "تم تحديد dashboard.create مع مهمة فرعية للتوقّع.", ok: true },
+    { name: "الوكيل الدلالي", intent: "الحل الدلالي", ms: "620 م.ث", summary: "رُبطت «الإيرادات» بإجمالي الإيرادات، و«90 يومًا» بنافذة زمنية.", ok: true },
+    { name: "وكيل الاستعلام", intent: "تخطيط الاستعلام", ms: "1,180 م.ث", summary: "تم التحقق من أربع مواصفات مقابل قوائم السماح.", ok: true },
+    { name: "وكيل التنفيذ", intent: "التنفيذ", ms: "1,640 م.ث", summary: "نُفِّذت 4 استعلامات للقراءة فقط، وفُحص 12,480 صفًا.", ok: true },
+    { name: "وكيل السرد", intent: "تكوين السرد", ms: "410 م.ث", summary: "صيغ الملخّص وملاحظة التوقّع من النتائج.", ok: true }
+  ],
+  runMeta: [{ k: "البداية", v: "14:32:08" }, { k: "النهاية", v: "14:32:12" }, { k: "المصادر", v: "2" }],
+  colMember: "العضو", colRole: "الدور", colLastActive: "آخر نشاط",
+  action: "الإجراء", actor: "المنفّذ", resource: "المورد", outcome: "النتيجة", when: "الوقت",
+  members: [
+    { name: "حسن العتيبي", email: "hassan@demo.sa", role: "مدير", active: "قبل دقيقتين" },
+    { name: "نورة الحربي", email: "noura@demo.sa", role: "أمين بيانات", active: "قبل ساعة" },
+    { name: "فيصل القحطاني", email: "faisal@demo.sa", role: "محلل", active: "أمس" },
+    { name: "ليلى الدوسري", email: "layla@demo.sa", role: "مشاهد", active: "قبل 3 أيام" }
+  ],
+  auditRows: [
+    { action: "query.execute", actor: "حسن العتيبي", resource: "sales.orders", when: "14:32:12", st: "ok" },
+    { action: "source.sync", actor: "النظام", resource: "بحيرة المستودع", when: "14:00:04", st: "attention" },
+    { action: "dashboard.share", actor: "نورة الحربي", resource: "ملخّص المبيعات", when: "13:41:55", st: "ok" },
+    { action: "member.role.update", actor: "حسن العتيبي", resource: "faisal@demo.sa", when: "11:18:30", st: "ok" },
+    { action: "query.execute", actor: "فيصل القحطاني", resource: "finance.gl_entries", when: "10:02:19", st: "failed" }
+  ],
+  sourceSynced: ["تمت المزامنة 14:00", "تمت المزامنة 13:30", "فشلت المزامنة 14:00", "المزامنة متوقفة"],
+  recentConversations: "المحادثات الأخيرة", sourcesLabel: "المصادر",
+  conversations: [
+    { name: "الإيرادات حسب المنطقة للربع الماضي", when: "قبل دقيقتين" },
+    { name: "لماذا انخفض هامش الشمالية في يوليو؟", when: "قبل ساعة" },
+    { name: "أعلى 10 عملاء هذا العام", when: "أمس" },
+    { name: "ارتفاع المرتجعات في المنطقة الوسطى", when: "قبل 3 أيام" }
+  ],
+  published: "منشورة", refreshedAgo: "حُدِّثت قبل 12 دقيقة", refresh: "تحديث",
+  editDraft: "تحرير المسودّة", schedule: "جدولة", share: "مشاركة", askAidi: "اسأل أَيدي",
+  editChart: "تحرير الرسم", properties: "الخصائص", tags: "الوسوم",
+  dashPages: ["الملخّص", "التفصيل حسب المنطقة", "تفاصيل الحسابات"],
+  dashProps: [
+    { k: "الحالة", v: "منشورة" }, { k: "المجال", v: "المبيعات" }, { k: "الصفحات", v: "3" },
+    { k: "الودجات", v: "7" }, { k: "المشاهدات", v: "1,284" }, { k: "آخر تحديث", v: "14:20" }
+  ],
+  dashTags: ["تنفيذي", "الإيرادات", "التوقّع"],
+  chartTrend: "اتجاه الإيرادات الشهرية", chartTrendSub: "صافي الإيرادات شهريًا مع توقّع لتسعين يومًا",
+  chartRegion: "الإيرادات حسب المنطقة", actual: "الفعلي", forecast: "التوقّع", topCustomers: "تفصيل الإيرادات",
+  dashKpis: [
+    { label: "إجمالي الإيرادات", value: "738.7M", delta: "+6.2% عن الخطة", up: true },
+    { label: "إجمالي الأرباح", value: "240.4M", delta: "+0.4% عن الخطة", up: true },
+    { label: "إجمالي الطلبات", value: "4,842", delta: "+11.8% سنويًا", up: true },
+    { label: "متوسط قيمة الطلب", value: "154.7K", delta: "−2.1% ربعيًا", up: false }
+  ],
+  regionBars: [
+    { label: "الوسطى", value: "312.5M", pct: 100 }, { label: "الغربية", value: "196.2M", pct: 63 },
+    { label: "الشرقية", value: "148.9M", pct: 48 }, { label: "الشمالية", value: "49.7M", pct: 16 },
+    { label: "الجنوبية", value: "31.4M", pct: 10 }
+  ],
+  askHeadline: "كيف يمكنني مساعدتك؟",
+  askSub: "اسأل أي شيء عن بياناتك — بالعربية أو الإنجليزية.",
+  askComposer: "اطرح سؤالًا…", askSearch: "بحث", askMode: "اسأل",
+  askActions: [
+    { icon: "layout-dashboard", label: "إنشاء لوحة معلومات" },
+    { icon: "table", label: "استكشاف مجموعة بيانات" },
+    { icon: "calendar-clock", label: "جدولة تقرير" },
+    { icon: "bell", label: "إعداد تنبيه" }
+  ],
+  separateTemplate: "قالب منفصل",
+  separateTemplateBody: "لكل من الاستكشاف واسأل أَيدي تصميم مرجعي خاص — راجع قالب محادثة أَيدي للواجهة الحوارية، وقالب لوحة المعلومات لعرض اللوحات."
+};
+
+const NAV = [
+  { g: "workspace" }, { k: "ask", page: "ask", icon: "message-circle" }, { k: "discover", page: "discover", icon: "compass" },
+  { k: "dashboards", page: "library", icon: "layout-dashboard" }, { k: "reports", page: "reports", icon: "file-text" },
+  { g: "data" }, { k: "dataExplorer", page: "explorer", icon: "search" }, { k: "catalog", page: "catalog", icon: "database" },
+  { k: "semanticModels", page: "semantic", icon: "share-2" }, { k: "lineage", page: "lineage", icon: "git-branch" },
+  { k: "documents", page: "documents", icon: "file" },
+  { g: "automation" }, { k: "alerts", page: "alerts", icon: "bell", dot: true }, { k: "deliveries", page: "deliveries", icon: "send" },
+  { k: "agentRuns", page: "agentRuns", icon: "activity" },
+  { g: "admin" }, { k: "settings", page: "settings", icon: "settings" }
+];
+
+const SPARKS = ["0,34 30,30 60,33 90,22 120,26 150,14 180,18 210,8 240,11",
+  "0,20 30,26 60,18 90,24 120,15 150,21 180,12 210,16 240,9",
+  "0,12 30,16 60,14 90,20 120,17 150,24 180,21 210,28 240,25",
+  "0,30 30,24 60,28 90,19 120,23 150,16 180,20 210,13 240,15",
+  "0,26 30,22 60,25 90,21 120,24 150,19 180,23 210,18 240,20",
+  "0,18 30,22 60,17 90,25 120,20 150,27 180,23 210,30 240,26"];
+
+class Component extends DCLogic {
+  state = { page: "ask", lang: "en", theme: "light", navOpen: false, settingsTab: 0,
+    contextOpen: true, dashboardIndex: 0 };
+
+  navStyle(active, isRtl) {
+    const base = "display:flex;align-items:center;gap:11px;padding:8px 12px;border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap;";
+    if (!active) return base + "color:var(--e-text-body);font-weight:400";
+    return base + "color:var(--e-text-strong);font-weight:800;background:var(--e-signal-tint);box-shadow:inset " +
+      (isRtl ? "-3px" : "3px") + " 0 0 var(--e-signal)";
+  }
+
+  chip(st, T) {
+    const map = {
+      ok:        { c: "var(--e-success)", bg: "var(--e-success-tint)", g: "border-radius:50%" },
+      succeeded: { c: "var(--e-success)", bg: "var(--e-success-tint)", g: "border-radius:50%" },
+      active:    { c: "var(--e-success)", bg: "var(--e-success-tint)", g: "border-radius:50%" },
+      attention: { c: "var(--e-warning)", bg: "var(--e-warn-tint)",    g: "transform:rotate(45deg)" },
+      failed:    { c: "var(--e-danger)",  bg: "var(--e-danger-tint)",  g: "transform:rotate(45deg)" },
+      paused:    { c: "var(--e-text-muted)", bg: "var(--e-fill)",      g: "width:3px;height:9px;border-radius:1px" },
+      running:   { c: "var(--e-info)",    bg: "var(--e-info-tint)",    g: "border-radius:50%;background:transparent;border:2px solid currentColor" }
+    };
+    const m = map[st] || map.ok;
+    return {
+      status: T.status[st],
+      badgeStyle: "display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;background:" + m.bg + ";color:" + m.c,
+      glyphStyle: "flex:0 0 auto;width:8px;height:8px;background:currentColor;display:inline-block;" + m.g
+    };
+  }
+
+  renderVals() {
+    const lang = this.state.lang, isRtl = lang === "ar";
+    const T = isRtl ? AR : EN;
+    const page = this.state.page;
+    const pg = page === "dashboardView"
+      ? { title: T.dashboards[this.state.dashboardIndex || 0].name, desc: "", action: "", tabs: [] }
+      : (T.pages[page] || { title: T.nav[page] || "", desc: "", action: "", tabs: [] });
+
+    const navItems = NAV.map((n, i) => n.g
+      ? { key: "g" + i, label: T.groups[n.g],
+          style: "padding:14px 12px 6px;font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-subtle)" }
+      : { key: n.k, label: T.nav[n.k], style: this.navStyle(page === n.page, isRtl),
+          icon: n.icon, dot: !!n.dot,
+          iconColor: page === n.page ? "var(--e-signal)" : "var(--e-text-muted)",
+          go: () => this.setState({ page: n.page, navOpen: false, settingsTab: 0 }) });
+
+    const tabStyle = (on) => on
+      ? "padding:0 16px 11px;font-size:13.5px;font-weight:800;color:var(--e-text-strong);box-shadow:inset 0 -2px 0 var(--e-signal);cursor:pointer;align-self:flex-end"
+      : "padding:0 16px 11px;font-size:13.5px;color:var(--e-text-muted);cursor:pointer;align-self:flex-end";
+    const ctxTabStyle = (on) => on
+      ? "display:flex;align-items:center;gap:7px;padding:0 14px;font-size:12.5px;font-weight:800;color:var(--e-text-strong);box-shadow:inset 0 -2px 0 var(--e-azure)"
+      : "display:flex;align-items:center;gap:7px;padding:0 14px;font-size:12.5px;color:var(--e-text-muted)";
+    const ctx = { explorer: [["code", T.specification], ["list-checks", T.guarantees]],
+      lineage: [["git-branch", T.overview]], catalog: [["file-text", T.businessMeaning], ["bar-chart-2", T.statistics]],
+      ask: [["message-circle", T.recentConversations], ["database", T.sourcesLabel]],
+      dashboardView: [["message-circle", T.askAidi], ["sliders-horizontal", T.editChart], ["info", T.properties]] };
+    const actionIcons = { explorer: "plus", library: "plus", reports: "sparkles", alerts: "sparkles",
+      deliveries: "plus", agentRuns: "download", catalog: "refresh-cw", semantic: "plus",
+      lineage: "x", documents: "upload", settings: "plus" };
+
+    const t = Object.assign({}, T, {
+      pageTitle: pg.title, pageDesc: pg.desc, pageAction: pg.action,
+      colRegion: T.colRegion, colOrders: T.colOrders
+    });
+
+    return {
+      lang, dir: isRtl ? "rtl" : "ltr", theme: this.state.theme,
+      themeIcon: this.state.theme === "dark" ? "sun" : "moon",
+      toggleLang: () => this.setState({ lang: isRtl ? "en" : "ar" }),
+      toggleTheme: () => this.setState({ theme: this.state.theme === "dark" ? "light" : "dark" }),
+      navOpen: this.state.navOpen,
+      toggleNav: () => this.setState({ navOpen: !this.state.navOpen }),
+      navStyle: "position:absolute;inset-block:50px 0;inset-inline-start:0;z-index:50;width:230px;background:var(--e-surface);border-inline-end:1px solid var(--e-border);box-shadow:var(--e-el-2);padding:10px;flex-direction:column;gap:2px;overflow:auto;display:" +
+        (this.state.navOpen ? "flex" : "none"),
+      scrimStyle: "position:absolute;inset:50px 0 0 0;background:rgba(7,10,75,.38);backdrop-filter:blur(3px);z-index:40;display:" +
+        (this.state.navOpen ? "block" : "none"),
+      contextStyle: "width:340px;flex:0 0 340px;border-inline-start:1px solid var(--e-border);background:var(--e-surface);flex-direction:column;overflow:hidden;display:" +
+        (ctx[page] && this.state.contextOpen ? "flex" : "none"),
+      toggleContext: () => this.setState({ contextOpen: !this.state.contextOpen }),
+      contextToggleStyle: "width:28px;height:28px;border:1px solid var(--e-border);border-radius:6px;cursor:pointer;align-items:center;justify-content:center;display:" +
+        (ctx[page] ? "flex" : "none") +
+        (this.state.contextOpen ? ";background:var(--e-signal-tint);color:var(--e-signal);border-color:var(--e-signal)" : ";background:var(--e-surface);color:var(--e-text-strong)"),
+      conversations: T.conversations.map((c, i) => Object.assign({ key: i,
+        style: "padding:10px 12px;border-radius:6px;cursor:pointer;" +
+          (i === 0 ? "background:var(--e-azure-tint);box-shadow:inset " + (isRtl ? "-2px" : "2px") + " 0 0 var(--e-azure)" : "") }, c)),
+      askSources: T.sources.slice(0, 3).map((s, i) => Object.assign({ key: i }, s, this.chip(s.st, T))),
+      isDashboardView: page === "dashboardView",
+      dashPages: T.dashPages.map((label, i) => ({ key: i, label,
+        style: i === 0
+          ? "white-space:nowrap;padding:8px 16px 11px;font-size:13.5px;font-weight:800;color:var(--e-text-strong);box-shadow:inset 0 -2px 0 var(--e-azure)"
+          : "white-space:nowrap;padding:8px 16px 11px;font-size:13.5px;color:var(--e-text-muted)" })),
+      dashProps: T.dashProps.map((r, i) => Object.assign({ key: i }, r)),
+      selectedWidgetStyle: "position:relative;grid-column:span 8;background:var(--e-surface);border:1px solid var(--e-azure);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;box-shadow:inset " +
+        (isRtl ? "-2px" : "2px") + " 0 0 var(--e-azure)",
+      widgetTools: [
+        { key: 0, icon: "mouse-pointer-2" }, { key: 1, icon: "line-chart" },
+        { key: 2, icon: "filter" }, { key: 3, icon: "sparkles" }
+      ],
+      dashTags: T.dashTags.map((label, i) => ({ key: i, label })),
+      dashKpis: T.dashKpis.map((k, i) => Object.assign({ key: i,
+        cardStyle: "grid-column:span 3;background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px" +
+          (i === 0 ? ";box-shadow:inset " + (isRtl ? "-3px" : "3px") + " 0 0 var(--e-signal)" : ""),
+        deltaStyle: "margin-top:7px;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;color:" +
+          (k.up ? "var(--e-success)" : "var(--e-danger)") }, k)),
+      regionBars: T.regionBars.map((b, i) => Object.assign({ key: i,
+        barStyle: "height:100%;width:" + b.pct + "%;border-radius:4px;background:var(--e-viz-" + (i < 2 ? "1" : i < 4 ? "2" : "3") + ")" }, b)),
+      t,
+      navItems,
+      pageActionIcon: actionIcons[page] || "plus",
+      hasPageTabs: page === "settings",
+      pageTabs: (pg.tabs || []).map((label, i) => ({ key: i, label,
+        style: tabStyle(i === this.state.settingsTab),
+        go: () => this.setState({ settingsTab: i }) })),
+      hasContext: !!ctx[page],
+      contextTabs: (ctx[page] || []).map((c, i) => ({ key: i, icon: c[0], label: c[1], style: ctxTabStyle(i === 0) })),
+      isSourcesTab: page === "settings" && this.state.settingsTab === 0,
+      isPlatformTab: page === "settings" && this.state.settingsTab === 1,
+      isMembersTab: page === "settings" && this.state.settingsTab === 2,
+      isAuditTab: page === "settings" && this.state.settingsTab === 3,
+      selectedFields: T.selected.map((f, i) => ({ key: i, agg: f.agg, field: f.field,
+        badgeStyle: "display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:4px;font-size:10.5px;font-weight:800;letter-spacing:.04em;" +
+          (f.agg === "group" ? "background:var(--e-fill);color:var(--e-text-muted)" : "background:var(--e-azure-tint);color:var(--e-link)") })),
+      catalogStats: T.catalogStats.map((r, i) => Object.assign({ key: i }, r)),
+      members: T.members.map((m, i) => Object.assign({ key: i }, m)),
+      auditRows: T.auditRows.map((r, i) => Object.assign({ key: i }, r, this.chip(r.st, T))),
+      isRunDetail: page === "runDetail",
+      runStats: [
+        { key: 0, icon: "clock", label: T.runStatLabels.duration, value: "4.2s" },
+        { key: 1, icon: "cpu", label: T.runStatLabels.steps, value: "6" },
+        { key: 2, icon: "coins", label: T.runStatLabels.tokens, value: "7,412" },
+        { key: 3, icon: "coins", label: T.runStatLabels.cost, value: "0.031" }
+      ],
+      runMeta: T.runMeta.map((r, i) => Object.assign({ key: i }, r)),
+      runIntents: T.runIntents.map((label, i) => ({ key: i, label })),
+      isExplorer: page === "explorer", isLibrary: page === "library", isReports: page === "reports",
+      isAlerts: page === "alerts", isDeliveries: page === "deliveries", isRuns: page === "agentRuns",
+      isAsk: page === "ask",
+      isElsewhere: page === "discover",
+      pageHeaderStyle: "width:100%;max-width:1400px;margin:0 auto;padding:20px 24px 0;display:" +
+        (page === "ask" || page === "dashboardView" ? "none" : "block"),
+      pageBodyStyle: page === "ask" || page === "dashboardView"
+        ? "width:100%;flex:1;display:flex;flex-direction:column"
+        : "width:100%;max-width:1400px;margin:0 auto;padding:16px 24px 28px;display:flex;flex-direction:column;gap:12px",
+      askActions: T.askActions.map((a, i) => ({ key: i, icon: a.icon, label: a.label })),
+      isCatalog: page === "catalog", isSemantic: page === "semantic", isLineage: page === "lineage",
+      isDocuments: page === "documents", isSettings: page === "settings",
+      assets: T.assets.map((a, i) => Object.assign({ key: i,
+        style: "padding:12px 14px;border-bottom:1px solid var(--e-border-hair);cursor:pointer;" +
+          (i === 0 ? "background:var(--e-azure-tint);box-shadow:inset " + (isRtl ? "-2px" : "2px") + " 0 0 var(--e-azure)" : "") }, a)),
+      columns: T.columns.map((c, i) => Object.assign({ key: i,
+        vis: c.vis, visStyle: "display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;font-size:11.5px;font-weight:800;" +
+          (c.vis === T.hidden ? "background:var(--e-fill);color:var(--e-text-muted)" : "background:var(--e-info-tint);color:var(--e-info)") }, c)),
+      measures: T.measures.map((m, i) => Object.assign({ key: i,
+        status: m.ok ? T.approved : T.draftStatus,
+        badgeStyle: "display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;font-size:12px;font-weight:800;" +
+          (m.ok ? "background:var(--e-success-tint);color:var(--e-success)" : "background:var(--e-fill);color:var(--e-text-muted)"),
+        glyphStyle: "flex:0 0 auto;width:8px;height:8px;background:currentColor;display:inline-block;" + (m.ok ? "border-radius:50%" : "width:3px;height:9px;border-radius:1px") }, m)),
+      nodeTypes: T.nodeTypeRows.map((n, i) => Object.assign({ key: i,
+        swatch: "width:10px;height:10px;border-radius:2px;display:inline-block;background:" + n.color }, n)),
+      documents: T.documents.map((d, i) => Object.assign({ key: i,
+        style: "padding:12px 16px;border-bottom:1px solid var(--e-border-hair);cursor:pointer;" +
+          (i === 0 ? "background:var(--e-azure-tint);box-shadow:inset " + (isRtl ? "-2px" : "2px") + " 0 0 var(--e-azure)" : "") }, d)),
+      citations: T.citations.map((label, i) => ({ key: i, label })),
+      docTable: T.docTable.map((r, i) => Object.assign({ key: i }, r)),
+      sources: T.sources.map((s, i) => Object.assign({ key: i, synced: T.sourceSynced[i] }, s, this.chip(s.st, T))),
+      aiConfig: T.aiConfig.map((r, i) => Object.assign({ key: i }, r)),
+      safetyConfig: T.safetyConfig.map((r, i) => Object.assign({ key: i }, r)),
+      alerts: T.alerts.map((a, i) => Object.assign({ key: i,
+        type: T.alertTypes[i], lastValue: T.lastValues[i],
+        pauseIcon: a.st === "paused" ? "play" : "pause",
+        icon: a.st === "ok" ? "check-circle-2" : a.st === "paused" ? "pause" : "zap",
+        iconStyle: "flex:0 0 auto;width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;" +
+          (a.st === "ok" ? "background:var(--e-success-tint);color:var(--e-success)"
+            : a.st === "paused" ? "background:var(--e-fill);color:var(--e-text-muted)"
+            : "background:var(--e-warn-tint);color:var(--e-warning)") }, a, this.chip(a.st, T))),
+      deliveries: T.deliveries.map((d, i) => Object.assign({ key: i }, d, this.chip(d.st, T))),
+      runs: T.runs.map((r, i) => Object.assign({ key: i,
+        go: () => this.setState({ page: "runDetail" }),
+        rowStyle: "height:52px;border-bottom:1px solid var(--e-border-hair);cursor:pointer;" +
+          (i === 0 ? "background:var(--e-azure-tint);box-shadow:inset " + (isRtl ? "-2px" : "2px") + " 0 0 var(--e-azure)" : "") }, r, this.chip(r.st, T))),
+      runSteps: T.runStepRows.map((s, i) => Object.assign({ key: i, n: String(i + 1),
+        numStyle: "flex:0 0 auto;width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;background:var(--e-success-tint);color:var(--e-success)" },
+        s, this.chip("succeeded", T))),
+      explorerRows: [
+        { key: 0, region: T.regions[0], orders: "1,284", revenue: "312,480,900", share: "42.3%" },
+        { key: 1, region: T.regions[1], orders: "962", revenue: "196,204,100", share: "26.6%" },
+        { key: 2, region: T.regions[2], orders: "744", revenue: "148,930,500", share: "20.2%" },
+        { key: 3, region: T.regions[3], orders: "318", revenue: "49,712,300", share: "6.7%" },
+        { key: 4, region: T.regions[4], orders: "246", revenue: "31,384,600", share: "4.2%" }
+      ],
+      specRows: [
+        { key: 0, k: T.spec.dataset, v: "sales.orders" },
+        { key: 1, k: T.spec.fields, v: "region_name, orders, revenue" },
+        { key: 2, k: T.spec.joins, v: "sales.regions" },
+        { key: 3, k: T.spec.filters, v: "order_date ≥ 2026-04-01" },
+        { key: 4, k: T.spec.limit, v: "1,000" }
+      ],
+      safetyPoints: T.safety.map((text, i) => ({ key: i, text })),
+      dashboards: T.dashboards.map((d, i) => Object.assign({ key: i, spark: SPARKS[i],
+        go: () => this.setState({ page: "dashboardView", dashboardIndex: i }),
+        badge: i < 3 ? T.certified : T.draft,
+        badgeStyle: "display:flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;" +
+          (i < 3 ? "background:var(--e-success-tint);color:var(--e-success)" : "background:var(--e-fill);color:var(--e-text-muted)") }, d)),
+      reports: T.reports.map((r, i) => Object.assign({ key: i,
+        style: "padding:13px 16px;border-bottom:1px solid var(--e-border-hair);cursor:pointer;" +
+          (i === 0 ? "background:var(--e-azure-tint);box-shadow:inset " + (isRtl ? "-2px" : "2px") + " 0 0 var(--e-azure)" : "") }, r)),
+      evidenceRows: T.evidenceRows.map((r, i) => Object.assign({ key: i }, r)),
+      recommendations: T.recommendations.map((text, i) => ({ key: i, n: String(i + 1), text }))
+    };
+  }
+}
+</script>
+</body>
+</html>

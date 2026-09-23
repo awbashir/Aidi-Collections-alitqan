@@ -1,0 +1,93 @@
+# CAWP (Aidi Collections) local stack
+#   docker compose up -d db redis        # infra only (API/frontend run locally)
+#   docker compose up -d                 # infra + API
+#   docker compose --profile web up -d   # + frontend dev server
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cawp-db
+    restart: unless-stopped
+    shm_size: 1gb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "101016"
+      POSTGRES_DB: mydata
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - max_connections=100
+      - -c
+      - jit=off
+    ports:
+      - "5433:5432"
+    volumes:
+      - cawp_pgdata:/var/lib/postgresql/data
+      - ./dump-mydata-202609151932.sql:/dump/mydata.dump:ro
+      - ./db:/db:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mydata"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    container_name: cawp-redis
+    restart: unless-stopped
+    # in-memory only: no RDB/AOF persistence, LRU eviction when full
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "768mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./CAWP-API
+    container_name: cawp-api
+    restart: unless-stopped
+    env_file: ./CAWP-API/.env.docker
+    ports:
+      - "9797:9797"
+      - "9798:9798"   # scratch port for testing a second gunicorn (--reload) inside the container
+    volumes:
+      - ./CAWP-API:/app
+      - cawp_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    profiles: ["web"]
+    image: node:22-alpine
+    container_name: cawp-web
+    working_dir: /app
+    command: sh -c "npm ci --no-audit --no-fund && npm run start -- --host 0.0.0.0 --port 5177"
+    environment:
+      VITE_API_URL: http://localhost:9797
+    ports:
+      - "5177:5177"
+    volumes:
+      - ./CAWP-frontend:/app
+      - cawp_node_modules:/app/node_modules
+    depends_on:
+      - api
+
+volumes:
+  cawp_pgdata:
+  cawp_uploads:
+  cawp_node_modules:

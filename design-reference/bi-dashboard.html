@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/colors.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/typography.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/effects.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/base.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/styles.css">
+<script src="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/_ds_bundle.js"></script>
+<style>
+/* Manifa V2 draws far smaller on the em square than Anodina, so one font-size
+   rendered two optical sizes. size-adjust scales outlines and metrics together —
+   Manifa cap height is 0.470em against Anodina's 0.700em; 130% takes it to 0.611em —
+   a deliberate step short of full optical parity (which would be ~150%), chosen because
+   at parity Arabic body copy overpowers the Latin around it in mixed enterprise screens.
+   Same value on both weights on purpose: a per-weight number makes a line change size
+   the moment it bolds. Arabic sizes are NOT stepped up on top of this — size-adjust
+   replaces the old per-element +1px compensation. */
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap;size-adjust:130%}
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap;size-adjust:130%}
+:root{
+  --e-page:#FFFFFF; --e-surface:#FFFFFF; --e-surface-2:#FAFCFD; --e-fill:#F2F6F8; --e-chrome:#DFEEF2;
+  --e-border:#D7E1E8; --e-border-strong:#B8C4CE; --e-border-hair:#E7EEF2;
+  --e-text-strong:#070A4B; --e-text-body:#2E3450; --e-text-muted:#6B7482; --e-text-subtle:#8A929F;
+  --e-accent-solid:#070A4B; --e-accent-hover:#14184F; --e-accent-active:#04062F;
+  --e-azure:#2F5FD6; --e-azure-tint:#EEF3FD; --e-azure-border:#B3C8F4; --e-link:#234BB0; --e-link-hover:#1A3A8A;
+  --e-signal:#FF6600; --e-signal-tint:#FFF4EC; --e-success:#0F7A52; --e-danger:#B3261E; --e-warning:#B25A00;
+  --e-danger-tint:#F9E6E4; --e-danger-border:#E9BFBB; --e-danger-text:#8F2A23;
+  --e-warn-tint:#FBEBDD; --e-warn-border:#EBD3B8; --e-warn-text:#7A431A;
+  --e-viz-4:#8FB9CE; --e-viz-6:#B2AAC4;
+  --e-el-1:0 1px 2px rgba(7,10,75,.06);
+}
+[data-theme="dark"]{
+  --e-page:#060820; --e-surface:#0C1033; --e-surface-2:#080B26; --e-fill:#141A45; --e-chrome:#141A45;
+  --e-border:#262C5E; --e-border-strong:#3A4179; --e-border-hair:#1B2049;
+  --e-text-strong:#F2F5FB; --e-text-body:#C7CDE4; --e-text-muted:#8D95B8; --e-text-subtle:#6E769B;
+  --e-accent-solid:#2F5FD6; --e-accent-hover:#4272E0; --e-accent-active:#234BB0;
+  --e-azure:#7D9DEA; --e-azure-tint:#151B47; --e-azure-border:#3A4179; --e-link:#7D9DEA; --e-link-hover:#B3C8F4;
+  --e-signal:#FF8433; --e-signal-tint:#241634; --e-success:#3FBF8F; --e-danger:#F1786E; --e-warning:#E29A55;
+  --e-danger-tint:#2E1412; --e-danger-border:#5A241F; --e-danger-text:#F0B5AF;
+  --e-warn-tint:#2B1B0C; --e-warn-border:#5A3A18; --e-warn-text:#F0C79B;
+  --e-viz-4:#8FB9CE; --e-viz-6:#B2AAC4;
+  --e-el-1:0 1px 2px rgba(0,0,0,.45);
+}
+[data-theme="dark"] img[src*="navy"]{filter:brightness(0) invert(1)}
+[lang="ar"] h1,[lang="ar"] h2,[lang="ar"] h3,[lang="ar"] h4{font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0}
+body{margin:0;background:var(--e-fill);font-family:"Anodina","Segoe UI",system-ui,sans-serif;font-weight:400;color:var(--e-text-body);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+button{font-family:inherit}
+a{color:var(--e-link);text-decoration:none}
+a:hover{color:var(--e-link-hover)}
+</style>
+</helmet>
+
+<div style="display:contents">
+<div data-theme="{{ theme }}" style="min-height:100vh;display:flex;flex-direction:column;background:var(--e-page)">
+
+  <sc-if value="{{ isEn }}" hint-placeholder-val="{{ true }}">
+  <div style="height:50px;flex:0 0 50px;background:var(--e-surface);border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:14px;padding:0 16px">
+    <button onClick="{{ toggleNav }}" style="width:32px;height:32px;border:none;background:transparent;border-radius:6px;color:var(--e-text-strong);display:flex;align-items:center;justify-content:center;cursor:pointer">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="menu" size="19" hint-size="19px,19px"></x-import>
+    </button>
+    <img src="assets/logo/aidi-wordmark-navy.svg" style="height:17px" alt="aidi">
+    <div style="width:1px;height:18px;background:var(--e-border)"></div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-muted)">Analytics</div>
+    <div style="flex:1;max-width:480px;margin:0 auto;height:32px;border:1px solid var(--e-border);border-radius:6px;display:flex;align-items:center;gap:9px;padding:0 12px;color:var(--e-text-subtle);font-size:13px">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="15" hint-size="15px,15px"></x-import>Search dashboards, datasets, reports…
+    </div>
+    <span style="width:28px;height:28px;border-radius:6px;background:var(--e-chrome);color:var(--e-text-strong);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">HO</span>
+  </div>
+
+  <sc-if value="{{ navOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeNav }}" style="position:fixed;inset:0;background:rgba(7,10,75,.38);z-index:80"></div>
+    <nav style="position:fixed;top:0;bottom:0;left:0;width:252px;background:var(--e-surface);border-right:1px solid var(--e-border);z-index:81;padding:14px;box-shadow:0 24px 60px rgba(7,10,75,.16);display:flex;flex-direction:column;gap:2px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding:0 4px">
+        <img src="assets/logo/aidi-wordmark-navy.svg" style="height:18px" alt="aidi">
+        <button onClick="{{ closeNav }}" style="margin-left:auto;width:28px;height:28px;border:none;background:transparent;border-radius:6px;color:var(--e-text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="x" size="16" hint-size="16px,16px"></x-import>
+        </button>
+      </div>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="home" size="17" hint-size="17px,17px"></x-import>Home</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-strong);background:var(--e-signal-tint);font-weight:800;box-shadow:inset 3px 0 0 var(--e-signal)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="layout-dashboard" size="17" hint-size="17px,17px"></x-import>Dashboards</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="17" hint-size="17px,17px"></x-import>Ask Aidi</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="17" hint-size="17px,17px"></x-import>Data explorer</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="file-text" size="17" hint-size="17px,17px"></x-import>Reports</a>
+      <a href="#" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><span style="display:flex;align-items:center;gap:12px"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bell" size="17" hint-size="17px,17px"></x-import>Alerts</span><span style="width:6px;height:6px;border-radius:50%;background:var(--e-signal)"></span></a>
+      <div style="height:1px;background:var(--e-border-hair);margin:8px 12px"></div>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="settings" size="17" hint-size="17px,17px"></x-import>Settings</a>
+    </nav>
+  </sc-if>
+
+  <div style="background:var(--e-surface);border-bottom:1px solid var(--e-border);padding:14px 22px 0">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:10px">
+      <h1 style="font-size:20px;font-weight:800;letter-spacing:-.018em;color:var(--e-text-strong)">Sales summary &amp; forecast</h1>
+      <span style="display:flex;color:var(--e-signal)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="star" size="15" hint-size="15px,15px"></x-import></span>
+      <button style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:1px solid var(--e-border);border-radius:6px;background:var(--e-surface);font-size:12.5px;font-weight:800;color:var(--e-text-strong);cursor:pointer">
+        <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="pencil" size="14" hint-size="14px,14px"></x-import>Edit draft
+      </button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:9px">
+        <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--e-text-muted);font-variant-numeric:tabular-nums"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="rotate-cw" size="13" hint-size="13px,13px"></x-import>Synced 10h ago</span>
+        <button style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:1px solid var(--e-border);border-radius:6px;background:var(--e-surface);font-size:12.5px;font-weight:800;color:var(--e-text-strong);cursor:pointer">
+          <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="calendar-clock" size="14" hint-size="14px,14px"></x-import>Schedule (1)
+        </button>
+        <button style="display:flex;align-items:center;gap:7px;height:30px;padding:0 13px;border:none;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">
+          <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="share-2" size="14" hint-size="14px,14px"></x-import>Share
+        </button>
+      </div>
+    </div>
+    <div style="display:flex;gap:2px;align-items:center">
+      <span style="display:flex;align-items:center;padding-right:11px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="filter" size="15" hint-size="15px,15px"></x-import></span>
+      <span style="padding:9px 14px;font-size:13.5px;font-weight:800;color:var(--e-text-strong);box-shadow:inset 0 -2px 0 var(--e-signal)">Summary</span>
+      <span style="padding:9px 14px;font-size:13.5px;color:var(--e-text-muted)">Region breakdown</span>
+      <span style="padding:9px 14px;font-size:13.5px;color:var(--e-text-muted)">Account details</span>
+    </div>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0">
+    <div style="flex:1;min-width:0;overflow:auto;padding:18px 22px 90px">
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px">
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-subtle)">Total pipeline</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:800;letter-spacing:-.022em;color:var(--e-text-strong);font-variant-numeric:tabular-nums">SAR 6.6M</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-success);font-weight:800;font-variant-numeric:tabular-nums"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="trending-up" size="13" hint-size="13px,13px"></x-import>12.4% vs last quarter</div>
+        </div>
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-subtle)">Total leads</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:800;letter-spacing:-.022em;color:var(--e-text-strong);font-variant-numeric:tabular-nums">93</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-success);font-weight:800;font-variant-numeric:tabular-nums"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="trending-up" size="13" hint-size="13px,13px"></x-import>8 this week</div>
+        </div>
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-subtle)">Average deal</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:800;letter-spacing:-.022em;color:var(--e-text-strong);font-variant-numeric:tabular-nums">SAR 45.8K</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-danger);font-weight:800;font-variant-numeric:tabular-nums"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="trending-down" size="13" hint-size="13px,13px"></x-import>2.1% vs last quarter</div>
+        </div>
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;box-shadow:inset 3px 0 0 var(--e-signal)">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-subtle)">Largest deal</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:800;letter-spacing:-.022em;color:var(--e-text-strong);font-variant-numeric:tabular-nums">SAR 82.1K</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="check-circle" size="13" hint-size="13px,13px"></x-import>Almarai · closed Apr 18</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:12px">
+
+        <div onClick="{{ pickSegments }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:300px;display:flex;flex-direction:column">
+          <sc-if value="{{ selSegments }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14px;font-weight:800;color:var(--e-text-strong);letter-spacing:-.008em">Segment breakdown</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">Pipeline by sector and region</div>
+            </div>
+            <span style="margin-left:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div style="flex:1;margin-top:14px;min-height:0;display:flex;flex-direction:column">
+            <div style="flex:1;display:flex;align-items:flex-end;gap:16px;border-bottom:1px solid var(--e-border)">
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:82%;background:var(--e-accent-solid)"></span><span style="width:11px;height:65%;background:var(--e-azure)"></span><span style="width:11px;height:98%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:51%;background:var(--e-accent-solid)"></span><span style="width:11px;height:34%;background:var(--e-azure)"></span><span style="width:11px;height:79%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:31%;background:var(--e-accent-solid)"></span><span style="width:11px;height:19%;background:var(--e-azure)"></span><span style="width:11px;height:48%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:22%;background:var(--e-accent-solid)"></span><span style="width:11px;height:20%;background:var(--e-azure)"></span><span style="width:11px;height:31%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:12%;background:var(--e-accent-solid)"></span><span style="width:11px;height:8%;background:var(--e-azure)"></span><span style="width:11px;height:21%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:14%;background:var(--e-accent-solid)"></span><span style="width:11px;height:6%;background:var(--e-azure)"></span><span style="width:11px;height:17%;background:var(--e-viz-4)"></span></div>
+            </div>
+            <div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--e-text-muted)">
+              <span style="flex:1;text-align:center">Grocery</span>
+              <span style="flex:1;text-align:center">Café</span>
+              <span style="flex:1;text-align:center">Pharmacy</span>
+              <span style="flex:1;text-align:center">Retail</span>
+              <span style="flex:1;text-align:center">Services</span>
+              <span style="flex:1;text-align:center">Bakery</span>
+            </div>
+          </div>
+        </div>
+
+        <div onClick="{{ pickTrend }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:300px;display:flex;flex-direction:column">
+          <sc-if value="{{ selTrend }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14px;font-weight:800;color:var(--e-text-strong);letter-spacing:-.008em">Deal value closed over time</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">Weekly totals by region</div>
+            </div>
+            <span style="margin-left:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div style="flex:1;margin-top:14px;min-height:0;display:flex;align-items:flex-end">
+            <svg viewBox="0 0 320 150" preserveAspectRatio="none" style="width:100%;height:100%">
+              <polygon points="0,150 0,54 45,48 90,52 135,38 180,44 225,32 270,38 320,28 320,150" fill="#070A4B"></polygon>
+              <polygon points="0,150 0,92 45,88 90,95 135,80 180,88 225,74 270,82 320,70 320,150" fill="var(--e-azure)"></polygon>
+              <polygon points="0,150 0,122 45,120 90,125 135,114 180,120 225,110 270,115 320,108 320,150" fill="var(--e-viz-4)"></polygon>
+            </svg>
+          </div>
+        </div>
+
+        <div onClick="{{ pickLeads }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:280px;display:flex;flex-direction:column">
+          <sc-if value="{{ selLeads }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14px;font-weight:800;color:var(--e-text-strong);letter-spacing:-.008em">Value by lead type</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">Share of pipeline</div>
+            </div>
+            <span style="margin-left:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div style="flex:1;margin-top:14px;min-height:0;display:flex;align-items:center;gap:20px">
+            <div style="width:118px;height:118px;border-radius:50%;flex:0 0 auto;background:conic-gradient(#070A4B 0 38%,var(--e-azure) 38% 66%,var(--e-viz-4) 66% 100%);display:flex;align-items:center;justify-content:center">
+              <div style="width:66px;height:66px;border-radius:50%;background:var(--e-surface);display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:15px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">6.6M</div><div style="font-size:9.5px;color:var(--e-text-subtle)">SAR</div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px;color:var(--e-text-body);font-variant-numeric:tabular-nums">
+              <span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:2px;background:var(--e-accent-solid);display:inline-block"></i>Inbound · 38%</span>
+              <span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:2px;background:var(--e-azure);display:inline-block"></i>Field sales · 28%</span>
+              <span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:2px;background:var(--e-viz-4);display:inline-block"></i>Referral · 34%</span>
+            </div>
+          </div>
+        </div>
+
+        <div onClick="{{ pickForecast }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:280px;display:flex;flex-direction:column">
+          <sc-if value="{{ selForecast }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14px;font-weight:800;color:var(--e-text-strong);letter-spacing:-.008em">Sales volume forecast</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">Next 30 days, 90% band</div>
+            </div>
+            <span style="margin-left:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div style="flex:1;margin-top:14px;min-height:0;display:flex;align-items:center">
+            <svg viewBox="0 0 380 150" preserveAspectRatio="none" style="width:100%;height:100%">
+              <polygon points="240,58 275,48 310,55 345,38 380,30 380,104 345,88 310,78 275,86 240,90" fill="var(--e-viz-6)" opacity=".34"></polygon>
+              <polyline points="0,132 34,124 68,128 102,112 136,118 170,100 204,108 240,74" fill="none" stroke="#070A4B" stroke-width="2.4"></polyline>
+              <polyline points="240,74 275,67 310,74 345,58 380,50" fill="none" stroke="var(--e-signal)" stroke-width="2.4" stroke-dasharray="5 4"></polyline>
+            </svg>
+          </div>
+          <div style="display:flex;gap:16px;font-size:11.5px;color:var(--e-text-muted);padding-top:8px;border-top:1px solid var(--e-border-hair)">
+            <span style="display:flex;align-items:center;gap:7px"><i style="width:14px;height:2px;background:var(--e-accent-solid);display:inline-block"></i>Actual</span>
+            <span style="display:flex;align-items:center;gap:7px"><i style="width:14px;height:2px;background:var(--e-signal);display:inline-block"></i>Forecast</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ false }}">
+      <div onMouseDown="{{ startDrag }}" style="width:5px;flex:0 0 5px;cursor:col-resize;background:var(--e-border)"></div>
+    </sc-if>
+
+    <sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ false }}">
+      <aside style="flex:0 0 auto;width:var(--aidi-panel-w,384px);background:var(--e-surface);border-left:1px solid var(--e-border);display:flex;flex-direction:column;min-height:0">
+        <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--e-border)">
+          <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ showChat }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-azure-border);background:var(--e-azure-tint);color:var(--e-link);font-size:12.5px;font-weight:800;cursor:pointer"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="14" hint-size="14px,14px"></x-import>Ask Aidi</button>
+          </sc-if>
+          <sc-if value="{{ isEdit }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ showChat }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);font-size:12.5px;font-weight:800;cursor:pointer"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="14" hint-size="14px,14px"></x-import>Ask Aidi</button>
+          </sc-if>
+          <sc-if value="{{ isEdit }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ showEdit }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-azure-border);background:var(--e-azure-tint);color:var(--e-link);font-size:12.5px;font-weight:800;cursor:pointer"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="sliders-horizontal" size="14" hint-size="14px,14px"></x-import>Edit chart</button>
+          </sc-if>
+          <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ showEdit }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);font-size:12.5px;font-weight:800;cursor:pointer"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="sliders-horizontal" size="14" hint-size="14px,14px"></x-import>Edit chart</button>
+          </sc-if>
+          <button onClick="{{ closePanel }}" style="margin-left:auto;width:28px;height:28px;border:none;background:transparent;border-radius:6px;color:var(--e-text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="x" size="15" hint-size="15px,15px"></x-import></button>
+        </div>
+
+        <div style="flex:1;overflow:auto;min-height:0">
+          <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;height:100%">
+              <div style="flex:1;overflow:auto;padding:16px 14px;display:flex;flex-direction:column;gap:16px">
+                <div style="display:flex;justify-content:flex-end">
+                  <div style="max-width:86%;background:var(--e-azure-tint);border:1px solid var(--e-azure-border);border-radius:8px 8px 2px 8px;padding:10px 13px;font-size:13.5px;color:var(--e-text-strong)">Why did average deal size drop this quarter?</div>
+                </div>
+                <div style="display:flex;gap:10px">
+                  <span style="flex:0 0 auto;width:26px;height:26px;border-radius:6px;background:var(--e-accent-solid);display:flex;align-items:center;justify-content:center;margin-top:2px"><img src="assets/logo/aidi-mark-white.svg" style="height:12px" alt=""></span>
+                  <div style="min-width:0">
+                    <p style="font-size:13.5px;line-height:1.6;color:var(--e-text-body);text-wrap:pretty">Average deal fell 2.1% because Café and Pharmacy closed more small contracts — volume rose 18% while their mean value dropped to SAR 31K. Grocery deal size is actually up 6%.</p>
+                    <div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;align-items:center">
+                      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">Source</div>
+                      <span style="display:flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:4px;background:var(--e-fill);border:1px solid var(--e-border);font-size:11.5px;font-weight:800;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="12" hint-size="12px,12px"></x-import>opportunities</span>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px">
+                      <span style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:12.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="corner-down-right" size="13" hint-size="13px,13px"></x-import>Break this down by branch</span>
+                      <span style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:12.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="13" hint-size="13px,13px"></x-import>Add as a chart to this dashboard</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style="border-top:1px solid var(--e-border);padding:12px 14px">
+                <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--e-border-strong);border-radius:6px;padding:9px 12px">
+                  <span style="flex:1;font-size:13px;color:var(--e-text-subtle)">Ask about this dashboard…</span>
+                  <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--e-accent-solid);color:#fff"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="send" size="14" hint-size="14px,14px"></x-import></span>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isEdit }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:16px 14px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">Editing</span>
+                <span style="font-size:13px;font-weight:800;color:var(--e-text-strong)">{{ selectedTitle }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label style="font-size:12px;font-weight:800;color:var(--e-text-strong)">Dataset</label>
+                <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;padding:0 12px;gap:9px;font-size:13px;color:var(--e-text-body);background:var(--e-surface)">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import>Sales by region
+                  <span style="margin-left:auto;color:var(--e-text-subtle);display:flex"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="chevron-down" size="14" hint-size="14px,14px"></x-import></span>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label style="font-size:12px;font-weight:800;color:var(--e-text-strong)">Visualization</label>
+                <div style="display:flex;gap:6px">
+                  <span style="flex:1;height:36px;border:1px solid var(--e-azure-border);background:var(--e-azure-tint);color:var(--e-link);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bar-chart-3" size="15" hint-size="15px,15px"></x-import></span>
+                  <span style="flex:1;height:36px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="line-chart" size="15" hint-size="15px,15px"></x-import></span>
+                  <span style="flex:1;height:36px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="pie-chart" size="15" hint-size="15px,15px"></x-import></span>
+                  <span style="flex:1;height:36px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="15" hint-size="15px,15px"></x-import></span>
+                </div>
+              </div>
+              <div style="height:1px;background:var(--e-border-hair)"></div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center"><label style="font-size:12px;font-weight:800;color:var(--e-text-strong)">X axis</label><span style="margin-left:auto;color:var(--e-text-subtle);display:flex"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="14" hint-size="14px,14px"></x-import></span></div>
+                <div style="height:34px;border:1px solid var(--e-border);border-radius:6px;display:flex;align-items:center;padding:0 11px;gap:8px;font-size:12.5px;color:var(--e-text-body);background:var(--e-fill)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="calendar" size="13" hint-size="13px,13px"></x-import>MONTH(order_date)</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center"><label style="font-size:12px;font-weight:800;color:var(--e-text-strong)">Y axis</label><span style="margin-left:auto;color:var(--e-text-subtle);display:flex"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="14" hint-size="14px,14px"></x-import></span></div>
+                <div style="height:34px;border:1px solid var(--e-border);border-radius:6px;display:flex;align-items:center;padding:0 11px;gap:8px;font-size:12.5px;color:var(--e-text-body);background:var(--e-fill)"><span style="font-size:10px;font-weight:800;color:var(--e-text-subtle)">1.2</span>SUM(revenue)</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="font-size:12px;font-weight:800;color:var(--e-text-strong)">Series colour</label>
+                <span style="margin-left:auto;width:24px;height:24px;border-radius:4px;background:var(--e-accent-solid);box-shadow:0 0 0 2px #fff,0 0 0 4px var(--e-azure)"></span>
+                <span style="width:24px;height:24px;border-radius:4px;background:var(--e-azure)"></span>
+                <span style="width:24px;height:24px;border-radius:4px;background:var(--e-viz-4)"></span>
+                <span style="width:24px;height:24px;border-radius:4px;background:var(--e-viz-6)"></span>
+              </div>
+              <div style="display:flex;align-items:center">
+                <label style="font-size:12px;font-weight:800;color:var(--e-text-strong)">Data labels</label>
+                <span style="margin-left:auto;width:36px;height:20px;border-radius:999px;background:var(--e-accent-solid);position:relative"><span style="position:absolute;top:3px;right:3px;width:14px;height:14px;border-radius:50%;background:var(--e-surface)"></span></span>
+              </div>
+              <div style="display:flex;align-items:center">
+                <label style="font-size:12px;font-weight:800;color:var(--e-text-strong)">Forecast</label>
+                <span style="margin-left:auto;width:36px;height:20px;border-radius:999px;background:var(--e-border);position:relative"><span style="position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--e-surface)"></span></span>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </aside>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ panelClosed }}" hint-placeholder-val="{{ true }}">
+    <button onClick="{{ showChat }}" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;height:40px;padding:0 18px;border:none;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:13.5px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px rgba(7,10,75,.22);z-index:60">
+      <img src="assets/logo/aidi-mark-white.svg" style="height:15px" alt="">Ask Aidi about this dashboard
+    </button>
+  </sc-if>
+  </sc-if>
+
+  <sc-if value="{{ isAr }}" hint-placeholder-val="{{ false }}">
+  <div dir="rtl" lang="ar" style="display:flex;flex-direction:column;flex:1;min-height:0;font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0">
+
+  <div style="height:50px;flex:0 0 50px;background:var(--e-surface);border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:14px;padding:0 16px">
+    <button onClick="{{ toggleNav }}" style="width:32px;height:32px;border:none;background:transparent;border-radius:6px;color:var(--e-text-strong);display:flex;align-items:center;justify-content:center;cursor:pointer">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="menu" size="19" hint-size="19px,19px"></x-import>
+    </button>
+    <img src="assets/logo/aidi-wordmark-navy.svg" style="height:17px" alt="أيدي">
+    <div style="width:1px;height:18px;background:var(--e-border)"></div>
+    <div style="font-size:12px;font-weight:700;color:var(--e-text-muted)">التحليلات</div>
+    <div style="flex:1;max-width:480px;margin:0 auto;height:32px;border:1px solid var(--e-border);border-radius:6px;display:flex;align-items:center;gap:9px;padding:0 12px;color:var(--e-text-subtle);font-size:13px">
+      <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="15" hint-size="15px,15px"></x-import>ابحث في اللوحات ومجموعات البيانات والتقارير…
+    </div>
+    <span style="width:28px;height:28px;border-radius:6px;background:var(--e-chrome);color:var(--e-text-strong);display:flex;align-items:center;justify-content:center;font-size:11px"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-weight:800">HO</span></span>
+  </div>
+
+  <sc-if value="{{ navOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeNav }}" style="position:fixed;inset:0;background:rgba(7,10,75,.38);z-index:80"></div>
+    <nav dir="rtl" style="position:fixed;top:0;bottom:0;right:0;width:252px;background:var(--e-surface);border-left:1px solid var(--e-border);z-index:81;padding:14px;box-shadow:0 24px 60px rgba(7,10,75,.16);display:flex;flex-direction:column;gap:2px;font-family:'Manifa V2','Noto Sans Arabic',sans-serif">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding:0 4px">
+        <img src="assets/logo/aidi-wordmark-navy.svg" style="height:18px" alt="أيدي">
+        <button onClick="{{ closeNav }}" style="margin-inline-start:auto;width:28px;height:28px;border:none;background:transparent;border-radius:6px;color:var(--e-text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="x" size="16" hint-size="16px,16px"></x-import>
+        </button>
+      </div>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="home" size="17" hint-size="17px,17px"></x-import>الرئيسية</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-strong);background:var(--e-signal-tint);font-weight:700;box-shadow:inset -3px 0 0 var(--e-signal)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="layout-dashboard" size="17" hint-size="17px,17px"></x-import>لوحات المعلومات</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="17" hint-size="17px,17px"></x-import>اسأل أيدي</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="17" hint-size="17px,17px"></x-import>مستكشف البيانات</a>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="file-text" size="17" hint-size="17px,17px"></x-import>التقارير</a>
+      <a href="#" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-body)"><span style="display:flex;align-items:center;gap:12px"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bell" size="17" hint-size="17px,17px"></x-import>التنبيهات</span><span style="width:6px;height:6px;border-radius:50%;background:var(--e-signal)"></span></a>
+      <div style="height:1px;background:var(--e-border-hair);margin:8px 12px"></div>
+      <a href="#" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;text-decoration:none;font-size:13.5px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="settings" size="17" hint-size="17px,17px"></x-import>الإعدادات</a>
+    </nav>
+  </sc-if>
+
+  <div style="background:var(--e-surface);border-bottom:1px solid var(--e-border);padding:14px 22px 0">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:10px">
+      <h1 style="font-size:20px;font-weight:700;color:var(--e-text-strong)">ملخّص المبيعات والتوقّعات</h1>
+      <span style="display:flex;color:var(--e-signal)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="star" size="15" hint-size="15px,15px"></x-import></span>
+      <button style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:1px solid var(--e-border);border-radius:6px;background:var(--e-surface);font-size:12.5px;font-weight:700;color:var(--e-text-strong);cursor:pointer;font-family:inherit">
+        <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="pencil" size="14" hint-size="14px,14px"></x-import>تحرير المسودّة
+      </button>
+      <div style="margin-inline-start:auto;display:flex;align-items:center;gap:9px">
+        <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="rotate-cw" size="13" hint-size="13px,13px"></x-import>آخر مزامنة قبل <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">10</span> ساعات</span>
+        <button style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:1px solid var(--e-border);border-radius:6px;background:var(--e-surface);font-size:12.5px;font-weight:700;color:var(--e-text-strong);cursor:pointer;font-family:inherit">
+          <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="calendar-clock" size="14" hint-size="14px,14px"></x-import>الجدولة (<span dir="ltr" style="font-family:'Anodina',sans-serif">1</span>)
+        </button>
+        <button style="display:flex;align-items:center;gap:7px;height:30px;padding:0 13px;border:none;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">
+          <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="share-2" size="14" hint-size="14px,14px"></x-import>مشاركة
+        </button>
+      </div>
+    </div>
+    <div style="display:flex;gap:2px;align-items:center">
+      <span style="display:flex;align-items:center;padding-inline-end:11px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="filter" size="15" hint-size="15px,15px"></x-import></span>
+      <span style="padding:9px 14px;font-size:13.5px;font-weight:700;color:var(--e-text-strong);box-shadow:inset 0 -2px 0 var(--e-signal)">الملخّص</span>
+      <span style="padding:9px 14px;font-size:13.5px;color:var(--e-text-muted)">التفصيل حسب المنطقة</span>
+      <span style="padding:9px 14px;font-size:13.5px;color:var(--e-text-muted)">تفاصيل الحسابات</span>
+    </div>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0">
+    <div style="flex:1;min-width:0;overflow:auto;padding:18px 22px 90px">
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px">
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px">
+          <div style="font-size:11.5px;font-weight:700;color:var(--e-text-subtle)">إجمالي خطّ الفرص</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:700;color:var(--e-text-strong);font-variant-numeric:tabular-nums"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-weight:800">6.6M</span> ﷼</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-success);font-weight:700"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="trending-up" size="13" hint-size="13px,13px"></x-import><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">12.4%</span> عن الربع الماضي</div>
+        </div>
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px">
+          <div style="font-size:11.5px;font-weight:700;color:var(--e-text-subtle)">إجمالي العملاء المحتملين</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:700;color:var(--e-text-strong)"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-weight:800;font-variant-numeric:tabular-nums">93</span></div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-success);font-weight:700"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="trending-up" size="13" hint-size="13px,13px"></x-import><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">8</span> هذا الأسبوع</div>
+        </div>
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px">
+          <div style="font-size:11.5px;font-weight:700;color:var(--e-text-subtle)">متوسّط قيمة الصفقة</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:700;color:var(--e-text-strong);font-variant-numeric:tabular-nums"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-weight:800">45.8K</span> ﷼</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-danger);font-weight:700"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="trending-down" size="13" hint-size="13px,13px"></x-import><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">2.1%</span> عن الربع الماضي</div>
+        </div>
+        <div style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;box-shadow:inset -3px 0 0 var(--e-signal)">
+          <div style="font-size:11.5px;font-weight:700;color:var(--e-text-subtle)">أكبر صفقة</div>
+          <div style="margin-top:8px;font-size:28px;font-weight:700;color:var(--e-text-strong);font-variant-numeric:tabular-nums"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-weight:800">82.1K</span> ﷼</div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="check-circle" size="13" hint-size="13px,13px"></x-import>المراعي · أُغلقت في <span dir="ltr" style="font-family:'Anodina',sans-serif">18</span> أبريل</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:12px">
+
+        <div onClick="{{ pickSegments }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:300px;display:flex;flex-direction:column">
+          <sc-if value="{{ selSegments }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14.5px;font-weight:700;color:var(--e-text-strong)">التفصيل حسب القطاع</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">خطّ الفرص حسب القطاع والمنطقة</div>
+            </div>
+            <span style="margin-inline-start:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div style="flex:1;margin-top:14px;min-height:0;display:flex;flex-direction:column">
+            <div dir="ltr" style="flex:1;display:flex;align-items:flex-end;gap:16px;border-bottom:1px solid var(--e-border)">
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:82%;background:var(--e-accent-solid)"></span><span style="width:11px;height:65%;background:var(--e-azure)"></span><span style="width:11px;height:98%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:51%;background:var(--e-accent-solid)"></span><span style="width:11px;height:34%;background:var(--e-azure)"></span><span style="width:11px;height:79%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:31%;background:var(--e-accent-solid)"></span><span style="width:11px;height:19%;background:var(--e-azure)"></span><span style="width:11px;height:48%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:22%;background:var(--e-accent-solid)"></span><span style="width:11px;height:20%;background:var(--e-azure)"></span><span style="width:11px;height:31%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:12%;background:var(--e-accent-solid)"></span><span style="width:11px;height:8%;background:var(--e-azure)"></span><span style="width:11px;height:21%;background:var(--e-viz-4)"></span></div>
+              <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%"><span style="width:11px;height:14%;background:var(--e-accent-solid)"></span><span style="width:11px;height:6%;background:var(--e-azure)"></span><span style="width:11px;height:17%;background:var(--e-viz-4)"></span></div>
+            </div>
+            <div dir="ltr" style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--e-text-muted)">
+              <span style="flex:1;text-align:center">بقالة</span>
+              <span style="flex:1;text-align:center">مقهى</span>
+              <span style="flex:1;text-align:center">صيدلية</span>
+              <span style="flex:1;text-align:center">تجزئة</span>
+              <span style="flex:1;text-align:center">خدمات</span>
+              <span style="flex:1;text-align:center">مخبز</span>
+            </div>
+          </div>
+        </div>
+
+        <div onClick="{{ pickTrend }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:300px;display:flex;flex-direction:column">
+          <sc-if value="{{ selTrend }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14.5px;font-weight:700;color:var(--e-text-strong)">قيمة الصفقات المغلقة عبر الزمن</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">إجماليات أسبوعية حسب المنطقة</div>
+            </div>
+            <span style="margin-inline-start:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div dir="ltr" style="flex:1;margin-top:14px;min-height:0;display:flex;align-items:flex-end">
+            <svg viewBox="0 0 320 150" preserveAspectRatio="none" style="width:100%;height:100%">
+              <polygon points="0,150 0,54 45,48 90,52 135,38 180,44 225,32 270,38 320,28 320,150" fill="#070A4B"></polygon>
+              <polygon points="0,150 0,92 45,88 90,95 135,80 180,88 225,74 270,82 320,70 320,150" fill="var(--e-azure)"></polygon>
+              <polygon points="0,150 0,122 45,120 90,125 135,114 180,120 225,110 270,115 320,108 320,150" fill="var(--e-viz-4)"></polygon>
+            </svg>
+          </div>
+        </div>
+
+        <div onClick="{{ pickLeads }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:280px;display:flex;flex-direction:column">
+          <sc-if value="{{ selLeads }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14.5px;font-weight:700;color:var(--e-text-strong)">القيمة حسب نوع العميل المحتمل</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">الحصّة من خطّ الفرص</div>
+            </div>
+            <span style="margin-inline-start:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div style="flex:1;margin-top:14px;min-height:0;display:flex;align-items:center;gap:20px">
+            <div style="width:118px;height:118px;border-radius:50%;flex:0 0 auto;background:conic-gradient(#070A4B 0 38%,var(--e-azure) 38% 66%,var(--e-viz-4) 66% 100%);display:flex;align-items:center;justify-content:center">
+              <div style="width:66px;height:66px;border-radius:50%;background:var(--e-surface);display:flex;flex-direction:column;align-items:center;justify-content:center"><div dir="ltr" style="font-size:14.5px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif">6.6M</div><div style="font-size:10px;color:var(--e-text-subtle)">﷼</div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px;color:var(--e-text-body)">
+              <span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:2px;background:var(--e-accent-solid);display:inline-block"></i>وارد · <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">38%</span></span>
+              <span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:2px;background:var(--e-azure);display:inline-block"></i>مبيعات ميدانية · <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">28%</span></span>
+              <span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:2px;background:var(--e-viz-4);display:inline-block"></i>إحالة · <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">34%</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div onClick="{{ pickForecast }}" style="background:var(--e-surface);border:1px solid var(--e-border);border-radius:8px;padding:16px 18px;cursor:pointer;position:relative;height:280px;display:flex;flex-direction:column">
+          <sc-if value="{{ selForecast }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:-1px;border:2px solid var(--e-azure);border-radius:8px;pointer-events:none"></div></sc-if>
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:14.5px;font-weight:700;color:var(--e-text-strong)">توقّع حجم المبيعات</div>
+              <div style="font-size:12px;color:var(--e-text-muted);margin-top:2px">الثلاثون يومًا القادمة، بنطاق ثقة <span dir="ltr" style="font-family:'Anodina',sans-serif">90%</span></div>
+            </div>
+            <span style="margin-inline-start:auto;display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="more-horizontal" size="16" hint-size="16px,16px"></x-import></span>
+          </div>
+          <div dir="ltr" style="flex:1;margin-top:14px;min-height:0;display:flex;align-items:center">
+            <svg viewBox="0 0 380 150" preserveAspectRatio="none" style="width:100%;height:100%">
+              <polygon points="240,58 275,48 310,55 345,38 380,30 380,104 345,88 310,78 275,86 240,90" fill="var(--e-viz-6)" opacity=".34"></polygon>
+              <polyline points="0,132 34,124 68,128 102,112 136,118 170,100 204,108 240,74" fill="none" stroke="#070A4B" stroke-width="2.4"></polyline>
+              <polyline points="240,74 275,67 310,74 345,58 380,50" fill="none" stroke="var(--e-signal)" stroke-width="2.4" stroke-dasharray="5 4"></polyline>
+            </svg>
+          </div>
+          <div style="display:flex;gap:16px;font-size:12px;color:var(--e-text-muted);padding-top:8px;border-top:1px solid var(--e-border-hair)">
+            <span style="display:flex;align-items:center;gap:7px"><i style="width:14px;height:2px;background:var(--e-accent-solid);display:inline-block"></i>الفعلي</span>
+            <span style="display:flex;align-items:center;gap:7px"><i style="width:14px;height:2px;background:var(--e-signal);display:inline-block"></i>المتوقّع</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ false }}">
+      <div onMouseDown="{{ startDrag }}" style="width:5px;flex:0 0 5px;cursor:col-resize;background:var(--e-border)"></div>
+    </sc-if>
+
+    <sc-if value="{{ panelOpen }}" hint-placeholder-val="{{ false }}">
+      <aside style="flex:0 0 auto;width:var(--aidi-panel-w,384px);background:var(--e-surface);border-inline-start:1px solid var(--e-border);display:flex;flex-direction:column;min-height:0">
+        <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--e-border)">
+          <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ showChat }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-azure-border);background:var(--e-azure-tint);color:var(--e-link);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="14" hint-size="14px,14px"></x-import>اسأل أيدي</button>
+          </sc-if>
+          <sc-if value="{{ isEdit }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ showChat }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="14" hint-size="14px,14px"></x-import>اسأل أيدي</button>
+          </sc-if>
+          <sc-if value="{{ isEdit }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ showEdit }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-azure-border);background:var(--e-azure-tint);color:var(--e-link);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="sliders-horizontal" size="14" hint-size="14px,14px"></x-import>تحرير الرسم</button>
+          </sc-if>
+          <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ showEdit }}" style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="sliders-horizontal" size="14" hint-size="14px,14px"></x-import>تحرير الرسم</button>
+          </sc-if>
+          <button onClick="{{ closePanel }}" style="margin-inline-start:auto;width:28px;height:28px;border:none;background:transparent;border-radius:6px;color:var(--e-text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="x" size="15" hint-size="15px,15px"></x-import></button>
+        </div>
+
+        <div style="flex:1;overflow:auto;min-height:0">
+          <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;height:100%">
+              <div style="flex:1;overflow:auto;padding:16px 14px;display:flex;flex-direction:column;gap:16px">
+                <div style="display:flex;justify-content:flex-end">
+                  <div style="max-width:86%;background:var(--e-azure-tint);border:1px solid var(--e-azure-border);border-radius:8px 8px 8px 2px;padding:10px 13px;font-size:13.5px;color:var(--e-text-strong);line-height:1.7">لماذا انخفض متوسّط قيمة الصفقة هذا الربع؟</div>
+                </div>
+                <div style="display:flex;gap:10px">
+                  <span style="flex:0 0 auto;width:26px;height:26px;border-radius:6px;background:var(--e-accent-solid);display:flex;align-items:center;justify-content:center;margin-top:2px"><img src="assets/logo/aidi-mark-white.svg" style="height:12px" alt=""></span>
+                  <div style="min-width:0">
+                    <p style="font-size:13.5px;line-height:1.75;color:var(--e-text-body);text-wrap:pretty">انخفض متوسّط الصفقة بنسبة <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">2.1%</span> لأن قطاعَي المقاهي والصيدليات أغلقا عقودًا صغيرة أكثر — ارتفع حجم الصفقات <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">18%</span> بينما نزل متوسّط قيمتها إلى <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">31K</span> ﷼. أما قطاع البقالة فمتوسّط صفقته مرتفع فعليًا بنسبة <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">6%</span>.</p>
+                    <div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap;align-items:center">
+                      <div style="font-size:11.5px;font-weight:700;color:var(--e-text-subtle)">المصدر</div>
+                      <span style="display:flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:4px;background:var(--e-fill);border:1px solid var(--e-border);font-size:11.5px;font-weight:700;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="12" hint-size="12px,12px"></x-import><span dir="ltr" style="font-family:'Anodina',sans-serif">opportunities</span></span>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px">
+                      <span style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:12.5px;color:var(--e-text-body)"><span style="display:flex;transform:scaleX(-1)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="corner-down-right" size="13" hint-size="13px,13px"></x-import></span>فصّل هذا حسب الفرع</span>
+                      <span style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:12.5px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="13" hint-size="13px,13px"></x-import>أضِفه رسمًا إلى هذه اللوحة</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style="border-top:1px solid var(--e-border);padding:12px 14px">
+                <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--e-border-strong);border-radius:6px;padding:9px 12px">
+                  <span style="flex:1;font-size:13px;color:var(--e-text-subtle)">اسأل عن هذه اللوحة…</span>
+                  <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--e-accent-solid);color:#fff;transform:scaleX(-1)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="send" size="14" hint-size="14px,14px"></x-import></span>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isEdit }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:16px 14px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:11.5px;font-weight:700;color:var(--e-text-subtle)">جارٍ تحرير</span>
+                <span style="font-size:13px;font-weight:700;color:var(--e-text-strong)">{{ selectedTitleAr }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label style="font-size:12px;font-weight:700;color:var(--e-text-strong)">مجموعة البيانات</label>
+                <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;padding:0 12px;gap:9px;font-size:13px;color:var(--e-text-body);background:var(--e-surface)">
+                  <x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import>المبيعات حسب المنطقة
+                  <span style="margin-inline-start:auto;color:var(--e-text-subtle);display:flex"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="chevron-down" size="14" hint-size="14px,14px"></x-import></span>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label style="font-size:12px;font-weight:700;color:var(--e-text-strong)">نوع الرسم</label>
+                <div style="display:flex;gap:6px">
+                  <span style="flex:1;height:36px;border:1px solid var(--e-azure-border);background:var(--e-azure-tint);color:var(--e-link);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bar-chart-3" size="15" hint-size="15px,15px"></x-import></span>
+                  <span style="flex:1;height:36px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="line-chart" size="15" hint-size="15px,15px"></x-import></span>
+                  <span style="flex:1;height:36px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="pie-chart" size="15" hint-size="15px,15px"></x-import></span>
+                  <span style="flex:1;height:36px;border:1px solid var(--e-border);background:var(--e-surface);color:var(--e-text-muted);border-radius:6px;display:flex;align-items:center;justify-content:center"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="15" hint-size="15px,15px"></x-import></span>
+                </div>
+              </div>
+              <div style="height:1px;background:var(--e-border-hair)"></div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center"><label style="font-size:12px;font-weight:700;color:var(--e-text-strong)">المحور السيني</label><span style="margin-inline-start:auto;color:var(--e-text-subtle);display:flex"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="14" hint-size="14px,14px"></x-import></span></div>
+                <div style="height:34px;border:1px solid var(--e-border);border-radius:6px;display:flex;align-items:center;padding:0 11px;gap:8px;font-size:12.5px;color:var(--e-text-body);background:var(--e-fill)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="calendar" size="13" hint-size="13px,13px"></x-import><span dir="ltr" style="font-family:'Anodina',sans-serif">MONTH(order_date)</span></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center"><label style="font-size:12px;font-weight:700;color:var(--e-text-strong)">المحور الصادي</label><span style="margin-inline-start:auto;color:var(--e-text-subtle);display:flex"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="14" hint-size="14px,14px"></x-import></span></div>
+                <div style="height:34px;border:1px solid var(--e-border);border-radius:6px;display:flex;align-items:center;padding:0 11px;gap:8px;font-size:12.5px;color:var(--e-text-body);background:var(--e-fill)"><span dir="ltr" style="font-size:10px;font-weight:800;color:var(--e-text-subtle);font-family:'Anodina',sans-serif">1.2</span><span dir="ltr" style="font-family:'Anodina',sans-serif">SUM(revenue)</span></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="font-size:12px;font-weight:700;color:var(--e-text-strong)">لون السلسلة</label>
+                <span style="margin-inline-start:auto;width:24px;height:24px;border-radius:4px;background:var(--e-accent-solid);box-shadow:0 0 0 2px #fff,0 0 0 4px var(--e-azure)"></span>
+                <span style="width:24px;height:24px;border-radius:4px;background:var(--e-azure)"></span>
+                <span style="width:24px;height:24px;border-radius:4px;background:var(--e-viz-4)"></span>
+                <span style="width:24px;height:24px;border-radius:4px;background:var(--e-viz-6)"></span>
+              </div>
+              <div style="display:flex;align-items:center">
+                <label style="font-size:12px;font-weight:700;color:var(--e-text-strong)">تسميات البيانات</label>
+                <span style="margin-inline-start:auto;width:36px;height:20px;border-radius:999px;background:var(--e-accent-solid);position:relative"><span style="position:absolute;top:3px;inset-inline-start:3px;width:14px;height:14px;border-radius:50%;background:var(--e-surface)"></span></span>
+              </div>
+              <div style="display:flex;align-items:center">
+                <label style="font-size:12px;font-weight:700;color:var(--e-text-strong)">التوقّع</label>
+                <span style="margin-inline-start:auto;width:36px;height:20px;border-radius:999px;background:var(--e-border);position:relative"><span style="position:absolute;top:3px;inset-inline-end:3px;width:14px;height:14px;border-radius:50%;background:var(--e-surface)"></span></span>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </aside>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ panelClosed }}" hint-placeholder-val="{{ true }}">
+    <button onClick="{{ showChat }}" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;height:40px;padding:0 18px;border:none;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;box-shadow:0 8px 24px rgba(7,10,75,.22);z-index:60;font-family:'Manifa V2','Noto Sans Arabic',sans-serif">
+      <img src="assets/logo/aidi-mark-white.svg" style="height:15px" alt="">اسأل أيدي عن هذه اللوحة
+    </button>
+  </sc-if>
+  </div>
+  </sc-if>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;language&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;English&quot;,&quot;العربية&quot;],&quot;default&quot;:&quot;English&quot;,&quot;tsType&quot;:&quot;\&quot;English\&quot; | \&quot;العربية\&quot;&quot;,&quot;section&quot;:&quot;Locale&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;\&quot;light\&quot; | \&quot;dark\&quot;&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = { navOpen: false, panel: null, panelW: 384, sel: "segments" };
+
+  setPanelWidth(w) {
+    document.documentElement.style.setProperty("--aidi-panel-w", w + "px");
+  }
+  componentDidMount() {
+    this.setPanelWidth(this.state.panelW);
+    this._move = (e) => {
+      if (!this._drag) return;
+      const w = Math.min(640, Math.max(300, window.innerWidth - e.clientX));
+      this.setPanelWidth(w);
+      this.setState({ panelW: w });
+    };
+    this._up = () => { this._drag = false; document.body.style.userSelect = ""; };
+    window.addEventListener("mousemove", this._move);
+    window.addEventListener("mouseup", this._up);
+  }
+  componentWillUnmount() {
+    window.removeEventListener("mousemove", this._move);
+    window.removeEventListener("mouseup", this._up);
+  }
+
+  pick(id) { this.setState({ sel: id, panel: "edit" }); }
+
+  renderVals() {
+    const s = this.state;
+    const titles = {
+      segments: "Segment breakdown",
+      trend: "Deal value closed over time",
+      leads: "Value by lead type",
+      forecast: "Sales volume forecast",
+    };
+    const titlesAr = {
+      segments: "التفصيل حسب القطاع",
+      trend: "قيمة الصفقات المغلقة عبر الزمن",
+      leads: "القيمة حسب نوع العميل المحتمل",
+      forecast: "توقّع حجم المبيعات",
+    };
+    return {
+      theme: this.props.theme ?? "light",
+      isAr: (this.props.language ?? "English") !== "English",
+      isEn: (this.props.language ?? "English") === "English",
+      selectedTitleAr: titlesAr[s.sel] || "رسم بياني",
+      navOpen: s.navOpen,
+      toggleNav: () => this.setState({ navOpen: !s.navOpen }),
+      closeNav: () => this.setState({ navOpen: false }),
+
+      selSegments: s.sel === "segments",
+      selTrend: s.sel === "trend",
+      selLeads: s.sel === "leads",
+      selForecast: s.sel === "forecast",
+      selectedTitle: titles[s.sel] || "Chart",
+      pickSegments: () => this.pick("segments"),
+      pickTrend: () => this.pick("trend"),
+      pickLeads: () => this.pick("leads"),
+      pickForecast: () => this.pick("forecast"),
+
+      panelOpen: s.panel !== null,
+      panelClosed: s.panel === null,
+      isChat: s.panel === "chat",
+      isEdit: s.panel === "edit",
+      showChat: () => this.setState({ panel: "chat" }),
+      showEdit: () => this.setState({ panel: "edit" }),
+      closePanel: () => this.setState({ panel: null }),
+
+      startDrag: (e) => { this._drag = true; document.body.style.userSelect = "none"; e.preventDefault(); },
+    };
+  }
+}
+</script>
+</body>
+</html>

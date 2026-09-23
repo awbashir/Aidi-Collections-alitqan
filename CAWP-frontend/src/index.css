@@ -1,0 +1,6 @@
+/* Aidi AI Enterprise design tokens + self-hosted Anodina / Manifa V2 faces.
+   Must come first: it declares the @font-face rules and the --e-* custom
+   properties the rest of the stylesheet chain reads. */
+@import "./assets/aidi/aidi-enterprise.css";
+@import "./assets/styles/app.css";
+@import "react-checkbox-tree/lib/react-checkbox-tree.css";

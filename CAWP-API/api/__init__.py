@@ -1,0 +1,35 @@
+"""Blueprint registry.
+
+Each module in MODULES exposes `bp = Blueprint(...)` and an optional `URL_PREFIX`.
+During development a module sets `URL_PREFIX = "/_new"` so its routes can be tested
+next to the legacy implementation still living in app.py; at integration the prefix is
+set to None and the legacy routes are deleted from app.py.
+"""
+import importlib
+import logging
+
+log = logging.getLogger("cawp.api")
+
+MODULES = [
+    "api.clients_reports",   # client lists/exports (B1)
+    "api.reports",           # comments / payments / promise-to-pay reports (B2)
+    "api.dashboard",         # dashboards (B2)
+    "api.imports",           # Excel imports + bulk actions + async jobs (C)
+]
+
+
+def register_blueprints(app):
+    for name in MODULES:
+        try:
+            mod = importlib.import_module(name)
+        except ModuleNotFoundError as e:
+            if e.name == name:      # module not written yet
+                continue
+            raise
+        bp = getattr(mod, "bp", None)
+        if bp is None:
+            continue
+        prefix = getattr(mod, "URL_PREFIX", None)
+        app.register_blueprint(bp, url_prefix=prefix)
+        log.info("registered blueprint %s (prefix=%s, %d rules)", bp.name, prefix,
+                 sum(1 for r in app.url_map.iter_rules() if r.endpoint.startswith(bp.name + ".")))

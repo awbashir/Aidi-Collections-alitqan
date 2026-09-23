@@ -1,0 +1,209 @@
+/* ApexCharts — Aidi AI Enterprise chrome.
+ *
+ * Light   grid #E7EEF2 · axis text #6B7482 11.5px tabular · legend #2E3450 12px
+ *         tooltip navy #070A4B / white / radius 6 / overlay shadow / no border
+ * Dark    grid #1B2049 · axis text #6E769B · legend #C7CDE4
+ *         tooltip #141A45 / #F2F5FB
+ *
+ * Apex writes axis colours as inline `fill` on the tspan and the tooltip fill
+ * as an inline background, so the overrides here need `!important` — that is
+ * what `@apply !...` and the explicit `!important` below are doing. */
+
+.apexcharts-canvas {
+  @apply mx-auto;
+}
+
+/* ── Grid, axis lines, ticks ────────────────────────────────────────────── */
+
+/* Horizontal only — `grid.xaxis.lines.show: false` in chart.config.ts keeps
+   the vertical rules off a time series. */
+.apexcharts-gridline {
+  @apply stroke-gray-200;
+
+  stroke-width: 1;
+}
+
+.apexcharts-grid-borders line,
+.apexcharts-xaxis line,
+.apexcharts-yaxis line {
+  @apply stroke-gray-300;
+}
+
+/* Heavier than a grid line, always drawn when values cross zero. */
+.apexcharts-zero-line,
+.apexcharts-grid line.apexcharts-gridline-zero {
+  @apply stroke-gray-400;
+
+  stroke-width: 1;
+}
+
+/* ── Text ───────────────────────────────────────────────────────────────── */
+
+/* Numerals stay Western-Arabic and tabular in both directions. */
+.apex-axis-label,
+.apexcharts-text,
+.apexcharts-title-text,
+.apexcharts-datalabel-value,
+.apexcharts-tooltip-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.apexcharts-text {
+  tspan {
+    @apply !fill-gray-600;
+  }
+}
+
+.apexcharts-xaxis-label,
+.apexcharts-yaxis-label {
+  tspan {
+    @apply !fill-gray-600;
+
+    font-size: 11.5px;
+  }
+}
+
+.apexcharts-xaxis-title text,
+.apexcharts-yaxis-title text {
+  @apply !fill-gray-600;
+}
+
+/* Donut centre — label navy 800, value muted. */
+.apexcharts-datalabel-label {
+  @apply !fill-navy-600 text-2xl font-extrabold;
+}
+
+.apexcharts-datalabel-value {
+  @apply !fill-gray-600 text-base;
+}
+
+/* ── Legend ─────────────────────────────────────────────────────────────── */
+
+.apexcharts-legend-text {
+  @apply !text-gray-700 !font-normal;
+
+  font-size: 12px !important;
+}
+
+.apexcharts-legend-marker {
+  border-radius: 2px !important;
+}
+
+/* ── Tooltip ────────────────────────────────────────────────────────────── */
+
+/* Apex cannot set the tooltip fill from options, so the whole navy treatment
+   lives here and `tooltip.theme` stays `light` to keep this selector live. */
+.apexcharts-tooltip {
+  @apply !rounded-md !border-0 !shadow-overlay;
+
+  font-family: Anodina, "Manifa V2", sans-serif;
+
+  &.apexcharts-theme-light {
+    @apply !border-0 !bg-navy-600;
+
+    color: #fff;
+    /* 8px / 10px overall: the title and the last series group each carry part
+       of it, so a multi-series tooltip keeps an even rhythm. */
+    padding-bottom: 5px;
+
+    .apexcharts-tooltip-title {
+      @apply !mb-0 !border-b-0 !bg-transparent;
+
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 800;
+      padding: 8px 10px 4px;
+    }
+
+    .apexcharts-tooltip-series-group {
+      color: #fff;
+      padding: 0 10px 3px;
+    }
+
+    .apexcharts-tooltip-text,
+    .apexcharts-tooltip-y-group,
+    .apexcharts-tooltip-goals-group,
+    .apexcharts-tooltip-z-group {
+      color: #fff;
+      font-size: 12.5px;
+    }
+  }
+}
+
+.apexcharts-tooltip-title {
+  @apply !mb-0;
+}
+
+.apexcharts-xaxistooltip {
+  @apply !opacity-0;
+}
+
+.apexcharts-menu-item {
+  @apply text-left;
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────────────── */
+
+/* The app puts `dark` on <html>; `[data-theme="dark"]` is kept as a hook for
+   scoped dark surfaces. */
+.dark,
+[data-theme="dark"] {
+  .apexcharts-gridline {
+    stroke: #1b2049;
+  }
+
+  .apexcharts-grid-borders line,
+  .apexcharts-xaxis line,
+  .apexcharts-yaxis line {
+    @apply stroke-night-border;
+  }
+
+  .apexcharts-zero-line,
+  .apexcharts-grid line.apexcharts-gridline-zero {
+    @apply stroke-night-border-strong;
+  }
+
+  .apexcharts-text tspan,
+  .apexcharts-xaxis-label tspan,
+  .apexcharts-yaxis-label tspan,
+  .apexcharts-xaxis-title text,
+  .apexcharts-yaxis-title text {
+    fill: #6e769b !important;
+  }
+
+  .apexcharts-datalabel-label {
+    @apply !fill-night-strong;
+  }
+
+  .apexcharts-datalabel-value {
+    fill: #6e769b !important;
+  }
+
+  .apexcharts-legend-text {
+    color: #c7cde4 !important;
+  }
+
+  .apexcharts-tooltip {
+    &.apexcharts-theme-light,
+    &.apexcharts-theme-dark {
+      @apply !border-0;
+
+      background: #141a45 !important;
+      color: #f2f5fb;
+
+      .apexcharts-tooltip-title {
+        @apply !border-b-0 !bg-transparent;
+
+        color: #f2f5fb;
+      }
+
+      .apexcharts-tooltip-series-group,
+      .apexcharts-tooltip-text,
+      .apexcharts-tooltip-y-group,
+      .apexcharts-tooltip-goals-group,
+      .apexcharts-tooltip-z-group {
+        color: #f2f5fb;
+      }
+    }
+  }
+}

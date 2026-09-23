@@ -1,0 +1,44 @@
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# JavaScript and frontend tooling
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+.vite-cache/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime output and local data
+*.log
+logs/
+uploads/
+backups/
+dump-*.sql
+*.dump
+*.tgz

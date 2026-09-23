@@ -1,0 +1,77 @@
+/* Fields — 36px, radius 6, 1px #B8C4CE, 12px inline padding, 14px text.
+   Focus: #2F5FD6 border + 0 0 0 2px rgba(47,95,214,.22). */
+.input {
+  @apply border
+    border-gray-400
+    bg-white
+    text-gray-700
+    dark:border-night-border-strong
+    dark:bg-transparent
+    dark:text-gray-100
+    rounded-md
+    w-full
+    py-0 px-3
+    focus:outline-none
+    appearance-none
+    transition
+    duration-fast
+    ease-aidi;
+  font-size: 14px;
+
+  &:hover:not(:disabled):not(.input-disabled) {
+    @apply border-gray-500 dark:border-night-muted;
+  }
+
+  &:focus,
+  &:focus-within {
+    @apply border-azure-500 dark:border-azure-300;
+    box-shadow: var(--e-ring-field);
+  }
+
+  &::placeholder {
+    @apply text-gray-500 dark:text-night-muted;
+  }
+
+  &.input-invalid {
+    @apply border-red-500;
+    box-shadow: 0 0 0 2px rgba(179, 38, 30, 0.18);
+  }
+
+  &.input-lg {
+    font-size: 15px;
+  }
+
+  &.input-sm {
+    font-size: 13px;
+  }
+}
+
+.input-textarea {
+  min-height: 88px;
+  @apply py-2.5 leading-normal;
+}
+
+.input-addon {
+  @apply flex items-center px-3 rounded-md border border-gray-400 bg-gray-100 text-gray-600 dark:border-night-border-strong dark:bg-night-raised dark:text-night-body;
+  font-size: 13.5px;
+}
+
+.input-wrapper {
+  @apply relative w-full flex;
+}
+
+.input-disabled {
+  @apply bg-gray-100 border-gray-300 dark:bg-night-raised dark:border-night-border text-gray-500 cursor-not-allowed;
+
+  &::placeholder {
+    @apply opacity-70;
+  }
+}
+
+.input-suffix-start {
+  @apply absolute top-2/4 transform -translate-y-2/4 ltr:left-3 rtl:right-3 text-gray-500;
+}
+
+.input-suffix-end {
+  @apply absolute top-2/4 transform -translate-y-2/4 ltr:right-3 rtl:left-3 flex text-gray-500;
+}

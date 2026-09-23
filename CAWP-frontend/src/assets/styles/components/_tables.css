@@ -1,0 +1,169 @@
+/* Data table — no zebra striping. The hairline between rows does that job.
+   Header 38px on #DFEEF2 · body rows 44px · hairline #E7EEF2 · hover #FAFCFD. */
+.table-default {
+  @apply table-auto min-w-full;
+
+  thead {
+    @apply bg-slate-150 dark:bg-night-raised;
+
+    > tr {
+      > th {
+        @apply px-5 font-extrabold uppercase
+          tracking-[0.09em] rtl:tracking-normal
+          text-navy-600 dark:text-gray-100
+          border-b border-gray-300 dark:border-night-border;
+        height: 38px;
+        font-size: 11px;
+      }
+    }
+  }
+
+  tbody {
+    > tr {
+      > td {
+        @apply px-5 border-b border-gray-200 dark:border-night-border text-gray-700 dark:text-night-body;
+        height: 44px;
+        font-size: 13.5px;
+      }
+
+      &:last-child > td {
+        @apply border-b-0;
+      }
+    }
+  }
+
+  tfoot {
+    > tr {
+      > td {
+        @apply px-5 py-3 border-t border-gray-300 dark:border-night-border bg-gray-50 dark:bg-night-page text-gray-600;
+        font-size: 12.5px;
+      }
+    }
+  }
+
+  &.borderless-row {
+    tbody > tr > td {
+      @apply border-b-0;
+    }
+  }
+}
+
+.table-flex {
+  @apply min-w-full;
+
+  .thead {
+    @apply bg-slate-150 dark:bg-night-raised;
+
+    .tr {
+      .th {
+        @apply px-5 font-extrabold uppercase
+          tracking-[0.09em] rtl:tracking-normal
+          text-navy-600 dark:text-gray-100
+          border-b border-gray-300 dark:border-night-border;
+        min-height: 38px;
+        font-size: 11px;
+      }
+    }
+  }
+
+  .tbody {
+    .tr {
+      .td {
+        @apply px-5 border-b border-gray-200 dark:border-night-border text-gray-700 dark:text-night-body;
+        min-height: 44px;
+        font-size: 13.5px;
+      }
+    }
+  }
+
+  .tfoot {
+    .tr {
+      .td {
+        @apply px-5 py-3 border-t border-gray-300 dark:border-night-border;
+        font-size: 12.5px;
+      }
+    }
+  }
+}
+
+.table-virtual {
+  > div {
+    @apply divide-y divide-gray-200 dark:divide-night-border;
+  }
+}
+
+.table-compact {
+  thead > tr > th {
+    @apply px-3;
+    height: 34px;
+  }
+
+  tbody > tr > td {
+    @apply px-3;
+    height: 38px;
+  }
+
+  .thead > .tr > .th {
+    @apply px-3;
+    min-height: 34px;
+  }
+
+  .tbody > .tr > .td {
+    @apply px-3;
+    min-height: 38px;
+  }
+}
+
+.table-hover {
+  > tbody > tr:hover > * {
+    @apply bg-gray-50 dark:bg-night-raised/60;
+  }
+
+  > .tbody > .tr:hover > * {
+    @apply bg-gray-50 dark:bg-night-raised/60;
+  }
+}
+
+/* Selection is an azure tint plus a 2px inset rail on the leading edge,
+   which flips under RTL. */
+.table-row-selected > td:first-child,
+.table-row-selected > .td:first-child {
+  box-shadow: inset 2px 0 0 #2f5fd6;
+}
+
+[dir="rtl"] .table-row-selected > td:first-child,
+[dir="rtl"] .table-row-selected > .td:first-child {
+  box-shadow: inset -2px 0 0 #2f5fd6;
+}
+
+.table-row-selected > td,
+.table-row-selected > .td {
+  @apply bg-navy-50 dark:bg-night-raised;
+}
+
+.table-resizer {
+  @apply ltr:right-0 rtl:left-0 h-full absolute top-0 z-10 ltr:border-r-2 rtl:border-l-2 border-gray-300 dark:border-night-border w-2;
+  touch-action: none;
+}
+
+/* The identifier column reads navy 800 and tabular. */
+.table-id-cell {
+  @apply font-extrabold text-navy-600 dark:text-gray-100;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Column alignment is declared once, at element specificity (0,0,1), so a
+   `text-end` / `text-center` utility from DataTable's `meta.isNumeric` (or from
+   a call site) wins on its own — no `!important` needed anywhere. `start`
+   already flips under RTL. */
+th,
+td {
+  text-align: start;
+  word-wrap: break-word;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-flex .th,
+.table-flex .td {
+  text-align: start;
+}

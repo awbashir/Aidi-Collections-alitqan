@@ -1,0 +1,221 @@
+/* Aidi AI Enterprise — design tokens
+ * Drop this in and use the custom properties. Dark theme via [data-theme="dark"].
+ * Fonts resolve relative to this file: ./fonts/
+ *
+ * Manifa V2 carries size-adjust: 130% on both weights. Manifa's cap height is 0.470em
+ * against Anodina's 0.700em, so without it one font-size renders Arabic about a third
+ * smaller than Latin. 130% lands at 0.611em — deliberately short of full parity (~150%),
+ * which overpowers the Latin around it on mixed screens. Do not ALSO step Arabic font
+ * sizes up per element; that compensation predates this descriptor and the two stack.
+ */
+
+@font-face { font-family: "Anodina"; src: url("./fonts/Anodina-Light.otf") format("opentype");     font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "Anodina"; src: url("./fonts/Anodina-Regular.otf") format("opentype");   font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Anodina"; src: url("./fonts/Anodina-ExtraBold.otf") format("opentype"); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "Manifa V2"; src: url("./fonts/Manifa-V2-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; size-adjust: 130%; }
+@font-face { font-family: "Manifa V2"; src: url("./fonts/Manifa-V2-Bold.ttf") format("truetype");    font-weight: 700; font-style: normal; font-display: swap; size-adjust: 130%; }
+
+:root {
+  /* ---- Ink (navy) ---- */
+  --e-ink-950: #04062F;  /* button active */
+  --e-ink-900: #070A4B;  /* BRAND NAVY — primary text, primary button */
+  --e-ink-800: #14184F;  /* button hover */
+  --e-ink-700: #262B6B;
+  --e-ink-600: #3B4189;
+  --e-ink-500: #565CA6;
+
+  /* ---- Azure — interactivity ---- */
+  --e-azure-50:  #EEF3FD;  /* selected row tint */
+  --e-azure-100: #D9E4FA;
+  --e-azure-200: #B3C8F4;
+  --e-azure-300: #7D9DEA;  /* dark-theme azure */
+  --e-azure-400: #5482E5;
+  --e-azure-500: #2F5FD6;  /* focus ring, active tab, selection rail */
+  --e-azure-600: #234BB0;  /* links, tertiary button text */
+  --e-azure-700: #1A3A8A;  /* link hover */
+
+  /* ---- Orange — SIGNAL ONLY. Max one per screen. ---- */
+  --e-orange-100: #FFE0CC;
+  --e-orange-500: #FF6600;
+  --e-orange-600: #E65B00;
+
+  /* ---- Neutrals ---- */
+  --e-n-0:   #FFFFFF;
+  --e-n-25:  #FAFCFD;  /* subtle row / footer fill */
+  --e-n-50:  #F2F6F8;  /* disabled fill, code blocks */
+  --e-n-100: #E7EEF2;  /* hairline border */
+  --e-n-150: #DFEEF2;  /* BRAND PALE BLUE — table headers, hover fills (NOT the side nav) */
+  --e-n-200: #D7E1E8;  /* default border */
+  --e-n-300: #B8C4CE;  /* strong border — control outlines */
+  --e-n-400: #8A929F;  /* brand slate — subtle text */
+  --e-n-500: #6B7482;  /* muted text */
+  --e-n-600: #515966;
+  --e-n-700: #3B4250;
+  --e-n-900: #221F20;  /* brand charcoal */
+
+  /* ---- Lavender (brand, illustration + chart) ---- */
+  --e-lav-300: #B2AAC4;
+  --e-lav-500: #8E86B8;
+
+  /* ---- Status — all clear 4.5:1 as text on white ---- */
+  --e-success: #0F7A52;  --e-success-tint: #E4F2EC;
+  --e-warning: #B25A00;  --e-warning-tint: #FBEBDD;
+  --e-danger:  #B3261E;  --e-danger-tint:  #F9E6E4;
+  --e-info:    #234BB0;  --e-info-tint:    #E7EDFA;
+
+  /* ---- Semantic ---- */
+  --e-bg:            #FAFCFD;  /* page fill behind white cards */
+  --e-bg-subtle:     #FAFCFD;
+  --e-bg-chrome:     #FFFFFF;  /* side nav + top bar: WHITE, split by --e-border */
+  --e-bg-tint:       #DFEEF2;  /* table headers and hover fills only */
+  --e-nav-active-bg: #FFF4EC;  /* active nav item, behind the orange rail */
+  --e-signal-tint:   #FFF4EC;
+  --e-signal-rail:   inset 3px 0 0 #FF6600;   /* LTR; use -3px under RTL */
+  --e-surface:       #FFFFFF;
+  --e-text-strong:   #070A4B;
+  --e-text-body:     #2E3450;
+  --e-text-muted:    #6B7482;
+  --e-text-subtle:   #8A929F;
+  --e-text-invert:   #FFFFFF;
+  --e-border:        #D7E1E8;
+  --e-border-strong: #B8C4CE;
+  --e-border-hair:   #E7EEF2;
+  --e-focus:         #2F5FD6;
+
+  /* ---- Elevation. 0 is the default: use a border. ---- */
+  --e-el-1: 0 1px 2px rgba(7,10,75,.06);    /* sticky headers, toolbars */
+  --e-el-2: 0 8px 24px rgba(7,10,75,.10);   /* dropdowns, popovers, tooltips */
+  --e-el-3: 0 24px 60px rgba(7,10,75,.16);  /* dialogs, side sheets */
+  --e-ring-focus: 0 0 0 2px #fff, 0 0 0 4px #2F5FD6;
+  --e-ring-field: 0 0 0 2px rgba(47,95,214,.22);
+
+  /* ---- Radius ---- */
+  --e-r-0:  0;      /* table cells, dividers, full-bleed bars */
+  --e-r-xs: 4px;    /* checkboxes, swatches, tags */
+  --e-r-sm: 6px;    /* buttons, inputs, selects, menus */
+  --e-r-md: 8px;    /* cards, panels, charts — the default */
+  --e-r-lg: 12px;   /* dialogs, sheets, popovers */
+  --e-r-pill: 999px;/* status badges and filter chips ONLY */
+
+  /* ---- Metrics ---- */
+  --e-h-control: 36px;  /* buttons, inputs, selects */
+  --e-h-control-sm: 32px;
+  --e-h-row: 44px;      /* table row + minimum touch target */
+  --e-h-row-head: 38px;
+  --e-pad-card: 20px;
+  --e-gap-section: 32px;
+
+  /* ---- Type ---- */
+  --e-font-ui: "Anodina", "Manifa V2", "Noto Sans Arabic", "Segoe UI", system-ui, sans-serif;
+  --e-font-latin: "Anodina", "Segoe UI", system-ui, sans-serif;
+  --e-font-arabic: "Manifa V2", "Noto Sans Arabic", sans-serif;
+  --e-font-mono: ui-monospace, Menlo, Consolas, monospace;
+
+  --e-fs-display: 30px; --e-lh-display: 1.2;  --e-tr-display: -0.015em;
+  --e-fs-title:   20px; --e-lh-title:   1.25; --e-tr-title:   -0.01em;
+  --e-fs-section: 13px; --e-lh-section: 1.3;  --e-tr-section:  0.1em;
+  --e-fs-body:    15px; --e-lh-body:    1.55;
+  --e-fs-small:   13.5px;
+  --e-fs-micro:   11px; --e-tr-micro:    0.12em;
+
+  /* ---- Motion ---- */
+  --e-ease: cubic-bezier(.2,.8,.2,1);
+  --e-dur-fast: 120ms; --e-dur: 200ms; --e-dur-slow: 340ms;
+
+  /* ---- Data visualisation ---- */
+  --e-viz-1: #070A4B; --e-viz-2: #2F5FD6; --e-viz-3: #5B93C9; --e-viz-4: #8FB9CE;
+  --e-viz-5: #8E86B8; --e-viz-6: #B2AAC4; --e-viz-7: #6B7482; --e-viz-8: #B8C4CE;
+  --e-viz-highlight: #FF6600;  /* the user's selection — never a category */
+  --e-viz-grid: #E7EEF2;
+  --e-viz-axis: #8A929F;
+}
+
+.dark,
+[data-theme="dark"] {
+  --e-bg:            #060820;
+  --e-bg-subtle:     #0C1033;
+  --e-bg-chrome:     #0C1033;
+  --e-bg-tint:       #141A45;
+  --e-nav-active-bg: #241634;
+  --e-signal-tint:   #241634;
+  --e-signal-rail:   inset 3px 0 0 #FF8433;
+  --e-surface:       #0C1033;
+  --e-surface-raised:#141A45;
+  --e-text-strong:   #F2F5FB;
+  --e-text-body:     #C7CDE4;
+  --e-text-muted:    #8D95B8;
+  --e-text-subtle:   #6E769B;
+  --e-text-invert:   #060820;
+  --e-border:        #262C5E;
+  --e-border-strong: #3A4179;
+  --e-border-hair:   #1B2049;
+  --e-focus:         #7D9DEA;
+
+  --e-azure-50:  #141A45;   /* selected row tint on dark */
+  --e-azure-500: #7D9DEA;   /* azure lifts two steps to hold contrast */
+  --e-azure-600: #7D9DEA;
+  --e-orange-500:#FF8433;   /* orange lifts on dark ink */
+
+  --e-el-1: 0 1px 2px rgba(0,0,0,.4);
+  --e-el-2: 0 8px 24px rgba(0,0,0,.5);
+  --e-el-3: 0 24px 60px rgba(0,0,0,.6);
+  --e-ring-focus: 0 0 0 2px #060820, 0 0 0 4px #7D9DEA;
+
+  --e-viz-1: #7D9DEA; --e-viz-2: #5482E5; --e-viz-3: #8FB9CE; --e-viz-4: #B2AAC4;
+  --e-viz-5: #8E86B8; --e-viz-6: #B3C8F4; --e-viz-7: #8D95B8; --e-viz-8: #565CA6;
+  --e-viz-highlight: #FF8433;
+  --e-viz-grid: #1B2049;
+  --e-viz-axis: #6E769B;
+
+  /* Primary button on dark is azure, not navy — navy vanishes into the page. */
+  --e-btn-primary-bg: #2F5FD6;
+}
+
+/* ---- Base ---- */
+body {
+  margin: 0;
+  font-family: var(--e-font-ui);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Arabic / RTL: zero the tracking, loosen the leading. The face itself is a
+   fallback stack (Anodina -> Manifa V2) so Western-Arabic numerals keep
+   rendering in Anodina, tabular, in both directions. */
+[dir="rtl"],
+[lang="ar"] {
+  letter-spacing: 0;
+  line-height: 1.7;
+}
+
+/* Cascaded heading rules beat inheritance, so restate the Arabic face and kill
+   the Latin display tracking on headings explicitly. */
+[dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] h4,
+[dir="rtl"] h5, [dir="rtl"] h6,
+[lang="ar"] h1, [lang="ar"] h2, [lang="ar"] h3, [lang="ar"] h4 {
+  font-family: var(--e-font-ui);
+  letter-spacing: 0;
+}
+
+table { border-collapse: collapse; }
+
+/* Every numeric context is tabular. Apply to any cell, KPI, timestamp or ID. */
+.e-num, .text-num, td, th, td[data-num], th[data-num] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Links are azure, never orange. `a` deliberately does NOT get a blanket colour
+   here: menu items, nav rails and buttons are anchors too and must inherit. */
+.e-link, .text-link {
+  color: var(--e-azure-600);
+  text-decoration: none;
+}
+.e-link:hover, .text-link:hover {
+  color: var(--e-azure-700);
+  text-decoration: underline;
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--e-ring-focus);
+}

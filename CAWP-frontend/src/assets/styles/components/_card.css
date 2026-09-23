@@ -1,0 +1,53 @@
+/* Cards — radius 8, 1px #D7E1E8 border, NO shadow, 20px padding.
+   Elevation 0 is the default: a border, not a shadow. */
+.card {
+  @apply bg-white rounded-lg dark:bg-night-card;
+}
+
+.card-border {
+  @apply border border-gray-300 dark:border-night-border;
+}
+
+/* The template's "shadow" card keeps a border instead — a coloured/ambient
+   shadow on a data screen reads as an error state. */
+.card-shadow {
+  @apply border border-gray-300 dark:border-night-border;
+}
+
+.card-header-border {
+  @apply border-b border-gray-300 dark:border-night-border;
+}
+
+.card-header-extra {
+  @apply flex justify-between items-center;
+}
+
+.card-footer {
+  @apply rounded-bl-lg rounded-br-lg;
+}
+
+.card-footer-border {
+  @apply border-t border-gray-300 dark:border-night-border;
+}
+
+.card-header,
+.card-footer {
+  @apply py-3.5 px-5;
+}
+
+.card-body {
+  @apply p-card;
+}
+
+.card-gutterless {
+  @apply p-0;
+}
+
+/* The lead KPI / lead card in a row — one per row, never all of them. */
+.card-lead {
+  box-shadow: inset 3px 0 0 #ff6600;
+}
+
+[dir="rtl"] .card-lead {
+  box-shadow: inset -3px 0 0 #ff6600;
+}

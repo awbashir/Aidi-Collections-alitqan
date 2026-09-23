@@ -1,0 +1,55 @@
+/* Segmented control — 32px, radius 6, 1px #B8C4CE, active navy fill. */
+.segment {
+  @apply flex;
+
+  > .segment-item-default {
+    &:first-child {
+      @apply ltr:rounded-r-none rtl:rounded-l-none;
+    }
+
+    &:last-child:not(.picker) {
+      @apply ltr:rounded-l-none rtl:rounded-r-none;
+    }
+
+    &:not(:first-child) {
+      @apply ltr:rounded-l-none ltr:-ml-px rtl:rounded-r-none rtl:-mr-px;
+    }
+
+    &:not(:last-child) {
+      @apply ltr:rounded-r-none rtl:rounded-l-none;
+    }
+  }
+}
+
+.segment-item-default {
+  @apply font-extrabold
+    focus:outline-none
+    cursor-pointer
+    select-none
+    rounded-md
+    bg-white
+    border
+    border-gray-400
+    dark:bg-transparent
+    dark:border-night-border-strong
+    text-gray-700
+    dark:text-night-body
+    transition-colors duration-fast ease-aidi
+    w-full
+    md:w-auto;
+  font-size: 12.5px;
+
+  &:not(.segment-item-active):not(.segment-item-disabled) {
+    @apply hover:bg-gray-100
+        dark:hover:bg-night-raised
+        active:bg-gray-200;
+  }
+
+  &.segment-item-active {
+    @apply bg-navy-600 border-navy-600 text-white dark:bg-azure-500 dark:border-azure-500 dark:text-white;
+  }
+
+  &.segment-item-disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+}

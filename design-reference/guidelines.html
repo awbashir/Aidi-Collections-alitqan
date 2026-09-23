@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/colors.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/typography.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/effects.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/base.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/styles.css">
+<script src="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/_ds_bundle.js"></script>
+<style>
+/* Manifa V2 draws far smaller on the em square than Anodina, so one font-size
+   rendered two optical sizes. size-adjust scales outlines and metrics together —
+   Manifa cap height is 0.470em against Anodina's 0.700em; 130% takes it to 0.611em —
+   a deliberate step short of full optical parity (which would be ~150%), chosen because
+   at parity Arabic body copy overpowers the Latin around it in mixed enterprise screens.
+   Same value on both weights on purpose: a per-weight number makes a line change size
+   the moment it bolds. Arabic sizes are NOT stepped up on top of this — size-adjust
+   replaces the old per-element +1px compensation. */
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap;size-adjust:130%}
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap;size-adjust:130%}
+:root{
+  --e-ink-950:#04062F; --e-ink-900:#070A4B; --e-ink-800:#14184F; --e-ink-700:#262B6B; --e-ink-600:#3B4189; --e-ink-500:#565CA6;
+  --e-azure-50:#EEF3FD; --e-azure-100:#D9E4FA; --e-azure-200:#B3C8F4; --e-azure-300:#7D9DEA; --e-azure-400:#5482E5; --e-azure-500:#2F5FD6; --e-azure-600:#234BB0; --e-azure-700:#1A3A8A;
+  --e-orange-100:#FFE0CC; --e-orange-500:#FF6600; --e-orange-600:#E65B00;
+  --e-n-0:#FFFFFF; --e-n-25:#FAFCFD; --e-n-50:#F2F6F8; --e-n-100:#E7EEF2; --e-n-150:#DFEEF2; --e-n-200:#D7E1E8; --e-n-300:#B8C4CE; --e-n-400:#8A929F; --e-n-500:#6B7482; --e-n-600:#515966; --e-n-700:#3B4250; --e-n-900:#221F20;
+  --e-lav-300:#B2AAC4; --e-lav-500:#8E86B8;
+  --e-success:#0F7A52; --e-success-tint:#E4F2EC; --e-warning:#B25A00; --e-warning-tint:#FBEBDD; --e-danger:#B3261E; --e-danger-tint:#F9E6E4; --e-info:#234BB0; --e-info-tint:#E7EDFA;
+  --e-text-strong:#070A4B; --e-text-body:#2E3450; --e-text-muted:#6B7482; --e-text-subtle:#8A929F;
+  --e-border:#D7E1E8; --e-border-strong:#B8C4CE; --e-border-hair:#E7EEF2;
+  --e-el-1:0 1px 2px rgba(7,10,75,.06);
+  --e-el-2:0 8px 24px rgba(7,10,75,.10);
+  --e-el-3:0 24px 60px rgba(7,10,75,.16);
+  --e-viz-1:#070A4B; --e-viz-2:#2F5FD6; --e-viz-3:#5B93C9; --e-viz-4:#8FB9CE; --e-viz-5:#8E86B8; --e-viz-6:#B2AAC4; --e-viz-7:#6B7482; --e-viz-8:#B8C4CE;
+}
+body{margin:0;background:#FFFFFF;font-family:"Anodina","Segoe UI",system-ui,sans-serif;font-weight:400;font-size:15px;line-height:1.55;color:#2E3450;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+a{color:#234BB0;text-decoration:none}
+a:hover{color:#1A3A8A;text-decoration:underline}
+table{border-collapse:collapse}
+</style>
+</helmet>
+
+<div style="max-width:1240px;margin:0 auto;padding:0 0 120px">
+
+  <div style="background:linear-gradient(150deg,#070A4B 0%,#0B0F55 46%,#14184F 100%);color:#fff;padding:72px 64px 64px;position:relative;overflow:hidden">
+    <div style="position:absolute;inset:auto -120px -180px auto;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle at 40% 40%,rgba(255,102,0,.34) 0%,rgba(255,102,0,0) 62%);filter:blur(10px)"></div>
+    <div style="position:relative;display:flex;flex-direction:column;gap:44px">
+      <div style="display:flex;align-items:center;gap:16px">
+        <img src="assets/logo/aidi-wordmark-white.svg" alt="Aidi" style="height:26px;display:block">
+        <div style="width:1px;height:22px;background:rgba(255,255,255,.28)"></div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#B3C8F4">Enterprise</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:22px;max-width:800px">
+        <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#7D9DEA">Design system · v0.1 draft</div>
+        <h1 style="font-size:60px;line-height:1.02;letter-spacing:-0.02em;font-weight:800;color:#fff;text-wrap:balance">The enterprise face of Aidi AI</h1>
+        <p style="font-size:19px;line-height:1.5;color:#C7CDE4;text-wrap:pretty;max-width:660px">Aidi AI is an enterprise AI platform. This is the system that dresses it: same logo, same typefaces, same navy as the Aidi Design System. What changes is emphasis — the accent recedes, structure carries the weight, and the interface reads as infrastructure rather than an app.</p>
+      </div>
+      <div style="display:flex;gap:56px;flex-wrap:wrap;padding-top:8px">
+        <div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7D9DEA">Built for</div><div style="font-size:15px;color:#E7EDFA">Business users · Analysts · IT admins · AI operators</div></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7D9DEA">Relationship</div><div style="font-size:15px;color:#E7EDFA">Cousin of the Aidi Design System, not a replacement</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 64px">
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:72px 0 0;border-bottom:1px solid var(--e-border-hair);padding-bottom:64px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">01 — Position</div>
+      <div style="display:flex;flex-direction:column;gap:28px">
+        <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong);max-width:640px">One brand, two registers</h2>
+        <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">The existing system speaks to Hassan — the café owner who wants the software to feel light. Aidi AI speaks to the analyst who has it open for seven hours, the executive reading a narrative summary without an analyst in the loop, and the reviewer who has to sign off on what the model did. Those readers are not persuaded by warmth. They are persuaded by density they can trust, labels that do not move, and an answer that shows its work.</p>
+        <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">Nothing about the brand is discarded. The logo, Anodina, Manifa V2, navy, and the pale-blue surface all carry over untouched. The mesh gradient survives too, but it is quarantined to marketing, sign-in and empty states — it never sits behind data.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;padding-top:4px">
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:22px 24px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-subtle)">What Aidi AI is</div>
+            <div style="font-size:15px;color:var(--e-text-body)">An enterprise AI platform: organisations connect their business data, documents and systems, and their people interact with all of it in natural language through specialised AI agents that share context and leave an auditable trail.</div>
+            <div style="font-size:14px;color:var(--e-text-muted)">The long-term goal is a central intelligence layer — enterprise knowledge, business systems, AI agents and workflow automation in one governed platform.</div>
+          </div>
+          <div style="border:1px solid var(--e-azure-500);background:var(--e-azure-50);border-radius:8px;padding:22px 24px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-azure-700)">What it is today</div>
+            <div style="font-size:15px;color:var(--e-text-body)">A governed multi-tenant AI layer with one complete vertical application built on it: conversational business intelligence.</div>
+            <div style="display:flex;flex-direction:column;gap:9px;font-size:13.5px;color:var(--e-text-body)">
+              <div style="display:flex;gap:10px"><span style="width:6px;height:6px;border-radius:50%;background:var(--e-azure-500);flex:0 0 auto;margin-top:7px"></span><span>The <strong style="color:var(--e-text-strong)">governed model layer</strong> — named endpoints, weighted traffic splits, transport-only fallback, guardrails that fail closed, per-organisation egress control and per-call metering — is the platform's strongest technical asset.</span></div>
+              <div style="display:flex;gap:10px"><span style="width:6px;height:6px;border-radius:50%;background:var(--e-azure-500);flex:0 0 auto;margin-top:7px"></span><span>The <strong style="color:var(--e-text-strong)">BI vertical</strong> — natural language to validated SQL to charts, dashboards, alerts and scheduled reports — is complete and works.</span></div>
+              <div style="display:flex;gap:10px"><span style="width:6px;height:6px;border-radius:50%;background:var(--e-orange-500);flex:0 0 auto;margin-top:7px"></span><span>The <strong style="color:var(--e-text-strong)">acting</strong> half of the vision — tools, workflows, writes to business systems, human approval — does not exist yet.</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px;padding-top:4px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Who it is for</h3>
+          <table style="width:100%;font-size:14px;border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <thead><tr style="background:var(--e-n-150)"><th style="text-align:left;padding:11px 18px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border);width:34%">User</th><th style="text-align:left;padding:11px 18px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">What they get</th></tr></thead>
+            <tbody>
+              <tr><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong)">Business users</td><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">Answers without a ticket</td></tr>
+              <tr style="background:var(--e-n-25)"><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong)">Executives</td><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">Dashboards and narrative summaries without an analyst in the loop</td></tr>
+              <tr><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong)">Data analysts</td><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">The modelling layer and the audit trail; less repetitive query work</td></tr>
+              <tr style="background:var(--e-n-25)"><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong)">Operations, support, sales, marketing</td><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">Domain questions and (in future) automated actions</td></tr>
+              <tr><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong)">IT administrators</td><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">Tenant, workspace, user and permission administration</td></tr>
+              <tr style="background:var(--e-n-25)"><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong)">Developers</td><td style="padding:11px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">APIs and extension points for new agents, tools and integrations</td></tr>
+              <tr><td style="padding:11px 18px;font-weight:800;color:var(--e-text-strong)">AI operators (Aidi)</td><td style="padding:11px 18px;color:var(--e-text-body)">A separate control plane for organisations, model routing, cost and usage</td></tr>
+            </tbody>
+          </table>
+          <div style="border-left:3px solid var(--e-azure-500);background:var(--e-azure-50);padding:14px 18px;font-size:14px;color:var(--e-text-body);max-width:820px">The operator surface is a <strong style="color:var(--e-text-strong)">physically separate application</strong> with its own identity table, signing key, port and audit trail. Nothing in the customer-facing application can reach it — so it also reads as a different room: navy chrome edge to edge, no pale-blue wash, no brand gradient anywhere.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding-top:8px">
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;background:var(--e-n-25)"><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-subtle);margin-bottom:10px">Keep</div><div style="font-size:14px;color:var(--e-text-body)">Logo &amp; monogram, Anodina, Manifa V2, navy #070A4B, pale blue #DFEEF2, RTL parity, mesh gradients</div></div>
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;background:var(--e-n-25)"><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-subtle);margin-bottom:10px">Reassign</div><div style="font-size:14px;color:var(--e-text-body)">Orange from primary action to signal. Navy from ink to action. A new azure carries interactivity.</div></div>
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;background:var(--e-n-25)"><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-subtle);margin-bottom:10px">Retire in product</div><div style="font-size:14px;color:var(--e-text-body)">Orange focus rings, orange glow shadows, 20px card radii, Light 300 body, ALL-CAPS headlines</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0;border-bottom:1px solid var(--e-border-hair)">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">02 — Principles</div>
+      <div style="display:flex;flex-direction:column;gap:32px">
+        <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">Five shifts</h2>
+        <div style="display:flex;flex-direction:column;gap:0;border-top:1px solid var(--e-border)">
+          <div style="display:grid;grid-template-columns:36px 1fr 1.25fr;gap:28px;padding:22px 0;border-bottom:1px solid var(--e-border-hair);align-items:start">
+            <div style="font-size:13px;font-weight:800;color:var(--e-azure-500)">01</div>
+            <div style="font-size:17px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.01em">Structure over decoration</div>
+            <div style="font-size:15px;color:var(--e-text-body)">Hierarchy comes from rules, alignment and spacing. A 1px border is the default way to separate things; shadow is reserved for surfaces that genuinely float above the page.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:36px 1fr 1.25fr;gap:28px;padding:22px 0;border-bottom:1px solid var(--e-border-hair);align-items:start">
+            <div style="font-size:13px;font-weight:800;color:var(--e-azure-500)">02</div>
+            <div style="font-size:17px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.01em">Orange is a rail, not a surface</div>
+            <div style="font-size:15px;color:var(--e-text-body)">Two to four small orange touchpoints per screen — never zero, never a fill. It marks where you are (active nav rail, active tab underline), what matters (the lead KPI, the emphasised chart series) and what needs a human (attention dots). Filling every primary button with it makes the exception invisible; using none of it makes the screen someone else’s product.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:36px 1fr 1.25fr;gap:28px;padding:22px 0;border-bottom:1px solid var(--e-border-hair);align-items:start">
+            <div style="font-size:13px;font-weight:800;color:var(--e-azure-500)">03</div>
+            <div style="font-size:17px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.01em">The data is the interface</div>
+            <div style="font-size:15px;color:var(--e-text-body)">Chrome stays quiet so tables and charts read first. Tabular numerals everywhere a number appears, numbers right-aligned, units in the column header rather than repeated per cell.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:36px 1fr 1.25fr;gap:28px;padding:22px 0;border-bottom:1px solid var(--e-border-hair);align-items:start">
+            <div style="font-size:13px;font-weight:800;color:var(--e-azure-500)">04</div>
+            <div style="font-size:17px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.01em">Legible under audit</div>
+            <div style="font-size:15px;color:var(--e-text-body)">WCAG AA is the floor, not the target. Status is never carried by colour alone — it always pairs with a label, an icon or a shape. Every focus state is visible on both themes.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:36px 1fr 1.25fr;gap:28px;padding:22px 0;border-bottom:1px solid var(--e-border-hair);align-items:start">
+            <div style="font-size:13px;font-weight:800;color:var(--e-azure-500)">05</div>
+            <div style="font-size:17px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.01em">Composure in motion</div>
+            <div style="font-size:15px;color:var(--e-text-body)">Transitions confirm a change rather than perform one. Nothing bounces, scales or slides more than a few pixels. Skeletons hold layout so the page never reflows under the cursor.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0;border-bottom:1px solid var(--e-border-hair)">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">03 — Colour</div>
+      <div style="display:flex;flex-direction:column;gap:44px">
+
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">Palette adjustments</h2>
+          <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">The six brand anchors are unchanged — these are the values on the Logo Card and they stay verbatim. What changes is the job each one holds in the interface.</p>
+          <div style="display:flex;gap:0;border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="flex:1;height:76px;background:#FF6600;display:flex;align-items:flex-end;padding:10px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;color:#fff">#FF6600</div>
+            <div style="flex:1;height:76px;background:#070A4B;display:flex;align-items:flex-end;padding:10px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;color:#fff">#070A4B</div>
+            <div style="flex:1;height:76px;background:#B2AAC4;display:flex;align-items:flex-end;padding:10px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;color:#221F20">#B2AAC4</div>
+            <div style="flex:1;height:76px;background:#8A929F;display:flex;align-items:flex-end;padding:10px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;color:#fff">#8A929F</div>
+            <div style="flex:1;height:76px;background:#DFEEF2;display:flex;align-items:flex-end;padding:10px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;color:#221F20">#DFEEF2</div>
+            <div style="flex:1;height:76px;background:#221F20;display:flex;align-items:flex-end;padding:10px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;color:#fff">#221F20</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Role reassignment</h3>
+          <table style="width:100%;font-size:14px">
+            <thead>
+              <tr style="background:var(--e-n-150)">
+                <th style="text-align:left;padding:11px 16px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border:1px solid var(--e-border);width:22%">Colour</th>
+                <th style="text-align:left;padding:11px 16px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border:1px solid var(--e-border)">In the Aidi Design System</th>
+                <th style="text-align:left;padding:11px 16px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border:1px solid var(--e-border)">In Aidi Enterprise</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);vertical-align:top"><div style="display:flex;align-items:center;gap:10px"><div style="width:14px;height:14px;border-radius:3px;background:#FF6600;flex:0 0 auto"></div><div><div style="font-weight:800;color:var(--e-text-strong)">Orange</div><div style="font-size:12px;color:var(--e-text-muted)">#FF6600</div></div></div></td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top">Primary action. Every CTA, link, focus ring and active tab.</td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top"><strong style="color:var(--e-text-strong)">Rails and marks.</strong> Active nav rail, active tab underline, lead-KPI rail, the highlighted chart series, "needs attention" dots, brand marks. Two to four per screen, under 2% of the pixels.</td>
+              </tr>
+              <tr style="background:var(--e-n-25)">
+                <td style="padding:13px 16px;border:1px solid var(--e-border);vertical-align:top"><div style="display:flex;align-items:center;gap:10px"><div style="width:14px;height:14px;border-radius:3px;background:#070A4B;flex:0 0 auto"></div><div><div style="font-weight:800;color:var(--e-text-strong)">Navy</div><div style="font-size:12px;color:var(--e-text-muted)">#070A4B</div></div></div></td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top">Ink and inverse panels. Secondary buttons.</td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top"><strong style="color:var(--e-text-strong)">Ink and primary action.</strong> Headings, primary buttons, app chrome, the dark theme base.</td>
+              </tr>
+              <tr>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);vertical-align:top"><div style="display:flex;align-items:center;gap:10px"><div style="width:14px;height:14px;border-radius:3px;background:#2F5FD6;flex:0 0 auto"></div><div><div style="font-weight:800;color:var(--e-text-strong)">Azure</div><div style="font-size:12px;color:var(--e-text-muted)">#2F5FD6 · new</div></div></div></td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-muted);vertical-align:top">Existed only as <code style="font-size:12.5px">--info</code> #3A6DE0.</td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top"><strong style="color:var(--e-text-strong)">Interactivity.</strong> Links, focus rings, selection, active nav, sort indicators. Derived in OKLCH between navy and the pale blue, so it reads as family.</td>
+              </tr>
+              <tr style="background:var(--e-n-25)">
+                <td style="padding:13px 16px;border:1px solid var(--e-border);vertical-align:top"><div style="display:flex;align-items:center;gap:10px"><div style="width:14px;height:14px;border-radius:3px;background:#DFEEF2;border:1px solid var(--e-border);flex:0 0 auto"></div><div><div style="font-weight:800;color:var(--e-text-strong)">Pale blue</div><div style="font-size:12px;color:var(--e-text-muted)">#DFEEF2</div></div></div></td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top">Section wash, large calm areas.</td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top"><strong style="color:var(--e-text-strong)">Structural tint.</strong> Table headers, sidebars, toolbars, selected rows. It marks the frame around content rather than colouring the page.</td>
+              </tr>
+              <tr>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);vertical-align:top"><div style="display:flex;align-items:center;gap:10px"><div style="width:14px;height:14px;border-radius:3px;background:#B2AAC4;flex:0 0 auto"></div><div><div style="font-weight:800;color:var(--e-text-strong)">Lavender</div><div style="font-size:12px;color:var(--e-text-muted)">#B2AAC4</div></div></div></td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top">Illustration volumes.</td>
+                <td style="padding:13px 16px;border:1px solid var(--e-border);color:var(--e-text-body);vertical-align:top"><strong style="color:var(--e-text-strong)">Chart hue.</strong> Carries the warm end of the categorical palette without spending orange.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Scales</h3>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="font-size:12px;color:var(--e-text-muted);font-weight:800;letter-spacing:.04em">Ink · navy family</div>
+            <div style="display:flex;gap:6px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#04062F"></div><div style="font-size:11px;color:var(--e-text-muted)">950 · #04062F</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#070A4B"></div><div style="font-size:11px;color:var(--e-text-muted)">900 · #070A4B</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#14184F"></div><div style="font-size:11px;color:var(--e-text-muted)">800 · #14184F</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#262B6B"></div><div style="font-size:11px;color:var(--e-text-muted)">700 · #262B6B</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#3B4189"></div><div style="font-size:11px;color:var(--e-text-muted)">600 · #3B4189</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#565CA6"></div><div style="font-size:11px;color:var(--e-text-muted)">500 · #565CA6</div></div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="font-size:12px;color:var(--e-text-muted);font-weight:800;letter-spacing:.04em">Azure · interactive</div>
+            <div style="display:flex;gap:6px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#EEF3FD;border:1px solid var(--e-border-hair)"></div><div style="font-size:11px;color:var(--e-text-muted)">50 · #EEF3FD</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#D9E4FA"></div><div style="font-size:11px;color:var(--e-text-muted)">100 · #D9E4FA</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#B3C8F4"></div><div style="font-size:11px;color:var(--e-text-muted)">200 · #B3C8F4</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#7D9DEA"></div><div style="font-size:11px;color:var(--e-text-muted)">300 · #7D9DEA</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#5482E5"></div><div style="font-size:11px;color:var(--e-text-muted)">400 · #5482E5</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#2F5FD6;box-shadow:inset 0 0 0 2px #fff, 0 0 0 2px #2F5FD6"></div><div style="font-size:11px;color:var(--e-text-strong);font-weight:800">500 · #2F5FD6</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#234BB0"></div><div style="font-size:11px;color:var(--e-text-muted)">600 · #234BB0</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#1A3A8A"></div><div style="font-size:11px;color:var(--e-text-muted)">700 · #1A3A8A</div></div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="font-size:12px;color:var(--e-text-muted);font-weight:800;letter-spacing:.04em">Cool neutrals · surfaces, borders, secondary text</div>
+            <div style="display:flex;gap:6px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#FAFCFD;border:1px solid var(--e-border-hair)"></div><div style="font-size:11px;color:var(--e-text-muted)">25</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#F2F6F8"></div><div style="font-size:11px;color:var(--e-text-muted)">50</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#E7EEF2"></div><div style="font-size:11px;color:var(--e-text-muted)">100</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#DFEEF2"></div><div style="font-size:11px;color:var(--e-text-muted)">150 · brand</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#D7E1E8"></div><div style="font-size:11px;color:var(--e-text-muted)">200 · border</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#B8C4CE"></div><div style="font-size:11px;color:var(--e-text-muted)">300</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#8A929F"></div><div style="font-size:11px;color:var(--e-text-muted)">400 · brand</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#6B7482"></div><div style="font-size:11px;color:var(--e-text-muted)">500</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#3B4250"></div><div style="font-size:11px;color:var(--e-text-muted)">700</div></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:52px;border-radius:6px;background:#221F20"></div><div style="font-size:11px;color:var(--e-text-muted)">900 · brand</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Semantic status</h3>
+          <p style="max-width:680px;font-size:15px;color:var(--e-text-body)">Every status colour is darkened until it clears 4.5:1 against white as text. The tints are for fills only and never carry text below 14px on their own.</p>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+            <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden"><div style="height:44px;background:#0F7A52"></div><div style="padding:12px 14px;background:#E4F2EC"><div style="font-size:13px;font-weight:800;color:#0F7A52">Success · #0F7A52</div><div style="font-size:11.5px;color:var(--e-text-muted);margin-top:3px">Tint #E4F2EC · 5.3:1</div></div></div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden"><div style="height:44px;background:#B25A00"></div><div style="padding:12px 14px;background:#FBEBDD"><div style="font-size:13px;font-weight:800;color:#B25A00">Warning · #B25A00</div><div style="font-size:11.5px;color:var(--e-text-muted);margin-top:3px">Tint #FBEBDD · 4.9:1</div></div></div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden"><div style="height:44px;background:#B3261E"></div><div style="padding:12px 14px;background:#F9E6E4"><div style="font-size:13px;font-weight:800;color:#B3261E">Danger · #B3261E</div><div style="font-size:11.5px;color:var(--e-text-muted);margin-top:3px">Tint #F9E6E4 · 6.5:1</div></div></div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden"><div style="height:44px;background:#234BB0"></div><div style="padding:12px 14px;background:#E7EDFA"><div style="font-size:13px;font-weight:800;color:#234BB0">Info · #234BB0</div><div style="font-size:11.5px;color:var(--e-text-muted);margin-top:3px">Tint #E7EDFA · 7.4:1</div></div></div>
+          </div>
+          <div style="border-left:3px solid var(--e-orange-500);background:var(--e-n-25);padding:14px 18px;font-size:14px;color:var(--e-text-body);max-width:760px">Brand orange no longer doubles as the warning colour. In the SMB system <code style="font-size:12.5px">--warning</code> aliased <code style="font-size:12.5px">#FF6600</code>; here warning is its own amber so an orange highlight is never mistaken for an alert.</div>
+        </div>
+
+        <sc-if value="{{ showDarkTheme }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Dark theme</h3>
+          <p style="max-width:680px;font-size:15px;color:var(--e-text-body)">The dark theme is navy, not grey — it is the brand ink taken all the way down. Azure lifts two steps to hold contrast; orange lifts one.</p>
+          <div style="border-radius:8px;overflow:hidden;border:1px solid #262C5E;background:#060820;padding:28px 30px;display:flex;flex-direction:column;gap:24px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <div style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:8px"><div style="height:48px;border-radius:6px;background:#060820;border:1px solid #262C5E"></div><div style="font-size:11px;color:#8D95B8">page · #060820</div></div>
+              <div style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:8px"><div style="height:48px;border-radius:6px;background:#0C1033;border:1px solid #262C5E"></div><div style="font-size:11px;color:#8D95B8">card · #0C1033</div></div>
+              <div style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:8px"><div style="height:48px;border-radius:6px;background:#141A45;border:1px solid #262C5E"></div><div style="font-size:11px;color:#8D95B8">raised · #141A45</div></div>
+              <div style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:8px"><div style="height:48px;border-radius:6px;background:#262C5E"></div><div style="font-size:11px;color:#8D95B8">border · #262C5E</div></div>
+              <div style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:8px"><div style="height:48px;border-radius:6px;background:#7D9DEA"></div><div style="font-size:11px;color:#8D95B8">azure · #7D9DEA</div></div>
+              <div style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:8px"><div style="height:48px;border-radius:6px;background:#FF8433"></div><div style="font-size:11px;color:#8D95B8">signal · #FF8433</div></div>
+            </div>
+            <div style="display:flex;gap:28px;flex-wrap:wrap;padding-top:4px;border-top:1px solid #262C5E">
+              <div style="padding-top:20px;display:flex;flex-direction:column;gap:4px"><div style="font-size:20px;font-weight:800;color:#F2F5FB;letter-spacing:-0.01em">Text strong</div><div style="font-size:11px;color:#8D95B8">#F2F5FB</div></div>
+              <div style="padding-top:20px;display:flex;flex-direction:column;gap:4px"><div style="font-size:20px;color:#C7CDE4">Text body</div><div style="font-size:11px;color:#8D95B8">#C7CDE4</div></div>
+              <div style="padding-top:20px;display:flex;flex-direction:column;gap:4px"><div style="font-size:20px;color:#8D95B8">Text muted</div><div style="font-size:11px;color:#8D95B8">#8D95B8</div></div>
+              <div style="padding-top:20px;display:flex;align-items:center;gap:10px">
+                <div style="height:34px;padding:0 18px;border-radius:6px;background:#2F5FD6;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">Primary</div>
+                <div style="height:34px;padding:0 18px;border-radius:6px;background:transparent;border:1px solid #3A4179;color:#C7CDE4;font-size:13.5px;font-weight:800;display:flex;align-items:center">Secondary</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Data visualisation</h3>
+          <p style="max-width:680px;font-size:15px;color:var(--e-text-body)">Eight categorical hues walking navy → azure → steel → sky → lavender → slate. The ramp is deliberately close in hue so that orange, held out of the set, reads instantly as the emphasised series. Never assign orange to a category; assign it to whatever the user selected.</p>
+          <div style="display:flex;gap:6px">
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#070A4B"></div><div style="font-size:11px;color:var(--e-text-muted)">01 #070A4B</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#2F5FD6"></div><div style="font-size:11px;color:var(--e-text-muted)">02 #2F5FD6</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#5B93C9"></div><div style="font-size:11px;color:var(--e-text-muted)">03 #5B93C9</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#8FB9CE"></div><div style="font-size:11px;color:var(--e-text-muted)">04 #8FB9CE</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#8E86B8"></div><div style="font-size:11px;color:var(--e-text-muted)">05 #8E86B8</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#B2AAC4"></div><div style="font-size:11px;color:var(--e-text-muted)">06 #B2AAC4</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#6B7482"></div><div style="font-size:11px;color:var(--e-text-muted)">07 #6B7482</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#B8C4CE"></div><div style="font-size:11px;color:var(--e-text-muted)">08 #B8C4CE</div></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="height:56px;border-radius:6px;background:#FF6600;box-shadow:0 0 0 2px #fff,0 0 0 4px #FF6600"></div><div style="font-size:11px;color:var(--e-text-strong);font-weight:800">Highlight</div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;padding-top:6px">
+            <div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:12px;color:var(--e-text-muted);font-weight:800">Sequential · one measure, low → high</div><div style="height:26px;border-radius:5px;background:linear-gradient(90deg,#EDF3F8,#B9D2E6,#7FA9D2,#4A7BC0,#2450A0,#070A4B)"></div></div>
+            <div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:12px;color:var(--e-text-muted);font-weight:800">Diverging · variance around a target</div><div style="height:26px;border-radius:5px;background:linear-gradient(90deg,#B25A00,#E8A66A,#F2F6F8,#8FB9CE,#2450A0)"></div></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0;border-bottom:1px solid var(--e-border-hair)">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">04 — Typography</div>
+      <div style="display:flex;flex-direction:column;gap:36px">
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">Same faces, different discipline</h2>
+          <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">Anodina and Manifa V2 carry over. Anodina ships three weights only — Light 300, Regular 400, ExtraBold 800 — and the enterprise rules change which of them does the work.</p>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:22px 24px;display:flex;flex-direction:column;gap:10px"><div style="font-size:34px;font-weight:300;color:var(--e-text-strong);line-height:1.1">Light 300</div><div style="font-size:13px;color:var(--e-text-body)">Retired from product UI. Allowed for marketing lead paragraphs at 20px and above, where its airiness still reads.</div></div>
+            <div style="border:1px solid var(--e-azure-500);border-radius:8px;padding:22px 24px;display:flex;flex-direction:column;gap:10px;background:var(--e-azure-50)"><div style="font-size:34px;font-weight:400;color:var(--e-text-strong);line-height:1.1">Regular 400</div><div style="font-size:13px;color:var(--e-text-body)">The product default. All body copy, table cells, field values, helper text. Light at 13px in a dense table is a legibility failure — this is the fix.</div></div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:22px 24px;display:flex;flex-direction:column;gap:10px"><div style="font-size:34px;font-weight:800;color:var(--e-text-strong);line-height:1.1">ExtraBold 800</div><div style="font-size:13px;color:var(--e-text-body)">Headings, KPI values, column headers, button labels, eyebrows. There is no medium, so 800 also carries emphasis inside body text.</div></div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Product scale</h3>
+          <p style="max-width:680px;font-size:15px;color:var(--e-text-body)">The marketing scale keeps its 72 / 56 / 44px display sizes. Product ratchets down and bases on 14px so that a dense screen holds more without shrinking below comfortable reading.</p>
+          <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:11px 20px;background:var(--e-n-150);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)"><div>Token</div><div>Sample</div><div>Spec</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">page-title</div><div style="font-size:32px;font-weight:800;letter-spacing:-0.018em;color:var(--e-text-strong);line-height:1.15">Consolidated revenue</div><div style="font-size:12px;color:var(--e-text-muted)">32 / 800 / -1.8%</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">section</div><div style="font-size:24px;font-weight:800;letter-spacing:-0.015em;color:var(--e-text-strong)">Consolidated revenue</div><div style="font-size:12px;color:var(--e-text-muted)">24 / 800 / -1.5%</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">panel</div><div style="font-size:18px;font-weight:800;letter-spacing:-0.01em;color:var(--e-text-strong)">Consolidated revenue</div><div style="font-size:12px;color:var(--e-text-muted)">18 / 800 / -1%</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">subhead</div><div style="font-size:15px;font-weight:800;color:var(--e-text-strong)">Consolidated revenue</div><div style="font-size:12px;color:var(--e-text-muted)">15 / 800 / 0</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">body</div><div style="font-size:14px;color:var(--e-text-body)">Answers are generated from governed tables and stored with the query that produced them.</div><div style="font-size:12px;color:var(--e-text-muted)">14 / 400 / 1.55</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">caption</div><div style="font-size:12.5px;color:var(--e-text-muted)">Last synced 3 minutes ago · 42 datasets</div><div style="font-size:12px;color:var(--e-text-muted)">12.5 / 400 / 1.4</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">eyebrow</div><div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">Gross margin</div><div style="font-size:12px;color:var(--e-text-muted)">11 / 800 / +10%</div></div>
+            <div style="display:grid;grid-template-columns:150px 1fr 130px;gap:20px;padding:14px 20px;border-top:1px solid var(--e-border-hair);align-items:baseline"><div style="font-size:12.5px;color:var(--e-text-muted)">metric</div><div style="font-size:30px;font-weight:800;letter-spacing:-0.02em;color:var(--e-text-strong);font-variant-numeric:tabular-nums">﷼ 4,182,930.45</div><div style="font-size:12px;color:var(--e-text-muted)">30 / 800 / tabular</div></div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:22px 24px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#0F7A52">Rule</div>
+            <div style="font-size:15px;color:var(--e-text-body)">Numerals are <strong style="color:var(--e-text-strong)">always tabular</strong> in tables, KPIs, timestamps and IDs. Currency symbol precedes with a hair space; the decimal separator never changes width between rows.</div>
+            <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--e-text-muted);background:var(--e-n-50);padding:10px 12px;border-radius:6px">font-variant-numeric: tabular-nums</div>
+          </div>
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:22px 24px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#B3261E">Rule</div>
+            <div style="font-size:15px;color:var(--e-text-body)"><strong style="color:var(--e-text-strong)">No ALL-CAPS headlines.</strong> The SMB system sets hero lines in caps. Here uppercase is reserved for 11px eyebrows, column headers and status labels, at 0.1em tracking. Anything longer than four words is sentence case.</div>
+            <div style="display:flex;gap:10px;align-items:center"><div style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);text-decoration:line-through;text-decoration-color:#B3261E">The only flexible cloud POS</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0;border-bottom:1px solid var(--e-border-hair)">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">05 — Form</div>
+      <div style="display:flex;flex-direction:column;gap:36px">
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">Radius, elevation, spacing</h2>
+          <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">The SMB system rounds cards to 20px and floats them on soft navy shadow. At enterprise density that reads as a page of pills. Corners tighten roughly by half, and elevation moves from ambient to functional: if a surface is not literally on top of something, it gets a border instead.</p>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Radius</h3>
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <div style="flex:1;min-width:130px;border:1px solid var(--e-border);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px"><div style="height:56px;background:var(--e-n-150);border-radius:0"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">0 · none</div><div style="font-size:12px;color:var(--e-text-muted)">Table cells, dividers, full-bleed bars</div></div></div>
+            <div style="flex:1;min-width:130px;border:1px solid var(--e-border);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px"><div style="height:56px;background:var(--e-n-150);border-radius:4px"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">4 · xs</div><div style="font-size:12px;color:var(--e-text-muted)">Checkboxes, swatches, tags</div></div></div>
+            <div style="flex:1;min-width:130px;border:1px solid var(--e-border);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px"><div style="height:56px;background:var(--e-n-150);border-radius:6px"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">6 · sm</div><div style="font-size:12px;color:var(--e-text-muted)">Buttons, inputs, selects, menus</div></div></div>
+            <div style="flex:1;min-width:130px;border:1px solid var(--e-border);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px"><div style="height:56px;background:var(--e-n-150);border-radius:8px"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">8 · md</div><div style="font-size:12px;color:var(--e-text-muted)">Cards, panels, charts — the default</div></div></div>
+            <div style="flex:1;min-width:130px;border:1px solid var(--e-border);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px"><div style="height:56px;background:var(--e-n-150);border-radius:12px"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">12 · lg</div><div style="font-size:12px;color:var(--e-text-muted)">Dialogs, sheets, popovers</div></div></div>
+            <div style="flex:1;min-width:130px;border:1px solid var(--e-border);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px"><div style="height:56px;background:var(--e-n-150);border-radius:999px"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">Pill</div><div style="font-size:12px;color:var(--e-text-muted)">Status badges and filter chips only</div></div></div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Elevation</h3>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;background:var(--e-n-25);padding:32px;border-radius:8px;border:1px solid var(--e-border-hair)">
+            <div style="display:flex;flex-direction:column;gap:12px"><div style="height:84px;background:#fff;border:1px solid var(--e-border);border-radius:8px"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">0 · Flat</div><div style="font-size:12px;color:var(--e-text-muted)">1px border, no shadow. Cards, panels, tables. The default.</div></div></div>
+            <div style="display:flex;flex-direction:column;gap:12px"><div style="height:84px;background:#fff;border:1px solid var(--e-border);border-radius:8px;box-shadow:0 1px 2px rgba(7,10,75,.06)"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">1 · Raised</div><div style="font-size:12px;color:var(--e-text-muted)">Sticky headers, pinned columns, toolbars over scroll.</div></div></div>
+            <div style="display:flex;flex-direction:column;gap:12px"><div style="height:84px;background:#fff;border:1px solid var(--e-border);border-radius:8px;box-shadow:0 8px 24px rgba(7,10,75,.10)"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">2 · Overlay</div><div style="font-size:12px;color:var(--e-text-muted)">Dropdowns, popovers, tooltips, autocomplete.</div></div></div>
+            <div style="display:flex;flex-direction:column;gap:12px"><div style="height:84px;background:#fff;border:1px solid var(--e-border);border-radius:12px;box-shadow:0 24px 60px rgba(7,10,75,.16)"></div><div><div style="font-size:13px;font-weight:800;color:var(--e-text-strong)">3 · Modal</div><div style="font-size:12px;color:var(--e-text-muted)">Dialogs and side sheets, over a scrim.</div></div></div>
+          </div>
+          <div style="border-left:3px solid var(--e-orange-500);background:var(--e-n-25);padding:14px 18px;font-size:14px;color:var(--e-text-body);max-width:760px">The orange glow shadow is retired in product. Coloured shadows on a data screen read as an error state at a glance.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Density &amp; spacing</h3>
+          <p style="max-width:680px;font-size:15px;color:var(--e-text-body)">The 4px grid is inherited unchanged. Enterprise keeps a comfortable rhythm rather than a console-tight one — the target is a screen someone can read for seven hours, not one that fits the most rows.</p>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:18px 20px"><div style="font-size:26px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.02em">36px</div><div style="font-size:12.5px;color:var(--e-text-muted);margin-top:4px">Control height — buttons, inputs, selects</div></div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:18px 20px"><div style="font-size:26px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.02em">44px</div><div style="font-size:12.5px;color:var(--e-text-muted);margin-top:4px">Table row height, and the minimum touch target</div></div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:18px 20px"><div style="font-size:26px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.02em">20px</div><div style="font-size:12.5px;color:var(--e-text-muted);margin-top:4px">Card padding — was 24–32px</div></div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:18px 20px"><div style="font-size:26px;font-weight:800;color:var(--e-text-strong);letter-spacing:-0.02em">32px</div><div style="font-size:12.5px;color:var(--e-text-muted);margin-top:4px">Section rhythm in-product — was 64px</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0;border-bottom:1px solid var(--e-border-hair)">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">06 — Components</div>
+      <div style="display:flex;flex-direction:column;gap:40px">
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">Component rules</h2>
+          <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">Every specimen below is the same component as in the Aidi Design System, re-specced. The API does not change — only the tokens it resolves.</p>
+        </div>
+
+        <sc-if value="{{ showComparison }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 18px;background:var(--e-n-50);border-bottom:1px solid var(--e-border);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-muted)">Aidi Design System</div>
+            <div style="padding:28px;display:flex;flex-direction:column;gap:16px;background:#fff">
+              <div style="border-radius:20px;box-shadow:0 10px 26px rgba(7,10,75,.10);padding:22px 24px;background:#fff;display:flex;flex-direction:column;gap:14px">
+                <div style="font-size:20px;font-weight:800;color:#070A4B;letter-spacing:-0.01em">Today's takings</div>
+                <div style="font-size:34px;font-weight:800;color:#070A4B;letter-spacing:-0.02em">﷼ 12,480</div>
+                <div style="display:flex;gap:10px"><div style="height:44px;padding:0 24px;border-radius:12px;background:#FF6600;color:#fff;font-size:15px;font-weight:800;display:flex;align-items:center;box-shadow:0 12px 30px rgba(255,102,0,.28)">View report</div><div style="height:44px;padding:0 24px;border-radius:12px;border:1px solid #E1E9EE;color:#070A4B;font-size:15px;font-weight:800;display:flex;align-items:center">Export</div></div>
+              </div>
+            </div>
+          </div>
+          <div style="border:1px solid var(--e-azure-500);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 18px;background:var(--e-azure-50);border-bottom:1px solid var(--e-azure-200);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-azure-700)">Aidi Enterprise</div>
+            <div style="padding:28px;display:flex;flex-direction:column;gap:16px;background:#fff">
+              <div style="border-radius:8px;border:1px solid var(--e-border);padding:20px;background:#fff;display:flex;flex-direction:column;gap:12px">
+                <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">Questions answered · today</div>
+                <div style="font-size:32px;font-weight:800;color:#070A4B;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">12,480</div>
+                <div style="display:flex;gap:8px;padding-top:4px"><div style="height:36px;padding:0 18px;border-radius:6px;background:#070A4B;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">View report</div><div style="height:36px;padding:0 18px;border-radius:6px;border:1px solid var(--e-border-strong);color:#070A4B;font-size:13.5px;font-weight:800;display:flex;align-items:center">Export</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Buttons</h3>
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:28px;display:flex;flex-direction:column;gap:24px">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#070A4B;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">Primary</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#fff;border:1px solid var(--e-border-strong);color:#070A4B;font-size:13.5px;font-weight:800;display:flex;align-items:center">Secondary</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:transparent;color:var(--e-azure-600);font-size:13.5px;font-weight:800;display:flex;align-items:center">Tertiary</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#B3261E;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">Destructive</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#FF6600;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">Signal</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:var(--e-n-50);border:1px solid var(--e-border);color:var(--e-text-subtle);font-size:13.5px;font-weight:800;display:flex;align-items:center">Disabled</div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding-top:20px;border-top:1px solid var(--e-border-hair)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle);width:78px">States</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#070A4B;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">Rest</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#14184F;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">Hover</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#04062F;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center">Active</div>
+              <div style="height:36px;padding:0 18px;border-radius:6px;background:#070A4B;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center;box-shadow:0 0 0 2px #fff,0 0 0 4px #2F5FD6">Focus</div>
+            </div>
+            <div style="font-size:14px;color:var(--e-text-body);max-width:720px;padding-top:4px">Primary is navy. <strong style="color:var(--e-text-strong)">Signal</strong> is the orange variant and is capped at one instance per screen — reserve it for the action the page exists to produce. The focus ring is 2px azure with a 2px offset, identical on both themes; the orange ring is retired because it collided with orange CTAs and read as an error.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Fields</h3>
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:28px;display:grid;grid-template-columns:repeat(3,1fr);gap:22px">
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Workspace</div>
+              <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;padding:0 12px;display:flex;align-items:center;font-size:14px;color:var(--e-text-body);background:#fff">Finance — EMEA</div>
+              <div style="font-size:12px;color:var(--e-text-muted)">Rest</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Workspace</div>
+              <div style="height:36px;border:1px solid var(--e-azure-500);border-radius:6px;padding:0 12px;display:flex;align-items:center;font-size:14px;color:var(--e-text-strong);background:#fff;box-shadow:0 0 0 2px rgba(47,95,214,.22)">Finance — EMEA</div>
+              <div style="font-size:12px;color:var(--e-azure-600)">Focused</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Workspace</div>
+              <div style="height:36px;border:1px solid #B3261E;border-radius:6px;padding:0 12px;display:flex;align-items:center;font-size:14px;color:var(--e-text-strong);background:#fff">—</div>
+              <div style="font-size:12px;color:#B3261E">Select a workspace to continue</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Period</div>
+              <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;padding:0 12px;display:flex;align-items:center;justify-content:space-between;font-size:14px;color:var(--e-text-body);background:#fff"><span>Last 30 days</span><span style="color:var(--e-text-subtle);font-size:11px">▼</span></div>
+              <div style="font-size:12px;color:var(--e-text-muted)">Select</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Search</div>
+              <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;padding:0 12px;display:flex;align-items:center;gap:8px;font-size:14px;color:var(--e-text-subtle);background:#fff"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="15" hint-size="15px,15px"></x-import><span>Filter 12,480 runs</span></div>
+              <div style="font-size:12px;color:var(--e-text-muted)">With affix</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:12.5px;font-weight:800;color:var(--e-text-subtle)">Tenant ID</div>
+              <div style="height:36px;border:1px solid var(--e-border);border-radius:6px;padding:0 12px;display:flex;align-items:center;font-size:14px;color:var(--e-text-subtle);background:var(--e-n-50);font-variant-numeric:tabular-nums">TEN-4F82-9C10-B3D7</div>
+              <div style="font-size:12px;color:var(--e-text-muted)">Read-only</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Status &amp; badges</h3>
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:28px;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:#E4F2EC;color:#0F7A52;font-size:12px;font-weight:800"><span style="width:7px;height:7px;border-radius:50%;background:#0F7A52"></span>Answered</div>
+              <div style="display:flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:#FBEBDD;color:#B25A00;font-size:12px;font-weight:800"><span style="width:7px;height:7px;background:#B25A00;transform:rotate(45deg)"></span>Clarifying</div>
+              <div style="display:flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:#F9E6E4;color:#B3261E;font-size:12px;font-weight:800"><span style="width:8px;height:2px;background:#B3261E"></span>Blocked</div>
+              <div style="display:flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:#E7EDFA;color:#234BB0;font-size:12px;font-weight:800"><span style="width:7px;height:7px;border-radius:50%;border:2px solid #234BB0"></span>In review</div>
+              <div style="display:flex;align-items:center;gap:7px;height:24px;padding:0 11px 0 9px;border-radius:999px;background:var(--e-n-100);color:var(--e-text-muted);font-size:12px;font-weight:800"><span style="width:7px;height:7px;border-radius:50%;background:var(--e-text-subtle)"></span>Archived</div>
+              <div style="display:flex;align-items:center;gap:7px;height:24px;padding:0 11px;border-radius:4px;background:#070A4B;color:#fff;font-size:11px;font-weight:800;letter-spacing:.06em">PII masked</div>
+            </div>
+            <div style="font-size:14px;color:var(--e-text-body);max-width:720px;padding-top:16px;border-top:1px solid var(--e-border-hair)">Each status carries a distinct glyph shape as well as a colour — dot, diamond, bar, ring — so the set survives greyscale printing and colour-vision deficiency. This is the one place pills are still used.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Navigation</h3>
+          <div style="border:1px solid var(--e-border);border-radius:8px;padding:28px;display:flex;flex-direction:column;gap:26px">
+            <div style="display:flex;gap:0;border-bottom:1px solid var(--e-border)">
+              <div style="padding:0 16px 11px;font-size:13.5px;font-weight:800;color:var(--e-text-strong);box-shadow:inset 0 -2px 0 #FF6600">Overview</div>
+              <div style="padding:0 16px 11px;font-size:13.5px;font-weight:400;color:var(--e-text-muted)">Conversations</div>
+              <div style="padding:0 16px 11px;font-size:13.5px;font-weight:400;color:var(--e-text-muted)">Guardrails</div>
+              <div style="padding:0 16px 11px;font-size:13.5px;font-weight:400;color:var(--e-text-muted)">Audit log</div>
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;border:1px solid var(--e-border-strong);border-radius:6px;overflow:hidden;height:32px">
+                <div style="padding:0 14px;display:flex;align-items:center;font-size:12.5px;font-weight:800;background:#070A4B;color:#fff">Day</div>
+                <div style="padding:0 14px;display:flex;align-items:center;font-size:12.5px;font-weight:400;color:var(--e-text-body);border-left:1px solid var(--e-border-strong)">Week</div>
+                <div style="padding:0 14px;display:flex;align-items:center;font-size:12.5px;font-weight:400;color:var(--e-text-body);border-left:1px solid var(--e-border-strong)">Month</div>
+                <div style="padding:0 14px;display:flex;align-items:center;font-size:12.5px;font-weight:400;color:var(--e-text-body);border-left:1px solid var(--e-border-strong)">Quarter</div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <div style="height:28px;padding:0 12px;border-radius:999px;border:1px solid var(--e-azure-500);background:var(--e-azure-50);color:var(--e-azure-700);font-size:12.5px;font-weight:800;display:flex;align-items:center;gap:7px">42 datasets<span style="color:var(--e-azure-500)">✕</span></div>
+                <div style="height:28px;padding:0 12px;border-radius:999px;border:1px dashed var(--e-border-strong);color:var(--e-text-muted);font-size:12.5px;display:flex;align-items:center">+ Add filter</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:24px;padding-top:22px;border-top:1px solid var(--e-border-hair)">
+              <div style="width:230px;border:1px solid var(--e-border);border-radius:8px;background:#FFFFFF;padding:10px;display:flex;flex-direction:column;gap:2px">
+                <div style="padding:8px 12px;border-radius:6px;background:#FFF4EC;box-shadow:inset 3px 0 0 #FF6600;color:var(--e-text-strong);font-size:13px;font-weight:800">Overview</div>
+                <div style="padding:8px 12px;border-radius:6px;color:var(--e-text-body);font-size:13px">Conversations</div>
+                <div style="padding:8px 12px;border-radius:6px;color:var(--e-text-body);font-size:13px;display:flex;justify-content:space-between;align-items:center">Guardrails<span style="width:6px;height:6px;border-radius:50%;background:#FF6600"></span></div>
+                <div style="padding:8px 12px;border-radius:6px;color:var(--e-text-body);font-size:13px">Datasets</div>
+                <div style="height:1px;background:var(--e-border);margin:8px 12px"></div>
+                <div style="padding:8px 12px;border-radius:6px;color:var(--e-text-muted);font-size:13px">Settings</div>
+              </div>
+              <div style="flex:1;font-size:14px;color:var(--e-text-body);max-width:520px">The side nav is white, separated from content by a hairline — chrome reads by its border, not by a tint. The active item takes a 3px orange rail on the leading edge over a #FFF4EC fill; the rail flips under RTL. Orange also marks the section needing attention, as a 6px dot. Two touchpoints, both structural, both under a few hundred pixels.</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Data table</h3>
+          <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--e-border);background:#fff">
+              <div style="display:flex;flex-direction:column;gap:2px"><div style="font-size:15px;font-weight:800;color:var(--e-text-strong)">Query audit log</div><div style="font-size:12.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">12,480 runs · updated 14:32 AST</div></div>
+              <div style="display:flex;gap:8px"><div style="height:32px;padding:0 14px;border-radius:6px;border:1px solid var(--e-border-strong);color:#070A4B;font-size:12.5px;font-weight:800;display:flex;align-items:center">Export CSV</div><div style="height:32px;padding:0 14px;border-radius:6px;background:#070A4B;color:#fff;font-size:12.5px;font-weight:800;display:flex;align-items:center">Review blocked</div></div>
+            </div>
+            <table style="width:100%;font-size:13.5px">
+              <thead>
+                <tr style="background:var(--e-n-150)">
+                  <th style="text-align:left;padding:0 20px;height:38px;font-weight:800;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Run</th>
+                  <th style="text-align:left;padding:0 20px;height:38px;font-weight:800;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Workspace</th>
+                  <th style="text-align:left;padding:0 20px;height:38px;font-weight:800;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Guardrail</th>
+                  <th style="text-align:right;padding:0 20px;height:38px;font-weight:800;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Rows</th>
+                  <th style="text-align:right;padding:0 20px;height:38px;font-weight:800;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Latency ms</th>
+                  <th style="text-align:right;padding:0 20px;height:38px;font-weight:800;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Cost ﷼</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="height:44px">
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">R-249301</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">Finance — EMEA</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair)"><span style="display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 10px 0 8px;border-radius:999px;background:#E4F2EC;color:#0F7A52;font-size:11.5px;font-weight:800"><span style="width:6px;height:6px;border-radius:50%;background:#0F7A52"></span>Answered</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums">1,204</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums">1,840</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:var(--e-text-muted);font-variant-numeric:tabular-nums">0.42</td>
+                </tr>
+                <tr style="height:44px;background:var(--e-azure-50)">
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums;box-shadow:inset 2px 0 0 #2F5FD6">R-249302</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">Revenue ops</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair)"><span style="display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 10px 0 8px;border-radius:999px;background:#FBEBDD;color:#B25A00;font-size:11.5px;font-weight:800"><span style="width:6px;height:6px;background:#B25A00;transform:rotate(45deg)"></span>Clarifying</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums">986</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums">2,310</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:#B25A00;font-weight:800;font-variant-numeric:tabular-nums">1.86</td>
+                </tr>
+                <tr style="height:44px">
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">R-249303</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">HR — payroll</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair)"><span style="display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 10px 0 8px;border-radius:999px;background:#F9E6E4;color:#B3261E;font-size:11.5px;font-weight:800"><span style="width:7px;height:2px;background:#B3261E"></span>Blocked</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums">0</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums">940</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:right;color:#B3261E;font-weight:800;font-variant-numeric:tabular-nums">0.00</td>
+                </tr>
+                <tr style="height:44px">
+                  <td style="padding:0 20px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums">R-249304</td>
+                  <td style="padding:0 20px;color:var(--e-text-body)">Supply chain</td>
+                  <td style="padding:0 20px"><span style="display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 10px 0 8px;border-radius:999px;background:#E4F2EC;color:#0F7A52;font-size:11.5px;font-weight:800"><span style="width:6px;height:6px;border-radius:50%;background:#0F7A52"></span>Answered</span></td>
+                  <td style="padding:0 20px;text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums">1,455</td>
+                  <td style="padding:0 20px;text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums">1,620</td>
+                  <td style="padding:0 20px;text-align:right;color:var(--e-text-muted);font-variant-numeric:tabular-nums">0.55</td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--e-border);background:var(--e-n-25);font-size:12.5px;color:var(--e-text-muted);font-variant-numeric:tabular-nums">
+              <div>Rows 1–4 of 12,480</div>
+              <div style="display:flex;gap:6px;align-items:center"><div style="width:28px;height:28px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--e-text-subtle)">‹</div><div style="width:28px;height:28px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--e-text-body)">›</div></div>
+            </div>
+          </div>
+          <div style="font-size:14px;color:var(--e-text-body);max-width:760px">No zebra striping — the 1px hairline between rows does that job without adding a second value to the page. Selection is an azure tint plus a 2px inset rail on the leading edge, which survives RTL by flipping to the right. Numbers right-align and every numeric cell is tabular.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <sc-if value="{{ showRtlSpecimen }}" hint-placeholder-val="{{ true }}">
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0;border-bottom:1px solid var(--e-border-hair)">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">07 — Bilingual &amp; RTL</div>
+      <div style="display:flex;flex-direction:column;gap:44px">
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">Arabic is a direction, not a translation layer</h2>
+          <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">The brand is Arabic-first — roughly 70 / 30 in practice — so RTL is not a variant that ships late. Every specimen in this document has an Arabic counterpart at the same density, the same control heights and the same row count. A screen that loses a column, wraps a label or drops a filter when it flips has not been localised.</p>
+          <div style="display:flex;gap:0;border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="flex:1;padding:22px 24px;display:flex;flex-direction:column;gap:8px;border-right:1px solid var(--e-border)">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">Latin · Anodina ExtraBold 800</div>
+              <div style="font-size:30px;font-weight:800;letter-spacing:-0.018em;color:var(--e-text-strong);line-height:1.15">Consolidated revenue</div>
+              <div style="font-size:12.5px;color:var(--e-text-muted)">30px · tracking −1.8% · leading 1.15</div>
+            </div>
+            <div style="flex:1;padding:22px 24px;display:flex;flex-direction:column;gap:8px;background:var(--e-n-25)" dir="rtl">
+              <div style="font-size:12px;font-weight:700;color:var(--e-text-subtle);font-family:'Manifa V2','Noto Sans Arabic',sans-serif">عربي · مانيفا V2 عريض ٧٠٠</div>
+              <div style="font-size:31px;font-weight:700;letter-spacing:0;color:var(--e-text-strong);line-height:1.28;font-family:'Manifa V2','Noto Sans Arabic',sans-serif">الإيرادات الموحّدة</div>
+              <div style="font-size:12.5px;color:var(--e-text-muted);font-family:'Manifa V2','Noto Sans Arabic',sans-serif">٣١ بكسل · تتبّع ٠ · ارتفاع السطر ١٫٢٨</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Arabic type rules</h3>
+          <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:24px;padding:16px 20px;border-bottom:1px solid var(--e-border-hair);align-items:start">
+              <div style="font-size:14.5px;font-weight:800;color:var(--e-text-strong)">Never letter-space Arabic</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="font-size:14px;color:var(--e-text-body)">Tracking severs the cursive joins and turns a word into loose glyphs. Anodina's −1.5% display tracking must be zeroed for Manifa, never inherited.</div>
+                <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap">
+                  <div style="display:flex;flex-direction:column;gap:3px"><div style="font-size:22px;font-weight:700;color:var(--e-text-strong);font-family:'Manifa V2','Noto Sans Arabic',sans-serif">الحماية</div><div style="font-size:11px;font-weight:800;color:#0F7A52">0</div></div>
+                  <div style="display:flex;flex-direction:column;gap:3px"><div style="font-size:22px;font-weight:700;color:var(--e-text-subtle);letter-spacing:.12em;font-family:'Manifa V2','Noto Sans Arabic',sans-serif">الحماية</div><div style="font-size:11px;font-weight:800;color:#B3261E">.12em — joins break</div></div>
+                </div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:24px;padding:16px 20px;border-bottom:1px solid var(--e-border-hair);align-items:start">
+              <div style="font-size:14.5px;font-weight:800;color:var(--e-text-strong)">Eyebrows lose the caps</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="font-size:14px;color:var(--e-text-body)">Arabic is unicased, so <code style="font-size:12.5px">text-transform: uppercase</code> does nothing and the tracking that made caps readable only damages the word. The Arabic eyebrow carries the same job with Bold 700 at 12px in subtle grey.</div>
+                <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+                  <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">Gross margin</div>
+                  <div style="width:1px;height:16px;background:var(--e-border)"></div>
+                  <div style="font-size:12px;font-weight:700;color:var(--e-text-subtle);font-family:'Manifa V2','Noto Sans Arabic',sans-serif">الهامش الإجمالي</div>
+                </div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:24px;padding:16px 20px;border-bottom:1px solid var(--e-border-hair);align-items:start">
+              <div style="font-size:14.5px;font-weight:800;color:var(--e-text-strong)">Step up, loosen up</div>
+              <div style="font-size:14px;color:var(--e-text-body)">Manifa's Bold is optically lighter than Anodina's ExtraBold and its ascenders and descenders reach further. Every Arabic size below 14px steps up 1px, and line-height gains roughly 0.08 so diacritics never touch the row above.</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:24px;padding:16px 20px;align-items:start">
+              <div style="font-size:14.5px;font-weight:800;color:var(--e-text-strong)">Two weights, not three</div>
+              <div style="font-size:14px;color:var(--e-text-body)">Manifa V2 ships Regular 400 and Bold 700 only. Bold covers everything Anodina used 800 for; there is no Light equivalent, which is another reason Light 300 is retired from product.</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">What mirrors, what holds</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+              <div style="padding:10px 18px;background:var(--e-azure-50);border-bottom:1px solid var(--e-border);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-azure-700)">Mirrors</div>
+              <div style="padding:18px 22px;display:flex;flex-direction:column;gap:11px;font-size:14px;color:var(--e-text-body)">
+                <div>Layout axis, side nav, and the drawer edge it opens from</div>
+                <div>Table column order — first column becomes rightmost</div>
+                <div>The 2px selection rail, which moves to the right edge</div>
+                <div>Field affixes, dropdown carets, and menu alignment</div>
+                <div>Direction-carrying icons: chevrons, arrows, undo, indent, next / previous</div>
+                <div>Progress and meter fills, and the tab underline's travel</div>
+              </div>
+            </div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+              <div style="padding:10px 18px;background:var(--e-n-50);border-bottom:1px solid var(--e-border);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-muted)">Holds</div>
+              <div style="padding:18px 22px;display:flex;flex-direction:column;gap:11px;font-size:14px;color:var(--e-text-body)">
+                <div>Numerals, which stay a left-to-right run inside the Arabic line</div>
+                <div>The time axis on a chart — oldest stays left, because the axis is numeric</div>
+                <div>Latin identifiers: batch numbers, SKUs, VAT registrations, emails</div>
+                <div>The logo lockup and the <span style="font-family:'Manifa V2','Noto Sans Arabic',sans-serif">أ</span>-monogram, which are fixed artwork</div>
+                <div>Non-directional icons: clock, check, download, search, filter</div>
+                <div>Media transport controls and anything reading as a timeline</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Numerals &amp; mixed runs</h3>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+            <div style="border:1px solid var(--e-azure-500);background:var(--e-azure-50);border-radius:8px;padding:20px 22px;display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-azure-700)">Standard · Western-Arabic</div>
+              <div style="font-size:26px;font-weight:800;color:var(--e-text-strong);font-variant-numeric:tabular-nums;letter-spacing:-0.015em;font-family:'Anodina',sans-serif">184,203.50</div>
+              <div style="font-size:13px;color:var(--e-text-body)">Set in Anodina, tabular, in both directions. It matches the SQL the answer ran, the CSV export, and the figures analysts paste into a spreadsheet.</div>
+            </div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#B25A00">Unavailable · Arabic-Indic</div>
+              <div style="display:flex;align-items:baseline;gap:14px;font-size:26px;font-weight:700;color:var(--e-text-strong);font-family:'Manifa V2','Noto Sans Arabic',sans-serif"><span>٠١٢٣٤</span><span style="font-size:12px;font-weight:700;color:var(--e-text-subtle)">U+0660…</span><span>01234</span><span style="font-size:12px;font-weight:700;color:var(--e-text-subtle)">U+0030…</span></div>
+              <div style="font-size:13px;color:var(--e-text-body)">Manifa V2 maps the Arabic-Indic codepoints to Western letterforms — the two runs above are pixel-identical. Arabic-Indic numerals are not available inside the brand faces, and adding a third face to get them is not a trade worth making.</div>
+            </div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle)">Currency &amp; units</div>
+              <div dir="rtl" style="font-size:26px;font-weight:700;color:var(--e-text-strong);font-family:'Manifa V2','Noto Sans Arabic',sans-serif"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-0.015em">184,203.50</span> ﷼</div>
+              <div style="font-size:13px;color:var(--e-text-body)">The riyal glyph leads in English and trails in Arabic. Percentages and units follow the same rule, so put them in the column header rather than in every cell.</div>
+            </div>
+          </div>
+          <div style="border-left:3px solid var(--e-azure-500);background:var(--e-azure-50);padding:14px 18px;font-size:14px;color:var(--e-text-body);max-width:820px">Wrap every Latin identifier inside Arabic copy in its own <code style="font-size:12.5px">dir="ltr"</code> span. Left to the bidi algorithm, <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">R-249301</span> next to trailing punctuation reorders on screen and the reference no longer matches the record.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Mirrored specimen</h3>
+          <p style="max-width:680px;font-size:15px;color:var(--e-text-body)">The same audit view as section 06, flipped. Control heights, row heights, column count and the orange budget are unchanged — only the axis moved.</p>
+          <div dir="rtl" style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden;font-family:'Manifa V2','Noto Sans Arabic',sans-serif">
+            <div style="display:flex;gap:0;border-bottom:1px solid var(--e-border);background:#fff;padding:0 20px">
+              <div style="padding:12px 16px 11px;font-size:14px;font-weight:700;color:var(--e-text-strong);box-shadow:inset 0 -2px 0 #FF6600">نظرة عامة</div>
+              <div style="padding:12px 16px 11px;font-size:14px;font-weight:400;color:var(--e-text-muted)">المحادثات</div>
+              <div style="padding:12px 16px 11px;font-size:14px;font-weight:400;color:var(--e-text-muted)">الحماية</div>
+              <div style="padding:12px 16px 11px;font-size:14px;font-weight:400;color:var(--e-text-muted)">سجل التدقيق</div>
+            </div>
+            <div style="display:flex;gap:20px;padding:20px;background:var(--e-n-25);border-bottom:1px solid var(--e-border)">
+              <div style="width:210px;border:1px solid var(--e-border);border-radius:8px;background:var(--e-n-150);padding:10px;display:flex;flex-direction:column;gap:2px;flex:0 0 auto;align-self:flex-start">
+                <div style="padding:9px 12px;border-radius:6px;background:#070A4B;color:#fff;font-size:13.5px;font-weight:700">نظرة عامة</div>
+                <div style="padding:9px 12px;border-radius:6px;color:var(--e-text-body);font-size:13.5px">المحادثات</div>
+                <div style="padding:9px 12px;border-radius:6px;color:var(--e-text-body);font-size:13.5px;display:flex;justify-content:space-between;align-items:center">الحماية<span style="width:6px;height:6px;border-radius:50%;background:#FF6600"></span></div>
+                <div style="padding:9px 12px;border-radius:6px;color:var(--e-text-body);font-size:13.5px">مجموعات البيانات</div>
+                <div style="height:1px;background:var(--e-border);margin:8px 12px"></div>
+                <div style="padding:9px 12px;border-radius:6px;color:var(--e-text-muted);font-size:13.5px">الإعدادات</div>
+              </div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:16px;min-width:0">
+                <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+                  <div style="display:flex;border:1px solid var(--e-border-strong);border-radius:6px;overflow:hidden;height:32px;background:#fff">
+                    <div style="padding:0 14px;display:flex;align-items:center;font-size:13px;font-weight:700;background:#070A4B;color:#fff">يوم</div>
+                    <div style="padding:0 14px;display:flex;align-items:center;font-size:13px;color:var(--e-text-body);border-right:1px solid var(--e-border-strong)">أسبوع</div>
+                    <div style="padding:0 14px;display:flex;align-items:center;font-size:13px;color:var(--e-text-body);border-right:1px solid var(--e-border-strong)">شهر</div>
+                    <div style="padding:0 14px;display:flex;align-items:center;font-size:13px;color:var(--e-text-body);border-right:1px solid var(--e-border-strong)">ربع</div>
+                  </div>
+                  <div style="height:28px;padding:0 12px;border-radius:999px;border:1px solid var(--e-azure-500);background:var(--e-azure-50);color:var(--e-azure-700);font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px"><span dir="ltr" style="font-family:'Anodina',sans-serif">42</span> مجموعة<span style="color:var(--e-azure-500)">✕</span></div>
+                  <div style="height:28px;padding:0 12px;border-radius:999px;border:1px dashed var(--e-border-strong);color:var(--e-text-muted);font-size:13px;display:flex;align-items:center">+ إضافة عامل تصفية</div>
+                </div>
+                <div style="display:flex;gap:14px;flex-wrap:wrap">
+                  <div style="flex:1;min-width:190px;border:1px solid var(--e-border);border-radius:8px;padding:18px 20px;background:#fff;display:flex;flex-direction:column;gap:9px">
+                    <div style="font-size:12px;font-weight:700;color:var(--e-text-subtle)">الأسئلة المُجابة · اليوم</div>
+                    <div style="font-size:28px;font-weight:800;color:#070A4B;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">12,480</span></div>
+                    <div style="font-size:12.5px;color:#0F7A52;font-weight:700"><span dir="ltr" style="font-family:'Anodina',sans-serif">+4.2%</span> مقارنة بالأمس</div>
+                  </div>
+                  <div style="flex:1;min-width:190px;border:1px solid var(--e-border);border-radius:8px;padding:18px 20px;background:#fff;display:flex;flex-direction:column;gap:9px">
+                    <div style="font-size:12px;font-weight:700;color:var(--e-text-subtle)">الاستدعاءات المحجوبة</div>
+                    <div style="font-size:28px;font-weight:800;color:#070A4B;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">18</span></div>
+                    <div style="font-size:12.5px;color:#B25A00;font-weight:700">تحتاج مراجعة</div>
+                  </div>
+                  <div style="flex:1;min-width:190px;border:1px solid var(--e-border);border-radius:8px;padding:18px 20px;background:#fff;display:flex;flex-direction:column;gap:9px">
+                    <div style="font-size:12px;font-weight:700;color:var(--e-text-subtle)">معرّف المستأجر</div>
+                    <div dir="ltr" style="font-size:15px;color:var(--e-text-body);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif;text-align:right">TEN-4F82-9C10-B3D7</div>
+                    <div style="font-size:12.5px;color:var(--e-text-muted)">للقراءة فقط · اتجاه لاتيني</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--e-border);background:#fff;gap:16px;flex-wrap:wrap">
+              <div style="display:flex;flex-direction:column;gap:3px"><div style="font-size:15.5px;font-weight:700;color:var(--e-text-strong)">سجل التدقيق</div><div style="font-size:13px;color:var(--e-text-muted)"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">12,480</span> تشغيلاً · حُدِّث <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">14:32</span> بتوقيت السعودية</div></div>
+              <div style="display:flex;gap:8px"><div style="height:32px;padding:0 14px;border-radius:6px;border:1px solid var(--e-border-strong);color:#070A4B;font-size:13px;font-weight:700;display:flex;align-items:center">تصدير CSV</div><div style="height:32px;padding:0 14px;border-radius:6px;background:#070A4B;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center">مراجعة المحجوب</div></div>
+            </div>
+            <table style="width:100%;font-size:14px">
+              <thead>
+                <tr style="background:var(--e-n-150)">
+                  <th style="text-align:right;padding:0 20px;height:38px;font-weight:700;font-size:12px;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">المعرّف</th>
+                  <th style="text-align:right;padding:0 20px;height:38px;font-weight:700;font-size:12px;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">مساحة العمل</th>
+                  <th style="text-align:right;padding:0 20px;height:38px;font-weight:700;font-size:12px;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">الحماية</th>
+                  <th style="text-align:left;padding:0 20px;height:38px;font-weight:700;font-size:12px;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">الصفوف</th>
+                  <th style="text-align:left;padding:0 20px;height:38px;font-weight:700;font-size:12px;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">الزمن (ms)</th>
+                  <th style="text-align:left;padding:0 20px;height:38px;font-weight:700;font-size:12px;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">التكلفة ﷼</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="height:44px">
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong)"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap">R-249301</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">المالية — أوروبا</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair)"><span style="display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 8px 0 10px;border-radius:999px;background:#E4F2EC;color:#0F7A52;font-size:12px;font-weight:700"><span style="width:6px;height:6px;border-radius:50%;background:#0F7A52"></span>مُجاب</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:left;color:var(--e-text-body);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">1,204</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:left;color:var(--e-text-strong);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">1,840</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:left;color:var(--e-text-muted);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">0.42</span></td>
+                </tr>
+                <tr style="height:44px;background:var(--e-azure-50)">
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);font-weight:800;color:var(--e-text-strong);box-shadow:inset -2px 0 0 #2F5FD6"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap">R-249302</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-body)">عمليات الإيرادات</td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair)"><span style="display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 8px 0 10px;border-radius:999px;background:#FBEBDD;color:#B25A00;font-size:12px;font-weight:700"><span style="width:6px;height:6px;background:#B25A00;transform:rotate(45deg)"></span>طلب توضيح</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:left;color:var(--e-text-body);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">986</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:left;color:var(--e-text-strong);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">2,310</span></td>
+                  <td style="padding:0 20px;border-bottom:1px solid var(--e-border-hair);text-align:left;color:#B25A00;font-weight:800;font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">1.86</span></td>
+                </tr>
+                <tr style="height:44px">
+                  <td style="padding:0 20px;font-weight:800;color:var(--e-text-strong)"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap">R-249303</span></td>
+                  <td style="padding:0 20px;color:var(--e-text-body)">الموارد البشرية</td>
+                  <td style="padding:0 20px"><span style="display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 8px 0 10px;border-radius:999px;background:#F9E6E4;color:#B3261E;font-size:12px;font-weight:700"><span style="width:7px;height:2px;background:#B3261E"></span>محجوب</span></td>
+                  <td style="padding:0 20px;text-align:left;color:var(--e-text-body);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">0</span></td>
+                  <td style="padding:0 20px;text-align:left;color:var(--e-text-strong);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">940</span></td>
+                  <td style="padding:0 20px;text-align:left;color:#B3261E;font-weight:800;font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif"><span dir="ltr">0.00</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--e-border);background:var(--e-n-25);font-size:13px;color:var(--e-text-muted)">
+              <div style="flex:0 0 auto;white-space:nowrap">صفوف <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">1–3</span> من <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">12,480</span></div>
+              <div style="display:flex;gap:6px;align-items:center"><div style="width:28px;height:28px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--e-text-subtle)">›</div><div style="width:28px;height:28px;border:1px solid var(--e-border-strong);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--e-text-body)">‹</div></div>
+            </div>
+          </div>
+          <div style="font-size:14px;color:var(--e-text-body);max-width:820px">Three details do the work: the selection rail flips to <code style="font-size:12.5px">inset -2px 0 0</code>, the numeric columns align left because that is now the trailing edge, and the pagination chevrons swap so "next" still points forward. Numerals stay Western-Arabic, stay in Anodina and stay tabular — identical to section 06 — each wrapped in <code style="font-size:12.5px">dir="ltr"</code> along with the run identifiers. Arabic-Indic digits are the opt-in exception two blocks above, and they set in Manifa V2, which is the only face here that carries those glyphs.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <h3 style="font-size:13px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong)">Implementation</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;display:flex;flex-direction:column;gap:12px">
+              <div style="font-size:14.5px;font-weight:800;color:var(--e-text-strong)">Logical properties only</div>
+              <div style="font-size:14px;color:var(--e-text-body)">No <code style="font-size:12.5px">left</code> / <code style="font-size:12.5px">right</code> in component CSS. Direction is set once on <code style="font-size:12.5px">&lt;html dir&gt;</code> and everything below reads from the writing mode.</div>
+              <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--e-text-muted);background:var(--e-n-50);padding:11px 13px;border-radius:6px;line-height:1.7">padding-inline-start<br>margin-inline-end<br>border-inline-start<br>inset-inline-start<br>text-align: start / end</div>
+            </div>
+            <div style="border:1px solid var(--e-border);border-radius:8px;padding:20px 22px;display:flex;flex-direction:column;gap:12px">
+              <div style="font-size:14.5px;font-weight:800;color:var(--e-text-strong)">Font by direction, not by string</div>
+              <div style="font-size:14px;color:var(--e-text-body)">The design system already binds Manifa to <code style="font-size:12.5px">[dir="rtl"]</code> in <code style="font-size:12.5px">base.css</code>. Enterprise adds the type corrections so Arabic screens do not inherit Latin tracking.</div>
+              <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--e-text-muted);background:var(--e-n-50);padding:11px 13px;border-radius:6px;line-height:1.7">[dir="rtl"]{<br>&nbsp;&nbsp;font-family: var(--font-arabic);<br>&nbsp;&nbsp;letter-spacing: 0;<br>&nbsp;&nbsp;--fw-strong: 700;<br>}</div>
+            </div>
+          </div>
+          <div style="border-left:3px solid var(--e-orange-500);background:var(--e-n-25);padding:14px 18px;font-size:14px;color:var(--e-text-body);max-width:820px">Sign-off rule: a screen is not complete until it has been reviewed at <code style="font-size:12.5px">dir="rtl"</code> with real Arabic strings. Latin placeholders in an RTL frame hide every wrapping and alignment fault the flip introduces.</div>
+        </div>
+
+      </div>
+    </div>
+    </sc-if>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0;border-bottom:1px solid var(--e-border-hair)">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">08 — Practice</div>
+      <div style="display:flex;flex-direction:column;gap:28px">
+        <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">Do &amp; don't</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 18px;background:#E4F2EC;border-bottom:1px solid var(--e-border);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#0F7A52">Do</div>
+            <div style="padding:20px 22px;display:flex;flex-direction:column;gap:12px;font-size:14px;color:var(--e-text-body)">
+              <div>Spend orange once per screen, on the thing the screen exists to do.</div>
+              <div>Separate with borders; save shadow for surfaces that float.</div>
+              <div>Put the mesh gradient on sign-in, marketing and empty states.</div>
+              <div>Right-align every number and set it tabular.</div>
+              <div>Pair every status colour with a label and a distinct shape.</div>
+              <div>Keep Arabic and English screens at identical density.</div>
+              <div>Wrap Latin identifiers inside Arabic copy in <code style="font-size:12.5px">dir="ltr"</code>.</div>
+            </div>
+          </div>
+          <div style="border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 18px;background:#F9E6E4;border-bottom:1px solid var(--e-border);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#B3261E">Don't</div>
+            <div style="padding:20px 22px;display:flex;flex-direction:column;gap:12px;font-size:14px;color:var(--e-text-body)">
+              <div>Fill primary buttons with orange, or ring focus in it.</div>
+              <div>Float cards on 20px radii and soft shadows in a dense view.</div>
+              <div>Run a gradient behind a table, chart or form.</div>
+              <div>Set body copy in Light 300 below 20px.</div>
+              <div>Use a third background colour — two is the ceiling per screen.</div>
+              <div>Set a headline in ALL-CAPS inside the product.</div>
+              <div>Let Arabic inherit Latin tracking, or letter-space it at all.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:48px;padding:64px 0">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle);padding-top:6px">09 — Migration</div>
+      <div style="display:flex;flex-direction:column;gap:22px">
+        <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.015em;line-height:1.2;color:var(--e-text-strong)">What actually changes in the token files</h2>
+        <p style="max-width:680px;font-size:16px;color:var(--e-text-body)">Component APIs are untouched. Every change below is a value swap in <code style="font-size:13px">tokens/</code>, which means Aidi Chat and the BI Dashboard can adopt the enterprise theme without a rewrite.</p>
+        <table style="width:100%;font-size:13.5px;border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:var(--e-n-150)">
+              <th style="text-align:left;padding:11px 18px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Token</th>
+              <th style="text-align:left;padding:11px 18px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Current</th>
+              <th style="text-align:left;padding:11px 18px;font-weight:800;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-strong);border-bottom:1px solid var(--e-border)">Enterprise</th>
+            </tr>
+          </thead>
+          <tbody style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px">
+            <tr><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--action-primary-bg</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">#FF6600</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">#070A4B</td></tr>
+            <tr style="background:var(--e-n-25)"><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--action-signal-bg <span style="color:var(--e-text-subtle)">new</span></td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">—</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">#FF6600</td></tr>
+            <tr><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--text-link</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">#E65B00</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">#234BB0</td></tr>
+            <tr style="background:var(--e-n-25)"><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--focus-ring</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">#FF6600</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">#2F5FD6</td></tr>
+            <tr><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--warning</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">#FF6600</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">#B25A00</td></tr>
+            <tr style="background:var(--e-n-25)"><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--success</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">#1F9D6B</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">#0F7A52</td></tr>
+            <tr><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--radius-card</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">20px</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">8px</td></tr>
+            <tr style="background:var(--e-n-25)"><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--radius-button / field</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">12px</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">6px</td></tr>
+            <tr><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--shadow-orange</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">0 12px 30px …</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:#B3261E">removed</td></tr>
+            <tr style="background:var(--e-n-25)"><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">body font-weight</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">300</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">400</td></tr>
+            <tr><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-strong)">--fs-base <span style="color:var(--e-text-subtle)">product</span></td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-text-muted)">16px</td><td style="padding:10px 18px;border-bottom:1px solid var(--e-border-hair);color:var(--e-azure-700)">14px</td></tr>
+            <tr style="background:var(--e-n-25)"><td style="padding:10px 18px;color:var(--e-text-strong)">--gap-section <span style="color:var(--e-text-subtle)">product</span></td><td style="padding:10px 18px;color:var(--e-text-muted)">64px</td><td style="padding:10px 18px;color:var(--e-azure-700)">32px</td></tr>
+          </tbody>
+        </table>
+        <div style="display:flex;gap:14px;align-items:center;padding-top:12px">
+          <a href="Aidi Chat Enterprise.dc.html" style="height:36px;padding:0 18px;border-radius:6px;background:#070A4B;color:#fff;font-size:13.5px;font-weight:800;display:flex;align-items:center;text-decoration:none">Aidi Chat, re-skinned</a>
+          <a href="Aidi BI Dashboard Enterprise.dc.html" style="height:36px;padding:0 18px;border-radius:6px;border:1px solid var(--e-border-strong);color:#070A4B;font-size:13.5px;font-weight:800;display:flex;align-items:center;text-decoration:none">BI Dashboard, re-skinned</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showComparison&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sections&quot;},&quot;showDarkTheme&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sections&quot;},&quot;showRtlSpecimen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sections&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      showComparison: this.props.showComparison ?? true,
+      showDarkTheme: this.props.showDarkTheme ?? true,
+      showRtlSpecimen: this.props.showRtlSpecimen ?? true,
+    };
+  }
+}
+</script>
+</body>
+</html>

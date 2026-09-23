@@ -1,0 +1,38 @@
+/* Pager buttons — 28x28, radius 6, 1px #B8C4CE. Chevrons flip under RTL. */
+.pagination {
+  @apply relative z-0 inline-flex items-center;
+}
+
+.pagination-pager {
+  @apply cursor-pointer relative mx-0.5 rounded-md inline-flex items-center justify-center
+    h-7 w-7 min-w-[28px]
+    font-extrabold select-none
+    border border-gray-400 dark:border-night-border-strong
+    bg-white dark:bg-transparent
+    transition-colors duration-fast ease-aidi;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-pager-inactive {
+  @apply text-gray-700 hover:bg-gray-100 dark:text-night-body dark:hover:bg-night-raised;
+}
+
+.pagination-pager-disabled {
+  @apply cursor-not-allowed text-gray-500 border-gray-300 dark:text-night-muted dark:border-night-border;
+}
+
+.pagination-total {
+  @apply font-normal text-gray-600 dark:text-night-muted ltr:mr-3 rtl:ml-3 whitespace-nowrap;
+  font-size: 12.5px;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-pager-next {
+  @apply ltr:mr-1 rtl:ml-1 rtl:rotate-180;
+}
+
+.pagination-pager-prev {
+  @apply ltr:ml-1 rtl:mr-1 rtl:rotate-180;
+}

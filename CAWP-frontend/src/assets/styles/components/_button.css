@@ -1,0 +1,33 @@
+/* Aidi Enterprise buttons — 36px / radius 6 / 13.5px 800.
+   Height + horizontal padding come from Button.tsx (CONTROL_SIZES). */
+.button {
+  @apply font-extrabold
+    focus:outline-none
+    whitespace-nowrap
+    inline-flex items-center justify-center gap-2
+    transition-colors duration-fast ease-aidi
+    select-none;
+  font-size: 13.5px;
+  letter-spacing: 0;
+
+  &.radius-round {
+    @apply rounded-md;
+  }
+
+  &.radius-circle {
+    @apply rounded-full;
+  }
+
+  &.radius-none {
+    @apply rounded-none;
+  }
+
+  /* Focus is 2px azure at 2px offset — never orange. */
+  &:focus-visible {
+    box-shadow: var(--e-ring-focus);
+  }
+}
+
+.button-sm-text {
+  font-size: 12.5px;
+}

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/colors.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/typography.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/effects.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/base.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/styles.css">
+<script src="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/_ds_bundle.js"></script>
+<style>
+/* Manifa V2 draws far smaller on the em square than Anodina, so one font-size
+   rendered two optical sizes. size-adjust scales outlines and metrics together —
+   Manifa cap height is 0.470em against Anodina's 0.700em; 130% takes it to 0.611em —
+   a deliberate step short of full optical parity (which would be ~150%), chosen because
+   at parity Arabic body copy overpowers the Latin around it in mixed enterprise screens.
+   Same value on both weights on purpose: a per-weight number makes a line change size
+   the moment it bolds. Arabic sizes are NOT stepped up on top of this — size-adjust
+   replaces the old per-element +1px compensation. */
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap;size-adjust:130%}
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap;size-adjust:130%}
+:root{
+  --e-page:#FFFFFF; --e-surface:#FFFFFF; --e-surface-2:#FAFCFD; --e-fill:#F2F6F8; --e-chrome:#DFEEF2;
+  --e-border:#D7E1E8; --e-border-strong:#B8C4CE; --e-border-hair:#E7EEF2;
+  --e-text-strong:#070A4B; --e-text-body:#2E3450; --e-text-muted:#6B7482; --e-text-subtle:#8A929F;
+  --e-accent-solid:#070A4B; --e-accent-hover:#14184F; --e-accent-active:#04062F;
+  --e-azure:#2F5FD6; --e-azure-tint:#EEF3FD; --e-azure-border:#B3C8F4; --e-link:#234BB0; --e-link-hover:#1A3A8A;
+  --e-signal:#FF6600; --e-success:#0F7A52; --e-danger:#B3261E; --e-warning:#B25A00;
+  --e-danger-tint:#F9E6E4; --e-danger-border:#E9BFBB; --e-danger-text:#8F2A23;
+  --e-warn-tint:#FBEBDD; --e-warn-border:#EBD3B8; --e-warn-text:#7A431A;
+  --e-viz-4:#8FB9CE; --e-viz-6:#B2AAC4;
+  --e-el-1:0 1px 2px rgba(7,10,75,.06);
+}
+[data-theme="dark"]{
+  --e-page:#060820; --e-surface:#0C1033; --e-surface-2:#080B26; --e-fill:#141A45; --e-chrome:#141A45;
+  --e-border:#262C5E; --e-border-strong:#3A4179; --e-border-hair:#1B2049;
+  --e-text-strong:#F2F5FB; --e-text-body:#C7CDE4; --e-text-muted:#8D95B8; --e-text-subtle:#6E769B;
+  --e-accent-solid:#2F5FD6; --e-accent-hover:#4272E0; --e-accent-active:#234BB0;
+  --e-azure:#7D9DEA; --e-azure-tint:#151B47; --e-azure-border:#3A4179; --e-link:#7D9DEA; --e-link-hover:#B3C8F4;
+  --e-signal:#FF8433; --e-success:#3FBF8F; --e-danger:#F1786E; --e-warning:#E29A55;
+  --e-danger-tint:#2E1412; --e-danger-border:#5A241F; --e-danger-text:#F0B5AF;
+  --e-warn-tint:#2B1B0C; --e-warn-border:#5A3A18; --e-warn-text:#F0C79B;
+  --e-viz-4:#8FB9CE; --e-viz-6:#B2AAC4;
+  --e-el-1:0 1px 2px rgba(0,0,0,.45);
+}
+[data-theme="dark"] img[src*="navy"]{filter:brightness(0) invert(1)}
+[lang="ar"] h1,[lang="ar"] h2,[lang="ar"] h3,[lang="ar"] h4{font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0}
+body{margin:0;background:var(--e-surface);font-family:"Anodina","Segoe UI",system-ui,sans-serif;font-weight:400;color:var(--e-text-body);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+a{color:var(--e-link);text-decoration:none}
+a:hover{color:var(--e-link-hover)}
+table{border-collapse:collapse}
+</style>
+</helmet>
+
+<div style="display:contents">
+<div data-theme="{{ theme }}" style="min-height:100vh;display:flex;flex-direction:column;background:var(--e-page)">
+
+  <sc-if value="{{ isEn }}" hint-placeholder-val="{{ true }}">
+  <div style="height:52px;border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--e-surface);position:sticky;top:0;z-index:5">
+    <img src="assets/logo/aidi-wordmark-navy.svg" alt="Aidi" style="height:17px;display:block">
+    <div style="width:1px;height:18px;background:var(--e-border)"></div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-muted)">Ask Aidi</div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+      <div style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import>Warehouse · prod</div>
+      <div style="width:28px;height:28px;border-radius:6px;background:var(--e-chrome);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--e-text-strong)">HM</div>
+    </div>
+  </div>
+
+  <sc-if value="{{ showEmptyState }}" hint-placeholder-val="{{ true }}">
+  <section style="position:relative;overflow:hidden;background:var(--e-surface-2);border-bottom:1px solid var(--e-border);padding:64px 24px 66px">
+    <div style="position:absolute;inset:0;background:radial-gradient(78% 110% at 8% 108%,rgba(255,102,0,.10),transparent 56%),radial-gradient(64% 96% at 92% -8%,rgba(178,170,196,.24),transparent 58%)"></div>
+    <div style="position:relative;max-width:760px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:12px"><img src="assets/logo/aidi-mark-navy.svg" style="height:30px" alt=""><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--e-text-subtle)">Governed data assistant</div></div>
+      <h1 style="margin:20px 0 0;font-size:36px;font-weight:800;letter-spacing:-.022em;color:var(--e-text-strong);line-height:1.12">Ask a question of your data</h1>
+      <p style="margin:10px 0 0;font-size:16px;color:var(--e-text-muted);max-width:560px">Every answer is generated from your governed warehouse tables, in English or Arabic, with the query it ran attached.</p>
+
+      <div style="margin-top:28px;background:var(--e-surface);border:1px solid var(--e-border-strong);border-radius:8px;box-shadow:var(--e-el-1);padding:16px 18px 12px">
+        <div style="font-size:15px;color:var(--e-text-subtle)">Ask a question…</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:16px">
+          <span style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-border);font-size:12.5px;font-weight:800;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="15" hint-size="15px,15px"></x-import>Search</span>
+          <span style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;background:var(--e-azure-tint);border:1px solid var(--e-azure-border);font-size:12.5px;font-weight:800;color:var(--e-link)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="15" hint-size="15px,15px"></x-import>Ask</span>
+          <span style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;border:1px solid var(--e-border);color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="16" hint-size="16px,16px"></x-import></span>
+          <span style="margin-left:auto;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:6px;background:var(--e-accent-solid);color:#fff"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="arrow-right" size="17" hint-size="17px,17px"></x-import></span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:18px">
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="layout-dashboard" size="15" hint-size="15px,15px"></x-import>Build a dashboard</span>
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="15" hint-size="15px,15px"></x-import>Explore a dataset</span>
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="calendar-clock" size="15" hint-size="15px,15px"></x-import>Schedule a report</span>
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bell-ring" size="15" hint-size="15px,15px"></x-import>Set up an alert</span>
+      </div>
+    </div>
+  </section>
+  </sc-if>
+
+  <section style="flex:1;display:flex;flex-direction:column;max-width:980px;width:100%;margin:0 auto;padding:24px 24px 0">
+    <header style="display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--e-border)">
+      <h2 style="font-size:18px;font-weight:800;letter-spacing:-.015em;color:var(--e-text-strong)">Sales performance</h2>
+      <span style="display:flex;color:var(--e-signal)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="star" size="15" hint-size="15px,15px"></x-import></span>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <span style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="14" hint-size="14px,14px"></x-import>New chat</span>
+        <span style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="history" size="14" hint-size="14px,14px"></x-import>History</span>
+        <span style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:800;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import>Data</span>
+        <span style="height:30px;padding:0 13px;display:flex;align-items:center;gap:7px;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:12.5px;font-weight:800"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="link" size="14" hint-size="14px,14px"></x-import>Share</span>
+      </div>
+    </header>
+
+    <div style="display:flex;justify-content:flex-end;margin:22px 0 0">
+      <div style="max-width:72%;background:var(--e-azure-tint);border:1px solid var(--e-azure-border);border-radius:8px 8px 2px 8px;padding:12px 16px;font-size:14.5px;color:var(--e-text-strong)">
+        Show the top 10 branches this fiscal year by revenue and orders closed
+      </div>
+    </div>
+
+    <div style="display:flex;gap:14px;margin-top:22px">
+      <span style="flex:0 0 auto;width:30px;height:30px;border-radius:6px;background:var(--e-accent-solid);display:flex;align-items:center;justify-content:center;margin-top:2px">
+        <img src="assets/logo/aidi-mark-white.svg" style="height:14px" alt="">
+      </span>
+      <div style="flex:1;min-width:0">
+        <p style="font-size:14.5px;line-height:1.6;color:var(--e-text-body);text-wrap:pretty">This ranks your ten highest-earning branches for FY 2026, combining order revenue with the count of closed orders. Riyadh Olaya leads on both measures; Jeddah Tahlia earns more per order despite closing fewer.</p>
+
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle);margin-right:2px">Sources</div>
+          <span style="display:flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:4px;background:var(--e-fill);border:1px solid var(--e-border);font-size:12px;font-weight:800;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="13" hint-size="13px,13px"></x-import>orders</span>
+          <span style="display:flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:4px;background:var(--e-fill);border:1px solid var(--e-border);font-size:12px;font-weight:800;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="13" hint-size="13px,13px"></x-import>branches</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:18px;margin-top:18px;font-size:12.5px">
+          <span style="color:var(--e-text-muted);font-variant-numeric:tabular-nums">10 rows</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--e-link);font-weight:800"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="download" size="14" hint-size="14px,14px"></x-import>Download</span>
+          <span style="display:flex;align-items:center;gap:6px;color:var(--e-link);font-weight:800"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="code" size="14" hint-size="14px,14px"></x-import>Show query</span>
+        </div>
+
+        <div style="margin-top:10px;border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+          <table style="width:100%;font-size:13.5px">
+            <thead>
+              <tr style="background:var(--e-chrome)">
+                <th style="width:44px;padding:0 14px;height:36px;text-align:right;font-weight:800;font-size:11px;color:var(--e-text-muted);border-bottom:1px solid var(--e-border)"></th>
+                <th style="padding:0 14px;height:36px;text-align:left;border-bottom:1px solid var(--e-border)"><span style="font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--e-text-subtle);margin-right:6px">ABC</span><span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--e-text-strong)">branch</span></th>
+                <th style="padding:0 14px;height:36px;text-align:right;border-bottom:1px solid var(--e-border)"><span style="font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--e-text-subtle);margin-right:6px">1.2</span><span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--e-text-strong)">total_revenue</span></th>
+                <th style="padding:0 14px;height:36px;text-align:right;border-bottom:1px solid var(--e-border)"><span style="font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--e-text-subtle);margin-right:6px">123</span><span style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--e-text-strong)">closed_orders</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:right;color:var(--e-text-subtle);border-bottom:1px solid var(--e-border-hair);font-variant-numeric:tabular-nums">1</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:800;border-bottom:1px solid var(--e-border-hair)">Riyadh Olaya</td><td style="padding:0 14px;text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair)">SAR 96,001.94</td><td style="padding:0 14px;text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair)">842</td></tr>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:right;color:var(--e-text-subtle);border-bottom:1px solid var(--e-border-hair);font-variant-numeric:tabular-nums">2</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:800;border-bottom:1px solid var(--e-border-hair)">Jeddah Tahlia</td><td style="padding:0 14px;text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair)">SAR 72,002.07</td><td style="padding:0 14px;text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair)">618</td></tr>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:right;color:var(--e-text-subtle);border-bottom:1px solid var(--e-border-hair);font-variant-numeric:tabular-nums">3</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:800;border-bottom:1px solid var(--e-border-hair)">Dammam Corniche</td><td style="padding:0 14px;text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair)">SAR 60,000.35</td><td style="padding:0 14px;text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair)">551</td></tr>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:right;color:var(--e-text-subtle);font-variant-numeric:tabular-nums">4</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:800">Khobar Rakah</td><td style="padding:0 14px;text-align:right;color:var(--e-text-strong);font-variant-numeric:tabular-nums">SAR 54,118.60</td><td style="padding:0 14px;text-align:right;color:var(--e-text-body);font-variant-numeric:tabular-nums">497</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <sc-if value="{{ showFollowUps }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="corner-down-right" size="14" hint-size="14px,14px"></x-import>Compare against last fiscal year</span>
+          <span style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="corner-down-right" size="14" hint-size="14px,14px"></x-import>Which branch grew fastest?</span>
+          <span style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bar-chart-3" size="14" hint-size="14px,14px"></x-import>Chart this</span>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div style="position:sticky;bottom:0;background:var(--e-page);padding:20px 0 24px;margin-top:12px">
+      <div style="display:flex;align-items:center;gap:14px;border:1px solid var(--e-border-strong);border-radius:8px;padding:12px 16px;background:var(--e-surface)">
+        <span style="display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="paperclip" size="17" hint-size="17px,17px"></x-import></span>
+        <span style="flex:1;font-size:14.5px;color:var(--e-text-subtle)">Ask a follow-up…</span>
+        <span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:6px;background:var(--e-accent-solid);color:#fff"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="send" size="15" hint-size="15px,15px"></x-import></span>
+      </div>
+      <p style="margin:10px 0 0;text-align:center;font-size:11.5px;color:var(--e-text-subtle)">Aidi can make mistakes — check important figures against the source.</p>
+    </div>
+  </section>
+  </sc-if>
+
+  <sc-if value="{{ isAr }}" hint-placeholder-val="{{ false }}">
+  <div dir="rtl" lang="ar" style="display:flex;flex-direction:column;flex:1;font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0">
+
+  <div style="height:52px;border-bottom:1px solid var(--e-border);display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--e-surface);position:sticky;top:0;z-index:5">
+    <img src="assets/logo/aidi-wordmark-navy.svg" alt="أيدي" style="height:17px;display:block">
+    <div style="width:1px;height:18px;background:var(--e-border)"></div>
+    <div style="font-size:12px;font-weight:700;color:var(--e-text-muted)">اسأل أيدي</div>
+    <div style="margin-inline-start:auto;display:flex;align-items:center;gap:8px">
+      <div style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import>المستودع · الإنتاج</div>
+      <div style="width:28px;height:28px;border-radius:6px;background:var(--e-chrome);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--e-text-strong)"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-weight:800">HM</span></div>
+    </div>
+  </div>
+
+  <sc-if value="{{ showEmptyState }}" hint-placeholder-val="{{ true }}">
+  <section style="position:relative;overflow:hidden;background:var(--e-surface-2);border-bottom:1px solid var(--e-border);padding:64px 24px 66px">
+    <div style="position:absolute;inset:0;background:radial-gradient(78% 110% at 92% 108%,rgba(255,102,0,.10),transparent 56%),radial-gradient(64% 96% at 8% -8%,rgba(178,170,196,.24),transparent 58%)"></div>
+    <div style="position:relative;max-width:760px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:12px"><img src="assets/logo/aidi-mark-navy.svg" style="height:30px" alt=""><div style="font-size:12px;font-weight:700;color:var(--e-text-subtle)">مساعد بيانات مُحوكَم </div></div>
+      <h1 style="margin:20px 0 0;font-size:36px;font-weight:700;color:var(--e-text-strong);line-height:1.32">اسأل بياناتك عن أي شيء</h1>
+      <p style="margin:10px 0 0;font-size:16px;color:var(--e-text-muted);max-width:560px;line-height:1.7">كل إجابة تُبنى من جداول مستودعك المُحوكَمة، بالعربية أو الإنجليزية، ومعها الاستعلام الذي نُفِّذ.</p>
+
+      <div style="margin-top:28px;background:var(--e-surface);border:1px solid var(--e-border-strong);border-radius:8px;box-shadow:var(--e-el-1);padding:16px 18px 12px">
+        <div style="font-size:14.5px;color:var(--e-text-subtle)">اطرح سؤالًا…</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:16px">
+          <span style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--e-border);font-size:12.5px;font-weight:700;color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="search" size="15" hint-size="15px,15px"></x-import>بحث</span>
+          <span style="display:flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:6px;background:var(--e-azure-tint);border:1px solid var(--e-azure-border);font-size:12.5px;font-weight:700;color:var(--e-link)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="message-circle" size="15" hint-size="15px,15px"></x-import>اسأل</span>
+          <span style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;border:1px solid var(--e-border);color:var(--e-text-muted)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="16" hint-size="16px,16px"></x-import></span>
+          <span style="margin-inline-start:auto;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:6px;background:var(--e-accent-solid);color:#fff;transform:scaleX(-1)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="arrow-right" size="17" hint-size="17px,17px"></x-import></span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:18px">
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="layout-dashboard" size="15" hint-size="15px,15px"></x-import>أنشئ لوحة معلومات</span>
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="15" hint-size="15px,15px"></x-import>استكشف مجموعة بيانات</span>
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="calendar-clock" size="15" hint-size="15px,15px"></x-import>جدوِل تقريرًا</span>
+        <span style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bell-ring" size="15" hint-size="15px,15px"></x-import>اضبط تنبيهًا</span>
+      </div>
+    </div>
+  </section>
+  </sc-if>
+
+  <section style="flex:1;display:flex;flex-direction:column;max-width:980px;width:100%;margin:0 auto;padding:24px 24px 0">
+    <header style="display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--e-border)">
+      <h2 style="font-size:18px;font-weight:700;color:var(--e-text-strong)">أداء المبيعات</h2>
+      <span style="display:flex;color:var(--e-signal)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="star" size="15" hint-size="15px,15px"></x-import></span>
+      <div style="margin-inline-start:auto;display:flex;gap:8px">
+        <span style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="plus" size="14" hint-size="14px,14px"></x-import>محادثة جديدة</span>
+        <span style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="history" size="14" hint-size="14px,14px"></x-import>السجل</span>
+        <span style="height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;border:1px solid var(--e-border);border-radius:6px;font-size:12.5px;font-weight:700;color:var(--e-text-strong)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="database" size="14" hint-size="14px,14px"></x-import>البيانات</span>
+        <span style="height:30px;padding:0 13px;display:flex;align-items:center;gap:7px;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:12.5px;font-weight:700"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="link" size="14" hint-size="14px,14px"></x-import>مشاركة</span>
+      </div>
+    </header>
+
+    <div style="display:flex;justify-content:flex-end;margin:22px 0 0">
+      <div style="max-width:72%;background:var(--e-azure-tint);border:1px solid var(--e-azure-border);border-radius:8px 8px 8px 2px;padding:12px 16px;font-size:14.5px;color:var(--e-text-strong);line-height:1.7">
+        اعرض أعلى ١٠ فروع في السنة المالية الحالية حسب الإيرادات والطلبات المغلقة
+      </div>
+    </div>
+
+    <div style="display:flex;gap:14px;margin-top:22px">
+      <span style="flex:0 0 auto;width:30px;height:30px;border-radius:6px;background:var(--e-accent-solid);display:flex;align-items:center;justify-content:center;margin-top:2px">
+        <img src="assets/logo/aidi-mark-white.svg" style="height:14px" alt="">
+      </span>
+      <div style="flex:1;min-width:0">
+        <p style="font-size:14.5px;line-height:1.75;color:var(--e-text-body);text-wrap:pretty">هذه أعلى عشرة فروع من حيث الإيرادات للسنة المالية <span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">2026</span>، بجمع إيرادات الطلبات مع عدد الطلبات المغلقة. يتصدّر فرع الرياض العليا في المقياسين، بينما يحقّق فرع جدة التحلية عائدًا أعلى لكل طلب رغم إغلاقه عددًا أقل.</p>
+
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center">
+          <div style="font-size:11.5px;font-weight:700;color:var(--e-text-subtle);margin-inline-end:2px">المصادر</div>
+          <span style="display:flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:4px;background:var(--e-fill);border:1px solid var(--e-border);font-size:12px;font-weight:700;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="13" hint-size="13px,13px"></x-import><span dir="ltr" style="font-family:'Anodina',sans-serif">orders</span></span>
+          <span style="display:flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:4px;background:var(--e-fill);border:1px solid var(--e-border);font-size:12px;font-weight:700;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="table-2" size="13" hint-size="13px,13px"></x-import><span dir="ltr" style="font-family:'Anodina',sans-serif">branches</span></span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:18px;margin-top:18px;font-size:12.5px">
+          <span style="color:var(--e-text-muted)"><span dir="ltr" style="font-family:'Anodina',sans-serif;font-variant-numeric:tabular-nums">10</span> صفوف</span>
+          <span style="margin-inline-start:auto;display:flex;align-items:center;gap:6px;color:var(--e-link);font-weight:700"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="download" size="14" hint-size="14px,14px"></x-import>تنزيل</span>
+          <span style="display:flex;align-items:center;gap:6px;color:var(--e-link);font-weight:700"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="code" size="14" hint-size="14px,14px"></x-import>عرض الاستعلام</span>
+        </div>
+
+        <div style="margin-top:10px;border:1px solid var(--e-border);border-radius:8px;overflow:hidden">
+          <table style="width:100%;font-size:13px">
+            <thead>
+              <tr style="background:var(--e-chrome)">
+                <th style="width:44px;padding:0 14px;height:36px;border-bottom:1px solid var(--e-border)"></th>
+                <th style="padding:0 14px;height:36px;text-align:start;border-bottom:1px solid var(--e-border)"><span dir="ltr" style="font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--e-text-subtle);margin-inline-end:6px;font-family:'Anodina',sans-serif">ABC</span><span style="font-size:12px;font-weight:700;color:var(--e-text-strong)">الفرع</span></th>
+                <th style="padding:0 14px;height:36px;text-align:end;border-bottom:1px solid var(--e-border)"><span dir="ltr" style="font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--e-text-subtle);margin-inline-end:6px;font-family:'Anodina',sans-serif">1.2</span><span style="font-size:12px;font-weight:700;color:var(--e-text-strong)">الإيرادات ﴿﷼﴾</span></th>
+                <th style="padding:0 14px;height:36px;text-align:end;border-bottom:1px solid var(--e-border)"><span dir="ltr" style="font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--e-text-subtle);margin-inline-end:6px;font-family:'Anodina',sans-serif">123</span><span style="font-size:12px;font-weight:700;color:var(--e-text-strong)">الطلبات المغلقة</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:end;color:var(--e-text-subtle);border-bottom:1px solid var(--e-border-hair);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif">1</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:700;border-bottom:1px solid var(--e-border-hair)">الرياض · العليا</td><td style="padding:0 14px;text-align:end;color:var(--e-text-strong);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair);font-family:'Anodina',sans-serif">96,001.94</td><td style="padding:0 14px;text-align:end;color:var(--e-text-body);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair);font-family:'Anodina',sans-serif">842</td></tr>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:end;color:var(--e-text-subtle);border-bottom:1px solid var(--e-border-hair);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif">2</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:700;border-bottom:1px solid var(--e-border-hair)">جدة · التحلية</td><td style="padding:0 14px;text-align:end;color:var(--e-text-strong);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair);font-family:'Anodina',sans-serif">72,002.07</td><td style="padding:0 14px;text-align:end;color:var(--e-text-body);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair);font-family:'Anodina',sans-serif">618</td></tr>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:end;color:var(--e-text-subtle);border-bottom:1px solid var(--e-border-hair);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif">3</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:700;border-bottom:1px solid var(--e-border-hair)">الدمام · الكورنيش</td><td style="padding:0 14px;text-align:end;color:var(--e-text-strong);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair);font-family:'Anodina',sans-serif">60,000.35</td><td style="padding:0 14px;text-align:end;color:var(--e-text-body);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--e-border-hair);font-family:'Anodina',sans-serif">551</td></tr>
+              <tr style="height:40px"><td style="padding:0 14px;text-align:end;color:var(--e-text-subtle);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif">4</td><td style="padding:0 14px;color:var(--e-text-strong);font-weight:700">الخبر · الراكة</td><td style="padding:0 14px;text-align:end;color:var(--e-text-strong);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif">54,118.60</td><td style="padding:0 14px;text-align:end;color:var(--e-text-body);font-variant-numeric:tabular-nums;font-family:'Anodina',sans-serif">497</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <sc-if value="{{ showFollowUps }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;color:var(--e-text-body)"><span style="display:flex;transform:scaleX(-1)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="corner-down-right" size="14" hint-size="14px,14px"></x-import></span>قارن بالسنة المالية الماضية</span>
+          <span style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;color:var(--e-text-body)"><span style="display:flex;transform:scaleX(-1)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="corner-down-right" size="14" hint-size="14px,14px"></x-import></span>أي فرع نما بأسرع وتيرة؟</span>
+          <span style="display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:6px;background:var(--e-surface);border:1px solid var(--e-border);font-size:13px;color:var(--e-text-body)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="bar-chart-3" size="14" hint-size="14px,14px"></x-import>ارسم هذا بيانيًا</span>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div style="position:sticky;bottom:0;background:var(--e-page);padding:20px 0 24px;margin-top:12px">
+      <div style="display:flex;align-items:center;gap:14px;border:1px solid var(--e-border-strong);border-radius:8px;padding:12px 16px;background:var(--e-surface)">
+        <span style="display:flex;color:var(--e-text-subtle)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="paperclip" size="17" hint-size="17px,17px"></x-import></span>
+        <span style="flex:1;font-size:14.5px;color:var(--e-text-subtle)">اطرح سؤالًا للمتابعة…</span>
+        <span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:6px;background:var(--e-accent-solid);color:#fff;transform:scaleX(-1)"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="send" size="15" hint-size="15px,15px"></x-import></span>
+      </div>
+      <p style="margin:10px 0 0;text-align:center;font-size:12px;color:var(--e-text-subtle)">قد يُخطئ أيدي — تحقّق من الأرقام المهمة بالرجوع إلى المصدر.</p>
+    </div>
+  </section>
+  </div>
+  </sc-if>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;language&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;English&quot;,&quot;العربية&quot;],&quot;default&quot;:&quot;English&quot;,&quot;tsType&quot;:&quot;\&quot;English\&quot; | \&quot;العربية\&quot;&quot;,&quot;section&quot;:&quot;Locale&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;\&quot;light\&quot; | \&quot;dark\&quot;&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;showEmptyState&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sections&quot;},&quot;showFollowUps&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sections&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      theme: this.props.theme ?? "light",
+      isAr: (this.props.language ?? "English") !== "English",
+      isEn: (this.props.language ?? "English") === "English",
+      showEmptyState: this.props.showEmptyState ?? true,
+      showFollowUps: this.props.showFollowUps ?? true,
+    };
+  }
+}
+</script>
+</body>
+</html>

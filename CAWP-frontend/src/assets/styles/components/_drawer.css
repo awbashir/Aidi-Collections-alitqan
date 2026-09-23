@@ -1,0 +1,50 @@
+/* Side sheets enter from the inline-end edge, radius 12 on the inner edge. */
+.drawer-content {
+  @apply bg-white dark:bg-night-card absolute flex flex-col
+    border-gray-300 dark:border-night-border;
+  box-shadow: var(--e-el-3);
+
+  &.vertical {
+    @apply h-full;
+  }
+
+  &.horizontal {
+    @apply w-full;
+  }
+}
+
+.drawer-header {
+  @apply flex items-center justify-between py-3.5 px-5 border-b border-gray-300 dark:border-night-border;
+}
+
+.drawer-body {
+  @apply p-5 h-full overflow-y-auto;
+}
+
+.drawer-footer {
+  @apply flex items-center justify-between py-3.5 px-5 border-t border-gray-300 dark:border-night-border;
+}
+
+.drawer-open {
+  &.drawer-lock-scroll {
+    @apply overflow-hidden;
+  }
+}
+
+.drawer-overlay {
+  transition: all 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+  @apply inset-0 fixed z-30;
+  background: rgba(7, 10, 75, 0.38);
+}
+
+.dark .drawer-overlay {
+  background: rgba(3, 4, 16, 0.62);
+}
+
+.drawer-overlay-after-open {
+  opacity: 1;
+}
+
+.drawer-overlay-before-close {
+  opacity: 0;
+}

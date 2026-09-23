@@ -1,0 +1,93 @@
+/* Nav + dropdown items — 13px, padding 8px 12px, radius 6.
+   Active nav item: #FFF4EC fill + a 3px #FF6600 rail on the LEADING edge
+   (which flips under RTL) + navy 800 label. */
+.menu-item {
+  @apply cursor-pointer px-3 rounded-md flex items-center w-full whitespace-nowrap gap-x-2
+    transition-colors duration-fast ease-aidi font-normal;
+  font-size: 13px;
+
+  &.menu-item-light {
+    @apply text-gray-700;
+
+    &.menu-item-hoverable {
+      @apply hover:text-navy-600 hover:bg-navy-600/[.05];
+    }
+
+    &.menu-item-active {
+      @apply text-navy-600 font-extrabold bg-signal-tint hover:bg-signal-tint;
+      box-shadow: inset 3px 0 0 #ff6600;
+    }
+  }
+
+  &.menu-item-dark {
+    @apply text-night-body;
+
+    &.menu-item-hoverable {
+      @apply hover:text-gray-100 hover:bg-white/[.06];
+    }
+
+    &.menu-item-active {
+      @apply text-gray-100 font-extrabold bg-signal-darkTint hover:bg-signal-darkTint;
+      box-shadow: inset 3px 0 0 #ff8433;
+    }
+  }
+
+  &.menu-item-themed,
+  &.menu-item-transparent {
+    @apply text-gray-700 dark:text-night-body;
+
+    &.menu-item-hoverable {
+      @apply hover:text-navy-600 hover:bg-navy-600/[.05] dark:hover:text-gray-100 dark:hover:bg-white/[.06];
+    }
+
+    &.menu-item-active {
+      @apply text-navy-600 font-extrabold bg-signal-tint dark:text-gray-100 dark:bg-signal-darkTint;
+      box-shadow: inset 3px 0 0 #ff6600;
+    }
+  }
+}
+
+[dir="rtl"] .menu-item.menu-item-active {
+  box-shadow: inset -3px 0 0 #ff6600;
+}
+
+[dir="rtl"] .menu-item.menu-item-dark.menu-item-active {
+  box-shadow: inset -3px 0 0 #ff8433;
+}
+
+.menu-collapse-item {
+  @apply cursor-pointer select-none px-3 rounded-md flex items-center justify-between
+    transition-colors duration-fast ease-aidi font-normal;
+  height: 34px;
+  font-size: 13px;
+
+  &.menu-collapse-item-light {
+    @apply text-gray-700 hover:text-navy-600 hover:bg-navy-600/[.05];
+  }
+
+  &.menu-collapse-item-dark {
+    @apply text-night-body hover:text-gray-100 hover:bg-white/[.06];
+  }
+
+  &.menu-collapse-item-themed,
+  &.menu-collapse-item-transparent {
+    @apply text-gray-700 hover:text-navy-600 hover:bg-navy-600/[.05] dark:text-night-body dark:hover:text-gray-100 dark:hover:bg-white/[.06];
+  }
+}
+
+.menu-item-divider {
+  @apply border-b border-gray-200 dark:border-night-border my-2;
+}
+
+.menu-item-header {
+  @apply text-gray-600 dark:text-night-muted;
+  font-size: 12.5px;
+}
+
+.menu-item-disabled {
+  @apply cursor-not-allowed opacity-60;
+}
+
+.menu-item-link {
+  @apply flex w-full h-full items-center;
+}

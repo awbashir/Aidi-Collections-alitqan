@@ -1,0 +1,23 @@
+/* Toast / notification — white card, 1px border, radius 8, elevation 2. */
+.notification {
+  @apply bg-white dark:bg-night-card rounded-lg mb-3 relative
+    border border-gray-300 dark:border-night-border;
+  box-shadow: var(--e-el-2);
+}
+
+.notification-content {
+  @apply p-4 flex;
+
+  &.no-child {
+    @apply items-center;
+  }
+}
+
+.notification-title {
+  @apply font-extrabold text-navy-600 dark:text-gray-100;
+  font-size: 14px;
+}
+
+.notification-close {
+  @apply top-4 ltr:right-4 rtl:left-4 text-gray-500;
+}

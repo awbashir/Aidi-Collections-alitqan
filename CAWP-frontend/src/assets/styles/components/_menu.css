@@ -1,0 +1,33 @@
+.menu-title {
+  @apply uppercase font-extrabold px-3 mt-4 mb-1.5 tracking-[0.12em] rtl:tracking-normal;
+  font-size: 11px;
+
+  &.menu-title-light {
+    @apply text-gray-500;
+  }
+
+  &.menu-title-dark {
+    @apply text-night-muted;
+  }
+
+  &.menu-title-themed {
+    @apply text-night-muted;
+  }
+}
+
+/* The nav is always white in light and #0C1033 in dark — never a themed fill. */
+.menu-light {
+  @apply bg-white;
+}
+
+.menu-dark {
+  @apply bg-night-card;
+}
+
+.menu-themed {
+  @apply bg-white dark:bg-night-card;
+}
+
+.menu-transparent {
+  @apply bg-transparent;
+}

@@ -1,0 +1,27 @@
+.badge {
+  @apply rounded-pill px-2 py-0.5 bg-danger text-white font-extrabold;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* The unread dot on the notification bell — a sanctioned orange touchpoint. */
+.badge-dot {
+  @apply rounded-full bg-signal-500 dark:bg-signal-dark;
+  width: 6px;
+  height: 6px;
+}
+
+.badge-wrapper {
+  @apply relative flex;
+}
+
+.badge-inner {
+  @apply absolute z-10
+        transform
+        top-0
+        ltr:translate-x-2/4
+        rtl:-translate-x-2/4
+        -translate-y-2/4
+        ltr:right-0
+        rtl:left-0;
+}

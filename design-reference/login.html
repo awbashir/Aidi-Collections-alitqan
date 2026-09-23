@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/colors.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/typography.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/effects.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/tokens/base.css">
+<link rel="stylesheet" href="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/styles.css">
+<script src="_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/_ds_bundle.js"></script>
+<style>
+/* Manifa V2 draws far smaller on the em square than Anodina, so one font-size
+   rendered two optical sizes. size-adjust scales outlines and metrics together —
+   Manifa cap height is 0.470em against Anodina's 0.700em; 130% takes it to 0.611em —
+   a deliberate step short of full optical parity (which would be ~150%), chosen because
+   at parity Arabic body copy overpowers the Latin around it in mixed enterprise screens.
+   Same value on both weights on purpose: a per-weight number makes a line change size
+   the moment it bolds. Arabic sizes are NOT stepped up on top of this — size-adjust
+   replaces the old per-element +1px compensation. */
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap;size-adjust:130%}
+@font-face{font-family:"Manifa V2";src:url("_ds/aidi-design-system-6f8ad630-5e33-441b-add6-8c0186f42b93/assets/fonts/Manifa-V2-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap;size-adjust:130%}
+:root{
+  --e-page:#FFFFFF; --e-surface:#FFFFFF; --e-surface-2:#FAFCFD; --e-fill:#F2F6F8; --e-chrome:#DFEEF2;
+  --e-border:#D7E1E8; --e-border-strong:#B8C4CE; --e-border-hair:#E7EEF2;
+  --e-text-strong:#070A4B; --e-text-body:#2E3450; --e-text-muted:#6B7482; --e-text-subtle:#8A929F;
+  --e-accent-solid:#070A4B; --e-accent-hover:#14184F; --e-accent-active:#04062F;
+  --e-azure:#2F5FD6; --e-azure-tint:#EEF3FD; --e-azure-border:#B3C8F4; --e-link:#234BB0; --e-link-hover:#1A3A8A;
+  --e-signal:#FF6600; --e-success:#0F7A52; --e-danger:#B3261E; --e-warning:#B25A00;
+  --e-danger-tint:#F9E6E4; --e-danger-border:#E9BFBB; --e-danger-text:#8F2A23;
+  --e-warn-tint:#FBEBDD; --e-warn-border:#EBD3B8; --e-warn-text:#7A431A;
+  --e-viz-4:#8FB9CE; --e-viz-6:#B2AAC4;
+  --e-el-1:0 1px 2px rgba(7,10,75,.06);
+}
+[data-theme="dark"]{
+  --e-page:#060820; --e-surface:#0C1033; --e-surface-2:#080B26; --e-fill:#141A45; --e-chrome:#141A45;
+  --e-border:#262C5E; --e-border-strong:#3A4179; --e-border-hair:#1B2049;
+  --e-text-strong:#F2F5FB; --e-text-body:#C7CDE4; --e-text-muted:#8D95B8; --e-text-subtle:#6E769B;
+  --e-accent-solid:#2F5FD6; --e-accent-hover:#4272E0; --e-accent-active:#234BB0;
+  --e-azure:#7D9DEA; --e-azure-tint:#151B47; --e-azure-border:#3A4179; --e-link:#7D9DEA; --e-link-hover:#B3C8F4;
+  --e-signal:#FF8433; --e-success:#3FBF8F; --e-danger:#F1786E; --e-warning:#E29A55;
+  --e-danger-tint:#2E1412; --e-danger-border:#5A241F; --e-danger-text:#F0B5AF;
+  --e-warn-tint:#2B1B0C; --e-warn-border:#5A3A18; --e-warn-text:#F0C79B;
+  --e-viz-4:#8FB9CE; --e-viz-6:#B2AAC4;
+  --e-el-1:0 1px 2px rgba(0,0,0,.45);
+}
+[data-theme="dark"] img[src*="navy"]{filter:brightness(0) invert(1)}
+[lang="ar"] h1,[lang="ar"] h2,[lang="ar"] h3,[lang="ar"] h4{font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0}
+body{margin:0;background:var(--e-fill);font-family:"Anodina","Segoe UI",system-ui,sans-serif;font-weight:400;font-size:15px;line-height:1.55;color:var(--e-text-body);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+a{color:var(--e-link);text-decoration:none}
+a:hover{color:var(--e-link-hover);text-decoration:underline}
+</style>
+</helmet>
+
+<div style="display:contents">
+<div data-theme="{{ theme }}" style="display:flex;flex-direction:column;gap:1px;background:var(--e-border)">
+
+  <div style="background:var(--e-surface);padding:14px 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--e-border)">
+    <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--e-text-subtle)">Aidi Enterprise · Sign in </div>
+    <div style="width:1px;height:14px;background:var(--e-border)"></div>
+    <div style="font-size:12.5px;color:var(--e-text-muted)">English (LTR) and Arabic (RTL), identical control heights and spacing</div>
+  </div>
+
+  <div dir="ltr" style="display:flex;min-height:720px;background:var(--e-page)">
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:48px 24px">
+      <div style="width:100%;max-width:384px;display:flex;flex-direction:column;gap:24px">
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <img src="assets/logo/aidi-wordmark-navy.svg" alt="Aidi" style="height:24px;width:auto;align-self:flex-start;display:block">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <h1 style="font-size:22px;font-weight:800;letter-spacing:-0.01em;line-height:1.25;color:var(--e-text-strong)">Sign in</h1>
+            <p style="font-size:13px;color:var(--e-text-muted)">Ask your data anything, in plain language.</p>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--e-border);border-radius:8px;background:var(--e-surface);padding:24px;display:flex;flex-direction:column;gap:16px">
+
+          <sc-if value="{{ showError }}" hint-placeholder-val="{{ false }}">
+          <div style="border:1px solid var(--e-danger-border);background:var(--e-danger-tint);border-radius:6px;padding:11px 13px;display:flex;gap:9px;align-items:flex-start">
+            <span style="display:flex;color:var(--e-danger);flex:0 0 auto;padding-top:1px"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="alert-circle" size="15" hint-size="15px,15px"></x-import></span>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:13px;font-weight:800;color:var(--e-danger)">Sign-in failed</div>
+              <div style="font-size:12.5px;color:var(--e-danger-text);line-height:1.5">Check your email and password. If this address belongs to more than one organisation, add the organisation below.</div>
+            </div>
+          </div>
+          </sc-if>
+
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <label style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Email</label>
+            <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;padding-inline:12px;display:flex;align-items:center;background:var(--e-surface);font-size:14px;color:var(--e-text-body)">you@company.com</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+              <label style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Password</label>
+              <a href="#" style="font-size:12.5px;color:var(--e-link)">Forgot password</a>
+            </div>
+            <div style="height:36px;border:1px solid var(--e-azure);border-radius:6px;box-shadow:0 0 0 2px rgba(47,95,214,.22);padding-inline:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--e-surface);font-size:14px;color:var(--e-text-strong);letter-spacing:.14em">
+              <span>••••••••</span>
+              <span style="display:flex;color:var(--e-text-subtle);letter-spacing:0;flex:0 0 auto"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="eye" size="15" hint-size="15px,15px"></x-import></span>
+            </div>
+          </div>
+
+          <sc-if value="{{ showOrgField }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <label style="font-size:12.5px;font-weight:800;color:var(--e-text-strong)">Organisation</label>
+            <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;padding-inline:12px;display:flex;align-items:center;background:var(--e-surface);font-size:14px;color:var(--e-text-subtle)">acme-holdings</div>
+            <div style="font-size:12px;color:var(--e-text-muted);line-height:1.5">Only needed when one address belongs to more than one organisation.</div>
+          </div>
+          </sc-if>
+
+          <button type="button" style="height:40px;border:0;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;width:100%;transition:background 120ms cubic-bezier(.2,.8,.2,1)" style-hover="background:var(--e-accent-hover)" style-active="background:var(--e-accent-active)">Sign in</button>
+
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="flex:1;height:1px;background:var(--e-border-hair)"></div>
+            <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--e-text-subtle);flex:0 0 auto">or</div>
+            <div style="flex:1;height:1px;background:var(--e-border-hair)"></div>
+          </div>
+
+          <button type="button" style="height:40px;border:1px solid var(--e-border-strong);border-radius:6px;background:var(--e-surface);color:var(--e-text-strong);font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;width:100%;display:flex;align-items:center;justify-content:center;gap:9px;transition:background 120ms cubic-bezier(.2,.8,.2,1)" style-hover="background:var(--e-fill)">
+            <span style="display:flex;color:var(--e-text-muted);flex:0 0 auto"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="building-2" size="16" hint-size="16px,16px"></x-import></span>
+            <span>Continue with your identity provider</span>
+          </button>
+        </div>
+
+        <sc-if value="{{ showDevNotice }}" hint-placeholder-val="{{ true }}">
+        <div style="border:1px solid var(--e-warn-border);background:var(--e-warn-tint);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:9px;align-items:flex-start">
+            <span style="display:flex;color:var(--e-warning);flex:0 0 auto;padding-top:1px"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="info" size="14" hint-size="14px,14px"></x-import></span>
+            <div style="font-size:12px;color:var(--e-warn-text);line-height:1.55"><strong style="font-weight:800;color:var(--e-warning)">Development build.</strong> Seeded credentials are <code style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--e-surface);border-radius:3px;padding:1px 4px">admin@aidi.local</code> / <code style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--e-surface);border-radius:3px;padding:1px 4px">Admin123!</code></div>
+          </div>
+          <button type="button" style="height:28px;align-self:flex-start;border:0;border-radius:6px;background:transparent;color:var(--e-link);font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;padding-inline:10px" style-hover="background:var(--e-azure-tint)">Use demo account</button>
+        </div>
+        </sc-if>
+
+        <div style="font-size:12px;color:var(--e-text-subtle);line-height:1.55">By signing in you accept the <a href="#" style="color:var(--e-link)">acceptable-use policy</a>. Queries and their results are recorded in your organisation's audit log.</div>
+      </div>
+    </div>
+
+    <div style="flex:1;position:relative;overflow:hidden;display:flex;background:linear-gradient(150deg,#070A4B 0%,#0B0F55 46%,#14184F 100%)">
+      <div style="position:absolute;inset:auto -140px -200px auto;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle at 40% 40%,rgba(255,102,0,.30) 0%,rgba(255,102,0,0) 62%)"></div>
+      <div style="position:absolute;inset:0;opacity:.10;background-image:url('assets/logo/aidi-mark-white.svg');background-size:92px;background-repeat:repeat;mask-image:linear-gradient(to top,#000,transparent 72%);-webkit-mask-image:linear-gradient(to top,#000,transparent 72%)"></div>
+      <div style="position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:20px;padding:56px;width:100%">
+        <h2 style="font-size:44px;line-height:1.02;letter-spacing:-0.02em;font-weight:800;color:#fff;max-width:15ch;text-wrap:balance">Ask anything. See everything.</h2>
+        <p style="font-size:17px;font-weight:300;line-height:1.5;color:#C7CDE4;max-width:46ch;text-wrap:pretty">Connect your data, then build queries, dashboards and reports in plain language — inside the permissions your organisation already set.</p>
+        <div style="display:flex;gap:36px;flex-wrap:wrap;padding-top:16px;border-top:1px solid rgba(255,255,255,.14);margin-top:8px">
+          <div style="display:flex;flex-direction:column;gap:5px"><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7D9DEA">Governed</div><div style="font-size:13.5px;color:#C7CDE4">Row-level permissions carry through</div></div>
+          <div style="display:flex;flex-direction:column;gap:5px"><div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7D9DEA">Audited</div><div style="font-size:13.5px;color:#C7CDE4">Every run logged with its SQL</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div dir="rtl" lang="ar" style="display:flex;min-height:720px;background:var(--e-page);font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0">
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:48px 24px">
+      <div style="width:100%;max-width:384px;display:flex;flex-direction:column;gap:24px">
+
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <img src="assets/logo/aidi-wordmark-navy.svg" alt="أيدي" style="height:24px;width:auto;align-self:flex-start;display:block">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <h1 style="font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0;font-size:22px;font-weight:700;line-height:1.4;color:var(--e-text-strong)">تسجيل الدخول</h1>
+            <p style="font-size:13.5px;color:var(--e-text-muted);line-height:1.7">اسأل بياناتك عن أي شيء، بلغة واضحة.</p>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--e-border);border-radius:8px;background:var(--e-surface);padding:24px;display:flex;flex-direction:column;gap:16px">
+
+          <sc-if value="{{ showError }}" hint-placeholder-val="{{ false }}">
+          <div style="border:1px solid var(--e-danger-border);background:var(--e-danger-tint);border-radius:6px;padding:11px 13px;display:flex;gap:9px;align-items:flex-start">
+            <span style="display:flex;color:var(--e-danger);flex:0 0 auto;padding-top:2px"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="alert-circle" size="15" hint-size="15px,15px"></x-import></span>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:13px;font-weight:700;color:var(--e-danger)">تعذّر تسجيل الدخول</div>
+              <div style="font-size:12.5px;color:var(--e-danger-text);line-height:1.7">تأكّد من البريد الإلكتروني وكلمة المرور. وإذا كان هذا البريد مرتبطًا بأكثر من مؤسسة، أضف اسم المؤسسة أدناه.</div>
+            </div>
+          </div>
+          </sc-if>
+
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <label style="font-size:12.5px;font-weight:700;color:var(--e-text-strong)">البريد الإلكتروني</label>
+            <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;padding-inline:12px;display:flex;align-items:center;background:var(--e-surface);font-size:13.5px;color:var(--e-text-body)"><span dir="ltr" style="font-family:'Anodina',sans-serif">you@company.com</span></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+              <label style="font-size:12.5px;font-weight:700;color:var(--e-text-strong)">كلمة المرور</label>
+              <a href="#" style="font-size:12.5px;color:var(--e-link)">نسيت كلمة المرور</a>
+            </div>
+            <div style="height:36px;border:1px solid var(--e-azure);border-radius:6px;box-shadow:0 0 0 2px rgba(47,95,214,.22);padding-inline:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--e-surface);font-size:13.5px;color:var(--e-text-strong)">
+              <span style="letter-spacing:.14em">••••••••</span>
+              <span style="display:flex;color:var(--e-text-subtle);flex:0 0 auto"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="eye" size="15" hint-size="15px,15px"></x-import></span>
+            </div>
+          </div>
+
+          <sc-if value="{{ showOrgField }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <label style="font-size:12.5px;font-weight:700;color:var(--e-text-strong)">المؤسسة</label>
+            <div style="height:36px;border:1px solid var(--e-border-strong);border-radius:6px;padding-inline:12px;display:flex;align-items:center;background:var(--e-surface);font-size:13.5px;color:var(--e-text-subtle)"><span dir="ltr" style="font-family:'Anodina',sans-serif">acme-holdings</span></div>
+            <div style="font-size:12px;color:var(--e-text-muted);line-height:1.7">لا يلزم إلا عندما يرتبط البريد نفسه بأكثر من مؤسسة.</div>
+          </div>
+          </sc-if>
+
+          <button type="button" style="height:40px;border:0;border-radius:6px;background:var(--e-accent-solid);color:#fff;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;width:100%;transition:background 120ms cubic-bezier(.2,.8,.2,1)" style-hover="background:var(--e-accent-hover)" style-active="background:var(--e-accent-active)">تسجيل الدخول</button>
+
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="flex:1;height:1px;background:var(--e-border-hair)"></div>
+            <div style="font-size:12px;font-weight:700;color:var(--e-text-subtle);flex:0 0 auto">أو</div>
+            <div style="flex:1;height:1px;background:var(--e-border-hair)"></div>
+          </div>
+
+          <button type="button" style="height:40px;border:1px solid var(--e-border-strong);border-radius:6px;background:var(--e-surface);color:var(--e-text-strong);font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;width:100%;display:flex;align-items:center;justify-content:center;gap:9px;transition:background 120ms cubic-bezier(.2,.8,.2,1)" style-hover="background:var(--e-fill)">
+            <span style="display:flex;color:var(--e-text-muted);flex:0 0 auto"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="building-2" size="16" hint-size="16px,16px"></x-import></span>
+            <span>المتابعة عبر موفّر الهوية</span>
+          </button>
+        </div>
+
+        <sc-if value="{{ showDevNotice }}" hint-placeholder-val="{{ true }}">
+        <div style="border:1px solid var(--e-warn-border);background:var(--e-warn-tint);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:9px;align-items:flex-start">
+            <span style="display:flex;color:var(--e-warning);flex:0 0 auto;padding-top:2px"><x-import component-from-global-scope="AidiDesignSystem_6f8ad6.Icon" name="info" size="14" hint-size="14px,14px"></x-import></span>
+            <div style="font-size:12px;color:var(--e-warn-text);line-height:1.7"><strong style="font-weight:700;color:var(--e-warning)">نسخة تطويرية.</strong> بيانات الدخول التجريبية <code dir="ltr" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--e-surface);border-radius:3px;padding:1px 4px">admin@aidi.local</code> / <code dir="ltr" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--e-surface);border-radius:3px;padding:1px 4px">Admin123!</code></div>
+          </div>
+          <button type="button" style="height:28px;align-self:flex-start;border:0;border-radius:6px;background:transparent;color:var(--e-link);font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;padding-inline:10px" style-hover="background:var(--e-azure-tint)">استخدام الحساب التجريبي</button>
+        </div>
+        </sc-if>
+
+        <div style="font-size:12px;color:var(--e-text-subtle);line-height:1.7">بتسجيل الدخول فإنك توافق على <a href="#" style="color:var(--e-link)">سياسة الاستخدام المقبول</a>. تُسجَّل الاستعلامات ونتائجها في سجل التدقيق الخاص بمؤسستك.</div>
+      </div>
+    </div>
+
+    <div style="flex:1;position:relative;overflow:hidden;display:flex;background:linear-gradient(210deg,#070A4B 0%,#0B0F55 46%,#14184F 100%)">
+      <div style="position:absolute;inset:auto auto -200px -140px;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle at 60% 40%,rgba(255,102,0,.30) 0%,rgba(255,102,0,0) 62%)"></div>
+      <div style="position:absolute;inset:0;opacity:.10;background-image:url('assets/logo/aidi-mark-white.svg');background-size:92px;background-repeat:repeat;mask-image:linear-gradient(to top,#000,transparent 72%);-webkit-mask-image:linear-gradient(to top,#000,transparent 72%)"></div>
+      <div style="position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:20px;padding:56px;width:100%">
+        <h2 style="font-family:'Manifa V2','Noto Sans Arabic',sans-serif;letter-spacing:0;font-size:44px;line-height:1.28;font-weight:700;color:#fff;max-width:16ch;text-wrap:balance">اسأل عن أي شيء. واطّلع على كل شيء.</h2>
+        <p style="font-size:17px;font-weight:400;line-height:1.7;color:#C7CDE4;max-width:44ch;text-wrap:pretty">اربط بياناتك، ثم أنشئ الاستعلامات ولوحات المعلومات والتقارير بلغة واضحة — ضمن الصلاحيات التي حدّدتها مؤسستك أصلًا.</p>
+        <div style="display:flex;gap:36px;flex-wrap:wrap;padding-top:16px;border-top:1px solid rgba(255,255,255,.14);margin-top:8px">
+          <div style="display:flex;flex-direction:column;gap:5px"><div style="font-size:12px;font-weight:700;color:#7D9DEA">مُحوكَم</div><div style="font-size:13.5px;color:#C7CDE4;line-height:1.7">صلاحيات الصفوف تنتقل كما هي</div></div>
+          <div style="display:flex;flex-direction:column;gap:5px"><div style="font-size:12px;font-weight:700;color:#7D9DEA">مُدقَّق</div><div style="font-size:13.5px;color:#C7CDE4;line-height:1.7">كل تشغيل مسجَّل مع استعلامه</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;\&quot;light\&quot; | \&quot;dark\&quot;&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;showError&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;States&quot;},&quot;showOrgField&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;States&quot;},&quot;showDevNotice&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;States&quot;}}">class Component extends DCLogic {
+  renderVals() {
+    return {
+      theme: this.props.theme ?? "light",
+      showError: this.props.showError ?? false,
+      showOrgField: this.props.showOrgField ?? false,
+      showDevNotice: this.props.showDevNotice ?? true,
+    };
+  }
+}</script>
+</body>
+</html>

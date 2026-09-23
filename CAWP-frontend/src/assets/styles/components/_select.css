@@ -1,0 +1,102 @@
+.select {
+  font-size: 14px;
+
+  .select__placeholder {
+    @apply text-gray-500 dark:text-night-muted;
+  }
+
+  .select__multi-value {
+    @apply bg-navy-50 text-navy-600 dark:bg-night-raised dark:text-night-body rounded-xs font-extrabold;
+    font-size: 12px;
+
+    .select__multi-value__label {
+      color: inherit;
+    }
+  }
+
+  .select__multi-value__remove {
+    &:hover {
+      @apply bg-transparent text-danger;
+    }
+  }
+
+  &.select-lg {
+    font-size: 15px;
+
+    .select-dropdown-indicator {
+      @apply text-xl;
+    }
+  }
+
+  .select__single-value {
+    color: inherit;
+  }
+
+  .select__single-value--is-disabled {
+    @apply opacity-70;
+  }
+
+  .select__input {
+    input {
+      @apply dark:!text-gray-100;
+    }
+  }
+
+  .select__control {
+    @apply dark:bg-transparent h-auto;
+
+    &.hide-single-value {
+      .select__single-value {
+        @apply !hidden;
+      }
+    }
+  }
+
+  .select__control--is-disabled {
+    @apply bg-gray-100 text-gray-500 dark:bg-night-raised cursor-not-allowed;
+
+    .select__placeholder {
+      @apply text-gray-400;
+    }
+
+    .select__multi-value {
+      @apply opacity-60 bg-gray-200 dark:bg-night-border;
+    }
+  }
+}
+
+/* Popover surface: radius 8, 1px border, elevation 2. */
+.select__menu {
+  @apply bg-white dark:bg-night-card rounded-lg border border-gray-300 dark:border-night-border;
+  box-shadow: var(--e-el-2) !important;
+}
+
+.select-option {
+  @apply flex items-center justify-between px-3 hover:bg-gray-50 dark:hover:bg-night-raised cursor-default;
+  height: 32px;
+  font-size: 13.5px;
+
+  &.selected {
+    @apply bg-navy-50 text-navy-600 font-extrabold dark:bg-night-raised dark:text-gray-100;
+  }
+
+  &.disabled {
+    @apply opacity-40 dark:opacity-30 hover:bg-transparent cursor-not-allowed;
+  }
+
+  &.focused {
+    @apply bg-gray-50 dark:bg-night-raised;
+
+    &.selected {
+      @apply bg-navy-50 dark:bg-night-raised;
+    }
+  }
+}
+
+.select-dropdown-indicator {
+  @apply p-2 text-base text-gray-500 hover:opacity-70;
+}
+
+.select-clear-indicator {
+  @apply p-2 text-sm text-gray-500 hover:opacity-70;
+}

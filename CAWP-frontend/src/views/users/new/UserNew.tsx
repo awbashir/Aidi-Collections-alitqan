@@ -1,0 +1,101 @@
+import { useEffect } from "react";
+import Container from "@/components/shared/Container";
+import Loading from "@/components/shared/Loading";
+
+import reducer, {
+  useAppDispatch,
+  useAppSelector,
+  getNationalities,
+  getContracts,
+  getRoles,
+  getBranches,
+  newUser,
+} from "./store";
+
+import { injectReducer } from "@/store";
+import isEmpty from "lodash/isEmpty";
+import useQuery from "@/utils/hooks/useQuery";
+import UserForm, { FormModel, SetSubmitting } from "../form/UserForm";
+import { useLocation, useNavigate } from "react-router-dom";
+import toast from "@/components/ui/toast";
+import Notification from "@/components/ui/Notification";
+import { useTranslation } from "react-i18next";
+
+injectReducer("userNew", reducer);
+
+const UserNew = () => {
+  const { t } = useTranslation();
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const naionalityOptions = useAppSelector(
+    (state) => state.userNew.data.nationalityOptions
+  );
+
+  const roleOptions = useAppSelector((state) => state.userNew.data.roleOptions);
+  const branchOptions = useAppSelector(
+    (state) => state.userNew.data.branchOptions
+  );
+  const contractOptions = useAppSelector(
+    (state) => state.userNew.data.contractOptions
+  );
+  const loading = useAppSelector((state) => state.userNew.data.loading);
+
+  const fetchData = () => {
+    dispatch(getNationalities());
+    dispatch(getRoles());
+    dispatch(getBranches());
+    dispatch(getContracts());
+  };
+
+  const handleDiscard = () => {
+    navigate("/users");
+  };
+
+  const handleFormSubmit = async (
+    values: FormModel,
+    setSubmitting: SetSubmitting
+  ) => {
+    setSubmitting(true);
+    //delete id from values
+    delete values.id;
+    const success = await newUser(values);
+    setSubmitting(false);
+    if (success) {
+      popNotification("New");
+    }
+  };
+
+  const popNotification = (keyword: string) => {
+    toast.push(
+      <Notification title={t("users.addNew")} type="success" duration={2500}>
+        {t(`users.addSuccess`)}
+      </Notification>,
+      {
+        placement: "top-center",
+      }
+    );
+    navigate("/users");
+  };
+
+  return (
+    <Container className="h-full">
+      <UserForm
+        type="New"
+        nationalities={naionalityOptions}
+        roles={roleOptions}
+        contracts={contractOptions}
+        branches={branchOptions}
+        onDiscard={handleDiscard}
+        onFormSubmit={handleFormSubmit}
+      />
+    </Container>
+  );
+};
+
+export default UserNew;

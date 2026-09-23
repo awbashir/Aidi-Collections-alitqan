@@ -1,0 +1,48 @@
+/* Status pills — radius 999, height 24, 12px / 800. The one surviving pill. */
+.tag {
+  @apply rounded-pill
+    border border-transparent
+    bg-gray-200 text-gray-600
+    dark:bg-night-raised dark:text-night-body
+    items-center inline-flex whitespace-nowrap
+    font-extrabold;
+  height: 24px;
+  padding-inline: 11px 9px;
+  font-size: 12px;
+  letter-spacing: 0;
+  gap: 7px;
+}
+
+.tag-affix {
+  @apply h-[7px] w-[7px] rounded-full bg-current opacity-80;
+}
+
+.tag-prefix,
+.tag-suffix {
+  @apply m-0;
+}
+
+/* Status tints — fill-only, and each carries its own glyph shape via
+   `.tag-affix` so the set survives greyscale. */
+.tag-success {
+  @apply bg-success-tint text-success;
+}
+.tag-warning {
+  @apply bg-warning-tint text-warning;
+}
+.tag-danger {
+  @apply bg-danger-tint text-danger;
+}
+.tag-info {
+  @apply bg-info-tint text-info;
+}
+.tag-neutral {
+  @apply bg-gray-200 text-gray-600;
+}
+
+/* Metadata tag (not a status): radius 4, navy fill, 11px / 800 / +0.06em. */
+.tag-meta {
+  @apply rounded-xs bg-navy-600 text-white;
+  font-size: 11px;
+  padding-inline: 11px;
+}

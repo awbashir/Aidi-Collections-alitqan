@@ -1,0 +1,35 @@
+/* Top bar — white, 1px #D7E1E8 bottom border, no shadow. */
+.header {
+  @apply bg-white dark:bg-night-card flex z-30 sticky top-0 w-full
+    border-b border-gray-300 dark:border-night-border;
+}
+
+.header-wrapper {
+  @apply flex relative items-center justify-between p-0 px-4 w-full gap-1;
+}
+
+.header-action {
+  @apply flex items-center gap-1;
+}
+
+.header-action-item {
+  @apply cursor-pointer rounded-md mx-0 flex items-center justify-center
+    text-gray-600 dark:text-night-muted
+    transition-colors duration-fast ease-aidi;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 6px;
+}
+
+.header-action-item-hoverable {
+  @apply hover:bg-navy-600/[.05]
+    hover:text-navy-600
+    dark:hover:bg-white/[.06]
+    dark:hover:text-gray-100;
+}
+
+/* Header icons are 20px Lucide-style strokes. */
+.header-action-item svg {
+  width: 20px;
+  height: 20px;
+}

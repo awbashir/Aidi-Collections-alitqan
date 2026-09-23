@@ -1,0 +1,51 @@
+/* Side nav — persistent, collapsible, 230px (64px collapsed).
+   White chrome split by a 1px hairline on the inline-END edge; never a tint. */
+.side-nav {
+  @apply flex-col flex-auto flex-shrink-0 z-20 transition-all ease-aidi duration-200;
+  padding: 0;
+}
+
+.side-nav-expand {
+  @apply sticky top-0 h-screen;
+}
+
+.side-nav-header {
+  @apply flex items-center border-b border-gray-300 dark:border-night-border;
+  height: 56px;
+}
+
+.side-nav-content {
+  height: calc(100vh - 56px);
+  @apply overflow-y-auto;
+}
+
+.side-nav-light {
+  @apply bg-white ltr:border-r rtl:border-l border-gray-300;
+}
+
+.side-nav-dark {
+  @apply bg-night-card ltr:border-r rtl:border-l border-night-border;
+}
+
+.side-nav-themed {
+  @apply bg-white dark:bg-night-card ltr:border-r rtl:border-l border-gray-300 dark:border-night-border;
+}
+
+.side-nav-transparent {
+  @apply bg-transparent;
+}
+
+/* Nav item rhythm: 2px gap, 10px rail padding. Icons 20px, muted at rest,
+   orange on the active item. */
+.side-nav .menu-item {
+  margin-bottom: 2px;
+}
+
+.side-nav .menu-item-active .menu-item-icon,
+.side-nav .menu-item-active svg {
+  color: #ff6600;
+}
+
+.dark .side-nav .menu-item-active svg {
+  color: #ff8433;
+}

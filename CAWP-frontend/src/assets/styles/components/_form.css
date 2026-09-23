@@ -1,0 +1,40 @@
+.form-item {
+  @apply mb-6 relative;
+
+  &.horizontal {
+    @apply flex flex-auto;
+
+    .form-label {
+      @apply justify-end;
+    }
+  }
+
+  &.vertical {
+    @apply flex flex-col;
+  }
+
+  &.inline {
+    @apply md:inline-flex ltr:mr-3 rtl:ml-3;
+  }
+}
+
+/* Field label — 12.5px / 800 navy, 7px above the control. */
+.form-label {
+  @apply flex items-center font-extrabold text-navy-600 dark:text-gray-100 mb-1.5;
+  font-size: 12.5px;
+
+  &.invalid {
+    @apply text-danger;
+  }
+}
+
+.form-explain {
+  @apply text-danger absolute;
+  font-size: 12px;
+}
+
+.form-container {
+  &.inline {
+    @apply md:flex items-center;
+  }
+}

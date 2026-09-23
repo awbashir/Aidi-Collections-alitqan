@@ -1,0 +1,53 @@
+.dialog {
+  outline: none;
+  @apply mx-auto;
+}
+
+@screen sm {
+  .dialog {
+    @apply max-w-xl;
+  }
+}
+
+@screen md {
+  .dialog {
+    @apply max-w-2xl;
+  }
+}
+
+@screen lg {
+  .dialog {
+    @apply max-w-4xl;
+  }
+}
+
+@screen xl {
+  .dialog {
+    @apply max-w-6xl;
+  }
+}
+
+/* Dialogs — radius 12, padding 24, elevation 3, scrim rgba(7,10,75,.32). */
+.dialog-content {
+  @apply p-6 rounded-xl sm:my-16 relative h-full bg-white dark:bg-night-card
+    border border-gray-300 dark:border-night-border;
+  box-shadow: var(--e-el-3);
+}
+
+.dialog-overlay {
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  @apply inset-0 fixed z-30;
+  background: rgba(7, 10, 75, 0.32);
+}
+
+.dark .dialog-overlay {
+  background: rgba(3, 4, 16, 0.62);
+}
+
+.dialog-overlay-after-open {
+  opacity: 1;
+}
+
+.dialog-overlay-before-close {
+  opacity: 0;
+}

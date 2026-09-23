@@ -1,0 +1,11 @@
+/* Tooltip — navy fill, 12.5px white, radius 6, overlay elevation. */
+.tooltip {
+  @apply z-50 max-w-[250px] text-white rounded-md relative;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  box-shadow: var(--e-el-2);
+}
+
+.tooltip-wrapper {
+  @apply inline-flex;
+}

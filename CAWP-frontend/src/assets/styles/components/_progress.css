@@ -1,0 +1,48 @@
+.progress {
+  @apply inline-block;
+
+  &.circle {
+    @apply relative w-full;
+  }
+
+  &.line {
+    @apply relative w-full flex items-center;
+  }
+}
+
+.progress-bg {
+  @apply rounded-pill transition-all duration-200 ease-aidi;
+}
+
+.progress-info {
+  &.line {
+    @apply ltr:ml-2 rtl:mr-2;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.progress-inner {
+  @apply relative w-full overflow-hidden rounded-pill bg-gray-200 dark:bg-night-raised;
+}
+
+.progress-wrapper {
+  @apply w-full;
+}
+
+.progress-circle {
+  @apply relative;
+}
+
+.progress-circle-info {
+  @apply absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-circle-trail {
+  @apply stroke-current text-gray-200 dark:text-night-raised;
+}
+
+.progress-circle-stroke {
+  @apply stroke-current transition-all duration-200 ease-aidi;
+}
