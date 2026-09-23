@@ -580,6 +580,39 @@ export const protectedRoutes = [
     },
   },
 
+  /* ── Phase 1 screens. The route `key` is the permission key that
+   *    AuthorityGuard checks, and matches the nav item key. ── */
+  {
+    key: "attention_queue",
+    path: "/attention",
+    component: lazy(() => import("@/views/phase1/attention")),
+    authority: [],
+  },
+  {
+    key: "follow_ups",
+    path: "/follow-ups",
+    component: lazy(() => import("@/views/phase1/followUps")),
+    authority: [],
+  },
+  {
+    key: "promises",
+    path: "/promises",
+    component: lazy(() => import("@/views/phase1/promises")),
+    authority: [],
+  },
+  {
+    key: "payments_approve",
+    path: "/payment-approvals",
+    component: lazy(() => import("@/views/phase1/paymentApprovals")),
+    authority: [],
+  },
+  {
+    key: "case_corrections_review",
+    path: "/corrections",
+    component: lazy(() => import("@/views/phase1/corrections")),
+    authority: [],
+  },
+
   {
     key: "accessDenied",
     path: "/access-denied",

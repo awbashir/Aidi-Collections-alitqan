@@ -216,7 +216,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Foundation: SQL migration runner (`CAWP-API/manage_db.py`, `db/migrations/`), `audit_events`, `idempotency_keys`, `revision` columns + triggers, `core/{audit,idempotency,revisions,riyadh,permissions,api_response}.py`, pytest on a small test DB, root CI, secret defaults removed, sidebar groups, URL-hash list state (clients list) | **Done 2026-09-23**: `review/phase0-backend.md`, `review/phase0-frontend.md` |
-| 1 | Core workflow: attention queue, first-class follow-ups, promise lifecycle + evidence ledger, payment reversal + exact-balance approval, reviewed corrections, contact/note history | Next |
+| 1 | Core workflow: attention queue, first-class follow-ups, promise lifecycle + evidence ledger, payment reversal + exact-balance approval, reviewed corrections, contact/note history | **Done 2026-09-23**: `docs/phase1-spec.md`, `review/phase1-{money,worklist,history,frontend}.md`; migrations 0007–0015 |
 | 2 | Reviewed bulk jobs: review → confirm → per-case results on `core/jobs.py`; assignment + round-robin, archive/restore, lock, notes, corrections, spreadsheet inquiry; jobs screen; retention worker | |
 | 3 | Internal requests, targets, repayment plans, session revocation on grant change | |
 | 4 | Reports RPT-01…25, formula-safe exports, Arabic XLSX | |
@@ -235,3 +235,22 @@ Known pre-existing issues (not yet fixed):
 - `CAWP-API` has no `.dockerignore`, so `.env` files get copied into the image.
 - `tests/smoke.py` defaults to the deleted `aidi.collector` account.
 - Recordings SSH uses `AutoAddPolicy`, so the PBX host key is not verified.
+
+Phase 1 decisions and fixes:
+- **Reversal on legacy screens:** a reversed payment is also set to `approval_status = false` and `is_deleted = true`, so legacy totals exclude it. Legacy screens therefore show it as rejected or hidden; v2 screens show it as reversed.
+- **Legacy `approvePayment`** now locks the case row and compares balances exactly in numeric. Before this, parallel approvals exceeded the debt.
+- **Legacy `POST/PUT /roles`** keep the registered new keys. A permission *object* now grants only its `true` keys; before, it granted every key it contained.
+- **Password hashes** are no longer serialized. They had leaked from 18 endpoints, including exports. The user edit form treats an empty password as "keep the current one".
+- **Legacy note form** sends timed callbacks with the `+03:00` offset. About 7k older date-only callbacks are stored at 00:00 UTC and display as 03:00; a few hundred older timed ones are 3 h off.
+- **Case timeline** (`/comments/clint/<id>`) hides notes retired through v2.
+
+Phase 1 open items (need a decision):
+- **Permission gates on legacy routes.** These legacy routes still have no permission check: payment approve/reject/edit/delete, `PUT /clints/<id>`, `/clints/delinquency/<id>`, and `DELETE /comments/<id>` (which hard-deletes).
+- **Late imported follow-ups:** 2,804 are late, and 2,083 of those cases have a later note. Candidate for a reviewed bulk "no further action" job (Phase 2).
+- **Archived cases:** the attention queue leaves them out, which hides 446 archived cases with pending payments.
+- **Default contacts:** 127,885 debtors have none. The identity check accepts Saudi 10-digit IDs only.
+- **Blocked contacts:** only v2 knows about blocking. Legacy screens can still show and dial a blocked number, so Phase 5 calling must check `is_blocked`.
+- **Second corrections reviewer:** only `aidi.dev` holds `case_corrections_review`, so a real approval was not exercised end to end.
+- **`audit_events` retention** is not planned yet. It grows by about 0.75 KB per imported contact row.
+- **Smaller API gaps** (listed in `review/phase1-frontend.md` §6): payment detail has no events, and the worklist 403 responses have no `code`.
+- **Test data:** ZZ-TEST portfolio, cases and role in the Docker test DB. `aidi.collector` is a local-only test collector.

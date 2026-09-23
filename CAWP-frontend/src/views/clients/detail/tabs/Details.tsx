@@ -38,17 +38,24 @@ import {
 // Custom Components
 import ToastNotification from "@/components/shared/myComponents/ToastNotification";
 import ConfirmDialog from "@/components/shared/myComponents/ConfirmDialog";
+import BalanceCard from "@/views/phase1/money/BalanceCard";
+import ContactsPanel from "@/views/phase1/history/ContactsPanel";
 
 interface CustomerInfoProps {
   data: any;
   total_paments: number;
   clintContacts: any[];
+  /** Phase 1: bumped by the detail screen after a v2 change. */
+  p1RefreshKey?: number;
+  onPhase1Changed?: () => void;
 }
 
 const CustomerInfo = ({
   data,
   total_paments,
   clintContacts,
+  p1RefreshKey,
+  onPhase1Changed,
 }: CustomerInfoProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
@@ -90,6 +97,7 @@ const CustomerInfo = ({
 
       if (status) {
         dispatch(getContactsIdentityNumber(data?.identityNumber));
+        onPhase1Changed?.();
         ToastNotification(
           t("clients.deleteContactSuccess"),
           t("clients.deleteContact"),
@@ -127,12 +135,54 @@ const CustomerInfo = ({
     </span>
   );
 
+  const p1perm = (useAppSelector((state) => state.auth.user.permissions) ??
+    {}) as Record<string, boolean>;
+
+  /* The legacy set/unset-default route, for roles that have
+   * clints_contacts_default but not the v2 clints_contacts_edit key. */
+  const legacyToggleDefault = async (rowId: string, isDefault: boolean) => {
+    const result = (isDefault
+      ? await putClintContactUnsetDefaultByID(rowId as never)
+      : await putClintContactDefaultByID(rowId as never)) as { status?: boolean };
+    if (!result?.status) {
+      ToastNotification(
+        t("clients.setDefaultContactFailed"),
+        t("clients.setDefaultContact"),
+        "danger",
+      );
+      throw new Error("legacy default failed");
+    }
+    dispatch(getContactsIdentityNumber(data?.identityNumber as never));
+    onPhase1Changed?.();
+    ToastNotification(
+      t(`clients.${isDefault ? "unset" : "set"}DefaultContactSuccess`),
+      t("clients.setDefaultContact"),
+      "success",
+    );
+  };
+
   // Filter active contacts
   const activeContacts =
     clintContacts?.filter((contact) => !contact.is_deleted) || [];
 
   // Calculate remaining amount
   const remainingAmount = (data?.amount || 0) - (total_paments || 0);
+
+  const legacyPaymentCard = (
+    <Card>
+      <h5 className="mb-4">{t("payments.details")}</h5>
+      <InfoSection title={t("amount")} content={formatCurrency(data?.amount)} />
+      <InfoSection
+        title={t("payments.paidUP")}
+        content={formatCurrency(total_paments)}
+      />
+      <InfoSection
+        title={t("remaining")}
+        content={formatCurrency(remainingAmount)}
+        isLast
+      />
+    </Card>
+  );
 
   return (
     <div className="grid grid-row-flow grid-cols-2 gap-4">
@@ -191,28 +241,44 @@ const CustomerInfo = ({
         </Card>
       </div>
 
-      {/* Payment Details Card */}
+      {/* Payment Details Card. Phase 1: the exact v2 balance (original,
+          approved, reversed, pending, outstanding) replaces the legacy
+          float card; the legacy card is the fallback when the role cannot
+          read the v2 balance. */}
       <div>
-        <Card>
-          <h5 className="mb-4">{t("payments.details")}</h5>
-          <InfoSection
-            title={t("amount")}
-            content={formatCurrency(data?.amount)}
+        {data?.id ? (
+          <BalanceCard
+            caseId={data.id}
+            refreshKey={p1RefreshKey}
+            fallback={legacyPaymentCard}
           />
-          <InfoSection
-            title={t("payments.paidUP")}
-            content={formatCurrency(total_paments)}
-          />
-          <InfoSection
-            title={t("remaining")}
-            content={formatCurrency(remainingAmount)}
-            isLast
-          />
-        </Card>
+        ) : (
+          legacyPaymentCard
+        )}
       </div>
 
-      {/* Contact Details Card */}
-      <div>
+      {/* Contact Details Card. Phase 1: the v2 debtor contact list (default,
+          blocked, history, add/edit) keeps everything the legacy card showed.
+          Without an identity number the legacy card is shown as before. */}
+      {data?.identityNumber ? (
+        <div>
+          <ContactsPanel
+            caseData={data}
+            onChanged={() => {
+              dispatch(getContactsIdentityNumber(data?.identityNumber as never));
+              onPhase1Changed?.();
+            }}
+            legacy={{
+              canLegacyDefault: !!p1perm.clints_contacts_default,
+              canLegacyDelete: !!p1perm.clints_contacts_delete,
+              onLegacyToggleDefault: legacyToggleDefault,
+              onLegacyDelete: (rowId: string) =>
+                openConfirmDialog(rowId as unknown as number),
+            }}
+          />
+        </div>
+      ) : (
+        <div>
         <Card>
           <h5 className="mb-4">{t("contacts.details")}</h5>
 
@@ -232,6 +298,7 @@ const CustomerInfo = ({
           )}
         </Card>
       </div>
+      )}
 
       {/* Extra Information Card */}
       <div className="col-span-2">

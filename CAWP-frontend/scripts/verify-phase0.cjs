@@ -109,7 +109,7 @@ const groupLabels = (page, scope = '.side-nav') =>
     const ar = await groupLabels(page);
     check('sidebar AR: three groups in order', JSON.stringify(ar) === JSON.stringify(['العمليات اليومية', 'التحصيل والفريق', 'الذكاء والتحكم']), JSON.stringify(ar));
     const arItems = await page.$$eval('.side-nav .menu-nav-group', (gs) => gs.map((g) => [...g.querySelectorAll('.menu-item, .menu-collapse-item')].filter((el) => !el.parentElement.closest('.menu-collapse > ul, .menu-collapse > div:not(.menu-collapse-item)')).length));
-    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([4, 7, 7]), JSON.stringify(arItems));
+    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([6, 9, 8]), JSON.stringify(arItems)); // Phase 1 added attention + follow-ups, promises + approvals, corrections
     const dir = await page.evaluate(() => document.documentElement.dir);
     check('document is RTL in Arabic', dir === 'rtl', dir);
 

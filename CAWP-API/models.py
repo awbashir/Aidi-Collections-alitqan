@@ -177,8 +177,12 @@ class User(db.Model):
     
 
 
+    # Never serialized: the hash used to reach 18 endpoints (lists, reports, exports).
+    SECRET_COLUMNS = frozenset({"password"})
+
     def as_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns
+                if c.name not in self.SECRET_COLUMNS}
     
     
     

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Container from "@/components/shared/Container";
 import Loading from "@/components/shared/Loading";
 
@@ -22,6 +22,11 @@ import toast from "@/components/ui/toast";
 import Notification from "@/components/ui/Notification";
 import ToastNotification from "@/components/shared/myComponents/ToastNotification";
 import { useTranslation } from "react-i18next";
+import {
+  DroppedKeysDialog,
+  findDroppedKeys,
+  toCheckedKeys,
+} from "../form/permissionSave";
 
 injectReducer("roleNew", reducer);
 
@@ -29,6 +34,7 @@ const UserNew = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [dropped, setDropped] = useState<string[] | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -75,15 +81,27 @@ const UserNew = () => {
     setSubmitting(true);
     //delete id from values
     delete values.id;
-    const success = await addNew(values)
-      .then((response) => {
+    const sent = toCheckedKeys(values as never);
+    const success = await addNew({ ...values, permission: sent })
+      .then(async (response) => {
         if (response.id) {
           ToastNotification(
             t("permission.successAdd"),
             t("permission.new"),
             "success"
           );
-          navigate("/permissions");
+          // Read the role back: report any checked key the server did not keep.
+          const missing = await findDroppedKeys(
+            String((response as { id?: string }).id),
+            sent
+          ).catch(
+            () => []
+          );
+          if (missing.length > 0) {
+            setDropped(missing);
+          } else {
+            navigate("/permissions");
+          }
         } else {
           ToastNotification(
             t("permission.failAdd"),
@@ -114,6 +132,13 @@ const UserNew = () => {
         reachability={reachabilityOptions}
         onDiscard={handleDiscard}
         onFormSubmit={handleFormSubmit}
+      />
+      <DroppedKeysDialog
+        keys={dropped}
+        onClose={() => {
+          setDropped(null);
+          navigate("/permissions");
+        }}
       />
     </Container>
   );

@@ -49,6 +49,18 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* Phase 1: the daily attention queue sits right under Home. */
+  {
+    key: "attention_queue",
+    group: NAV_GROUP_DAILY_OPERATIONS,
+    path: "/attention",
+    title: "Attention queue",
+    translateKey: "nav.p1.attention",
+    icon: "attention",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   {
     key: "clints",
     group: NAV_GROUP_DAILY_OPERATIONS,
@@ -56,6 +68,17 @@ const navigationConfig: NavigationTree[] = [
     title: "Client",
     translateKey: "nav.clients.clients",
     icon: "client",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  {
+    key: "follow_ups",
+    group: NAV_GROUP_DAILY_OPERATIONS,
+    path: "/follow-ups",
+    title: "Follow-ups",
+    translateKey: "nav.p1.followUps",
+    icon: "follow_ups",
     type: NAV_ITEM_TYPE_ITEM,
     authority: [],
     subMenu: [],
@@ -84,6 +107,30 @@ const navigationConfig: NavigationTree[] = [
   },
 
   /* ── Recovery & team: money in, and the reports on it. ── */
+  /* Phase 1: promise lifecycle and the v2 approval desk. The legacy
+   * Accounting and Collections screens stay as they are. */
+  {
+    key: "promises",
+    group: NAV_GROUP_RECOVERY_TEAM,
+    path: "/promises",
+    title: "Promises",
+    translateKey: "nav.p1.promises",
+    icon: "promises",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  {
+    key: "payments_approve",
+    group: NAV_GROUP_RECOVERY_TEAM,
+    path: "/payment-approvals",
+    title: "Payment approvals",
+    translateKey: "nav.p1.paymentApprovals",
+    icon: "payment_approvals",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   {
     key: "accounts_payments",
     group: NAV_GROUP_RECOVERY_TEAM,
@@ -284,6 +331,18 @@ const navigationConfig: NavigationTree[] = [
   },
 
   /* ── Intelligence & control: settings and administration. ── */
+  /* Phase 1: reviewed case corrections. */
+  {
+    key: "case_corrections_review",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/corrections",
+    title: "Case corrections",
+    translateKey: "nav.p1.corrections",
+    icon: "corrections",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   {
     key: "users",
     group: NAV_GROUP_INTELLIGENCE_CONTROL,

@@ -12,6 +12,7 @@ import {
 } from "@/services/ClientsService";
 import {
   getCustomer,
+  getComments,
   getContactsIdentityNumber,
   useAppDispatch,
   useAppSelector,
@@ -22,6 +23,10 @@ import { injectReducer } from "@/store";
 import reducer from "./store";
 import Alert from "@/components/ui/Alert";
 import StatusPill from "@/components/shared/StatusPill";
+import type { CaseInfo } from "@/views/phase1/caseTypes";
+import Button from "@/components/ui/Button";
+import { historyApi } from "@/services/v2";
+import { useV2Query } from "@/utils/v2/hooks";
 
 injectReducer("crmCustomerDetails", reducer);
 
@@ -68,6 +73,19 @@ const UsersArchive = lazy(() => import("./tabs/UsersArchive"));
 const CallsRecord = lazy(() => import("./tabs/CallsRecord"));
 const LockHistory = lazy(() => import("./tabs/LockHistory"));
 const Documents = lazy(() => import("./tabs/Documents"));
+/* Phase 1 panels (v2 API). Each checks its own permission as well. */
+const CaseFollowUpsPanel = lazy(
+  () => import("@/views/phase1/followUps/CaseFollowUpsPanel"),
+);
+const CasePromisesPanel = lazy(
+  () => import("@/views/phase1/money/CasePromisesPanel"),
+);
+const CaseCorrectionsPanel = lazy(
+  () => import("@/views/phase1/history/CaseCorrectionsPanel"),
+);
+const RequestCorrectionDialog = lazy(
+  () => import("@/views/phase1/history/RequestCorrectionDialog"),
+);
 
 const { TabNav, TabList } = Tabs;
 
@@ -76,6 +94,8 @@ const Settings = () => {
   const query = useQuery();
   const dispatch = useAppDispatch();
   const { permissions } = useAppSelector((state) => state.auth.user);
+  /* Phase 1 reads its keys through a typed view of the same map. */
+  const p1perm = (permissions ?? {}) as Record<string, boolean>;
 
   const settingsMenu: Record<
     string,
@@ -100,6 +120,16 @@ const Settings = () => {
     ...(permissions.clints_documents && {
       // ← جديد
       documents: { label: t("documents.title"), path: "documents" },
+    }),
+    /* Phase 1 tabs, gated by their permission keys. */
+    ...(p1perm.follow_ups && {
+      followUps: { label: t("p1.case.tabFollowUps"), path: "followUps" },
+    }),
+    ...((p1perm.promises || p1perm.clints_PayemntDates) && {
+      promises: { label: t("p1.case.tabPromises"), path: "promises" },
+    }),
+    ...((p1perm.case_corrections_request || p1perm.case_corrections_review) && {
+      corrections: { label: t("p1.case.tabCorrections"), path: "corrections" },
     }),
   };
   const [currentTab, setCurrentTab] = useState("details");
@@ -153,6 +183,40 @@ const Settings = () => {
     //setData(response.data);
     setTotal_paments(total_paments.data.total);
   };
+
+  /* Phase 1: after a v2 mutation, reload what the legacy panels show (case,
+   * notes, contacts, paid total) and bump the key the v2 panels watch. */
+  const [p1RefreshKey, setP1RefreshKey] = useState(0);
+  const onPhase1Changed = () => {
+    const id = data?.id;
+    if (!id) return;
+    /* The legacy thunks are typed loosely; they take the bare id. */
+    dispatch(getCustomer(id as never));
+    dispatch(getComments(id as never));
+    if (data?.identityNumber) {
+      dispatch(getContactsIdentityNumber(data.identityNumber as never));
+    }
+    apiGetPaymentsClientsTotal<{ total: number }, never>(id as never)
+      .then((res) => setTotal_paments(res.data.total))
+      .catch(() => undefined);
+    setP1RefreshKey((n) => n + 1);
+  };
+  const caseInfo = (data?.id ? data : null) as CaseInfo | null;
+  const [requestOpen, setRequestOpen] = useState(false);
+  const canSeeCorrections =
+    p1perm.case_corrections_request || p1perm.case_corrections_review;
+  /* Pending corrections on this case (exact count), shown under the header. */
+  const pendingCorrections = useV2Query(
+    canSeeCorrections && caseInfo?.id
+      ? (signal) =>
+          historyApi.corrections(
+            { case_id: caseInfo.id, status: "pending", page_size: 1 },
+            signal,
+          )
+      : null,
+    [caseInfo?.id, canSeeCorrections, p1RefreshKey],
+  );
+  const pendingCount = pendingCorrections.data?.total ?? 0;
 
   useEffect(() => {
     setCurrentTab(path);
@@ -224,6 +288,29 @@ const Settings = () => {
               </span>
             )}
           </div>
+          {caseInfo && (p1perm.case_corrections_request || pendingCount > 0) && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {p1perm.case_corrections_request && (
+                <Button
+                  size="sm"
+                  onClick={() => setRequestOpen(true)}
+                  data-testid="p1-request-correction"
+                >
+                  {t("p1.case.requestCorrection")}
+                </Button>
+              )}
+              {pendingCount > 0 && (
+                <button
+                  type="button"
+                  className="text-[13px] font-extrabold text-azure-600 hover:underline"
+                  onClick={() => onTabChange("corrections")}
+                  data-testid="p1-pending-corrections"
+                >
+                  {t("p1.case.pendingCorrections", { count: pendingCount })}
+                </button>
+              )}
+            </div>
+          )}
           {data?.is_locked && (
             <Alert type="warning" showIcon className="mt-4" duration={0}>
               {t("clients.locked")}
@@ -246,6 +333,8 @@ const Settings = () => {
                 data={data}
                 total_paments={total_paments}
                 clintContacts={clintContacts}
+                p1RefreshKey={p1RefreshKey}
+                onPhase1Changed={onPhase1Changed}
               />
             )}
             {currentTab === "updateData" && data !== null && (
@@ -268,8 +357,43 @@ const Settings = () => {
               data !== null &&
               permissions.clints_documents && <Documents />}{" "}
             {/* ← جديد */}
+            {currentTab === "followUps" &&
+              caseInfo &&
+              p1perm.follow_ups && (
+                <CaseFollowUpsPanel
+                  key={caseInfo.id}
+                  caseData={caseInfo}
+                  onChanged={onPhase1Changed}
+                />
+              )}
+            {currentTab === "corrections" && caseInfo && canSeeCorrections && (
+              <CaseCorrectionsPanel
+                key={caseInfo.id}
+                caseData={caseInfo}
+                onChanged={onPhase1Changed}
+              />
+            )}
+            {currentTab === "promises" &&
+              caseInfo &&
+              (p1perm.promises || p1perm.clints_PayemntDates) && (
+                <CasePromisesPanel
+                  key={caseInfo.id}
+                  caseData={caseInfo}
+                  onChanged={onPhase1Changed}
+                />
+              )}
           </Suspense>
         </div>
+        {caseInfo && requestOpen && (
+          <Suspense fallback={null}>
+            <RequestCorrectionDialog
+              isOpen={requestOpen}
+              onClose={() => setRequestOpen(false)}
+              caseData={caseInfo}
+              onDone={onPhase1Changed}
+            />
+          </Suspense>
+        )}
       </AdaptableCard>
     </Container>
   );

@@ -371,6 +371,8 @@ def get_comments_by_clint(id):
                 .outerjoin(C_CM, Comments.contactMethod_id == C_CM.id)
                 .outerjoin(C_CR, Comments.comment_reachability_id == C_CR.id)
                 .filter(Comments.clint_id == id)
+                # notes retired via /v2/notes/<id>/retire; no legacy row is is_deleted
+                .filter(Comments.is_deleted == False)  # noqa: E712
                 .order_by(Comments.create_at.desc(), Comments.id)
                 .all())
         payload = []

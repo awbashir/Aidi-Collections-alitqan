@@ -19,6 +19,13 @@ import { PiMoney } from "react-icons/pi";
 import { IoSettingsOutline } from "react-icons/io5";
 import { GrSecure } from "react-icons/gr";
 import { BsSearch } from "react-icons/bs";
+import {
+  CircleAlert,
+  CalendarClock,
+  Handshake,
+  ClipboardCheck,
+  FilePenLine,
+} from "lucide-react";
 
 
 
@@ -42,6 +49,12 @@ const navigationIcon: NavigationIcons = {
   settings: <IoSettingsOutline />,
   permission: <GrSecure />,
   client_search: <BsSearch />,
+  /* Phase 1 (Lucide, 2px stroke, currentColor). */
+  attention: <CircleAlert strokeWidth={2} size={18} />,
+  follow_ups: <CalendarClock strokeWidth={2} size={18} />,
+  promises: <Handshake strokeWidth={2} size={18} />,
+  payment_approvals: <ClipboardCheck strokeWidth={2} size={18} />,
+  corrections: <FilePenLine strokeWidth={2} size={18} />,
 };
 
 export default navigationIcon;

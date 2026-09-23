@@ -38,7 +38,27 @@ class PermissionKey:
 
 
 # Later phases append here. Keep keys unique and never reuse a legacy key.
-NEW_PERMISSIONS: tuple[PermissionKey, ...] = ()
+_DAILY, _RECOVERY, _CONTROL = "daily_operations", "recovery_team", "intelligence_control"
+
+NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
+    # Phase 1: attention queue and follow-ups
+    PermissionKey("attention_queue", _DAILY, "Attention queue", "قائمة المتابعة اليومية"),
+    PermissionKey("follow_ups", _DAILY, "Follow-ups", "المتابعات"),
+    PermissionKey("follow_ups_manage", _DAILY, "Manage others' follow-ups", "إدارة متابعات الآخرين"),
+    # Phase 1: payments and promises
+    PermissionKey("payments_approve", _RECOVERY, "Approve or reject payments", "اعتماد أو رفض الدفعات"),
+    PermissionKey("payments_reverse", _RECOVERY, "Reverse approved payments", "عكس الدفعات المعتمدة"),
+    PermissionKey("promises", _RECOVERY, "Promises to pay", "وعود السداد"),
+    PermissionKey("promises_cancel", _RECOVERY, "Cancel promises", "إلغاء وعود السداد"),
+    PermissionKey("promises_allocate", _RECOVERY, "Allocate payments to promises", "ربط الدفعات بوعود السداد"),
+    # Phase 1: notes, contacts, corrections
+    PermissionKey("clints_comments_correct", _DAILY, "Correct notes", "تصحيح الملاحظات"),
+    PermissionKey("clints_comments_retire", _DAILY, "Retire notes", "إيقاف الملاحظات"),
+    PermissionKey("clints_contacts_edit", _DAILY, "Edit and block contacts", "تعديل وحظر جهات الاتصال"),
+    PermissionKey("clints_history", _DAILY, "View case history", "عرض سجل العميل"),
+    PermissionKey("case_corrections_request", _CONTROL, "Request case corrections", "طلب تصحيح بيانات العميل"),
+    PermissionKey("case_corrections_review", _CONTROL, "Review case corrections", "مراجعة تصحيحات بيانات العميل"),
+)
 
 
 def validate_registry(registry=None) -> None:
@@ -111,3 +131,14 @@ def sync_role_permissions(conn, registry=None, *, dry_run: bool = False, source:
                              reason="new permission keys registered in core/permissions.py",
                              source=source)
     return report
+
+
+def role_permission_template() -> dict:
+    """Every grantable key -> False: the legacy `defult_permission` keys (in their order)
+    followed by the registered new keys. The legacy role create/update handlers start from
+    this, so saving a role from the UI keeps the new keys instead of dropping them."""
+    from models import defult_permission  # noqa: PLC0415 - lazy: models needs the Flask stack
+    template = dict(defult_permission)
+    for p in NEW_PERMISSIONS:
+        template.setdefault(p.key, False)
+    return template

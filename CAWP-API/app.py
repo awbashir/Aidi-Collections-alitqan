@@ -52,6 +52,7 @@ from core import cache, files, jobs
 from core.auth import (invalidate_permission_maps, is_admin_identity,
                        required_roles)
 from core.config import Config
+from core.permissions import role_permission_template
 from core.files import (document_path, ensure_dirs, resolve_temp_file,
                         temp_file_path)
 from core.http import error_response
@@ -909,8 +910,11 @@ def create_role():
         data = request.get_json()
         role = Role(**data)
 
-        copy_defult_permission =defult_permission.copy()
+        copy_defult_permission = role_permission_template()  # legacy + registered new keys
         permission = data['permission'] 
+        if isinstance(permission, dict):
+            # an object used to grant *every* key it contained, even `false` ones
+            permission = [k for k, v in permission.items() if v is True]
 
         if permission is not None:
             for key in permission:
@@ -946,8 +950,11 @@ def update_role(id):
 
         role.name = data['name'] if 'name' in data else role.name  
         role.permission = data['permission'] if 'permission' in data else role.permission
-        copy_defult_permission =defult_permission.copy()
+        copy_defult_permission = role_permission_template()  # legacy + registered new keys
         permission = data['permission'] 
+        if isinstance(permission, dict):
+            # an object used to grant *every* key it contained, even `false` ones
+            permission = [k for k, v in permission.items() if v is True]
 
         if permission is not None:
             for key in permission:
@@ -2142,19 +2149,21 @@ def approvePayment(id):
         payment = db.session.get(Payments, id)
         if payment is None:
             return jsonify( {"message": "الدفعة غير موجودة","status":False , "error": "payment not found"}),201
-        
-        #check if total amount is equal to payments amount or less than
-        payments = Payments.query.filter_by(clint_id=payment.clint_id,approval_status=True)
-        clint_amount = db.session.get(Clints, payment.clint_id)
-        total_amount = 0
-        for pay in payments:
-            total_amount = total_amount + pay.amount
-        
-        if total_amount + payment.amount  > clint_amount.amount:
-            return jsonify( {"message": "المبلغ المدفوع أكبر من المبلغ المطلوب","status":False , "error": "amount not valid"}),201
-        
 
-        
+        # Phase 1 fix (review/phase1-money.md): lock the case row, re-read the payment under
+        # its row lock, refuse an already decided payment, and compare the approved total
+        # + this payment with the debt exactly in numeric. Two concurrent approvals on one
+        # case now serialize and can no longer exceed the debt (the old float loop ran
+        # without a lock). Same responses as before, plus one "already decided" answer.
+        from services.money import legacy_approval_verdict
+        verdict = legacy_approval_verdict(payment)
+        if verdict == "decided":
+            db.session.rollback()
+            return jsonify( {"message": "تم البت في هذه الدفعة مسبقاً","status":False , "error": "payment already decided"}),201
+        if verdict == "amount":
+            db.session.rollback()
+            return jsonify( {"message": "المبلغ المدفوع أكبر من المبلغ المطلوب","status":False , "error": "amount not valid"}),201
+
         payment.approval_status = True
         payment.approval_by = current_user.id
         payment.approval_at = datetime.datetime.now()

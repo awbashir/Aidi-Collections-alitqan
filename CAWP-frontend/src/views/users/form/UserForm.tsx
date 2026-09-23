@@ -161,7 +161,12 @@ const ProductForm = forwardRef<FormikRef, ProductForm>((props, ref) => {
     nationality_id: Yup.string().required(t("requiredField")),
     role_id: Yup.string().required(t("requiredField")),
     user_name: Yup.string().required(t("requiredField")),
-    password: Yup.string().required(t("requiredField")),
+    // The API no longer returns the password hash, so on edit an empty field means
+    // "keep the current password" (the API only changes it when a value is sent).
+    password:
+      type === "new"
+        ? Yup.string().required(t("requiredField"))
+        : Yup.string().nullable(),
   });
 
   return (
@@ -170,6 +175,7 @@ const ProductForm = forwardRef<FormikRef, ProductForm>((props, ref) => {
         innerRef={ref}
         initialValues={{
           ...initialData,
+          password: initialData.password ?? "",
         }}
         validationSchema={validationSchema}
         onSubmit={(values: FormModel, { setSubmitting }) => {
