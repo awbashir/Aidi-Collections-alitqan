@@ -2154,7 +2154,7 @@ def createPayment():
 #approve payment by id
 @app.route('/payment/approve/<id>' , methods =['PUT'])
 @jwt_required()
-@required_any('collections_users', 'collections_currentUser')  # both collections screens show approve
+@required_roles('collections_users')  # supervisors only (decision 2026-09-23); collectors' "my collections" hides approve
 def approvePayment(id):
     try:
         payment = db.session.get(Payments, id)
@@ -2188,7 +2188,7 @@ def approvePayment(id):
 #reject payment by id
 @app.route('/payment/reject/<id>' , methods =['PUT'])
 @jwt_required()
-@required_any('collections_users', 'collections_currentUser')  # both collections screens show reject
+@required_roles('collections_users')  # supervisors only (decision 2026-09-23); collectors' "my collections" hides reject
 def rejectPayment(id):
     try:
         payment = Payments.query.get(id)

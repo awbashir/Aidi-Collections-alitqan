@@ -246,12 +246,12 @@ Phase 1 decisions and fixes:
 
 Phase 1 decisions (2026-09-23):
 - **Legacy routes are now permission-checked**, using the keys the old screens already use (tests: `tests/test_legacy_gates.py`):
-  - `PUT /payment/approve|reject/<id>`: `collections_users` or `collections_currentUser`;
+  - `PUT /payment/approve|reject/<id>`: `collections_users` (supervisors only);
   - `PUT /payment/<id>`: `accounts_payments` or `collections_users`;
   - `DELETE /payments/<id>`: `accounts_payments`;
   - `PUT /clints/<id>` and `PUT /clints/delinquency/<id>`: `clints_details`;
   - `DELETE /comments/<id>`: `clints_comments_delete`, or the author within 60 s (plus 15 s grace).
-  - **Collectors can still approve and reject payments.** The collector role (119 active users) has `collections_currentUser`, and the "my collections" page shows those buttons. Restricting approval to `collections_users` / `payments_approve` is a separate decision.
+  - **Approval is limited to supervisors** (decision 2026-09-23). Legacy approve/reject require `collections_users`, which only the supervisor, manager, operations and ADMIN roles hold. The collector "my collections" page hides the buttons. The sidebar also hides sub-items whose permission key is explicitly `false`.
 - **Reversed payments on legacy screens:** accepted as they are (they show as rejected or are hidden).
 - **Late imported follow-ups** go to Phase 2: a reviewed bulk action closes those with a later note, with the reason "no further action (imported)", after a preview and confirmation. History is kept.
 - **Attention queue:** archived cases now count for `pending_approval` only, flagged `case.is_archived` and labelled "Archived". The count went from 75 to 521 cases.

@@ -140,7 +140,24 @@ const VerticalMenuContent = (props: VerticalMenuContentProps) => {
   /* Permission filtering is unchanged: a top-level item shows only when its
    * key is granted. Grouping happens after it, so a group whose items are all
    * filtered out never renders its header. */
-  const permitted = navigationTree.filter((nav) => nav && perm[nav.key]);
+  /* Sub-items: hide one whose key is a permission the user explicitly lacks
+   * (`false`). Keys that are not permission keys (settings pages, branches…)
+   * stay visible, as before; their routes are still guarded. A collapse left
+   * with no children is dropped. */
+  const pruneSubMenu = (nav: NavigationTree): NavigationTree | null => {
+    if (!nav.subMenu || nav.subMenu.length === 0) return nav;
+    const subMenu = nav.subMenu
+      .filter((sub) => sub && perm[sub.key] !== false)
+      .map(pruneSubMenu)
+      .filter((sub): sub is NavigationTree => sub !== null);
+    if (subMenu.length === 0) return null;
+    return subMenu.length === nav.subMenu.length ? nav : { ...nav, subMenu };
+  };
+
+  const permitted = navigationTree
+    .filter((nav) => nav && perm[nav.key])
+    .map(pruneSubMenu)
+    .filter((nav): nav is NavigationTree => nav !== null);
 
   const isGrouped = permitted.some((nav) => nav.group);
 

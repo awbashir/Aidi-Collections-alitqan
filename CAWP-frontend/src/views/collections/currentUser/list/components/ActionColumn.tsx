@@ -23,10 +23,13 @@ import DeleteButton from "./DeleteButton";
 import MoveFromArchiveButton from "./MoveFromArchiveButton";
 import EditPaymentButton from "./EditPaymentButton";
 import AprrovePaymentButton from "./AprrovePaymentButton";
+import { useAppSelector as useRootSelector } from "@/store";
 
 import { LuArchiveRestore } from "react-icons/lu";
 
 const ActionColumn = ({ row }: { row: Portfolio }) => {
+  const { permissions } = useRootSelector((state) => state.auth.user);
+  const canApprove = Boolean((permissions as Record<string, boolean> | undefined)?.collections_users);
   const { t } = useTranslation();
   const [direction, updateDirection] = useDirection();
   const { textTheme } = useThemeClass();
@@ -65,6 +68,9 @@ const ActionColumn = ({ row }: { row: Portfolio }) => {
         api={putPayment}
       /> */}
 
+      {/* Approve/reject is for supervisors only (collections_users); the server
+          refuses it for everyone else. */}
+      {canApprove && (
       <AprrovePaymentButton
         row={row}
         notificationTitle={"payments.edit"}
@@ -74,6 +80,7 @@ const ActionColumn = ({ row }: { row: Portfolio }) => {
         confirmDialogMessage={"portfolios.confirmArchive"}
         api={putRejectPayment}
       />
+      )}
 
       {/*  <DeleteButton
         row={row}
