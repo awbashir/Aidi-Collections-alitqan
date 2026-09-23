@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Container from "@/components/shared/Container";
 import Loading from "@/components/shared/Loading";
 
@@ -20,6 +20,11 @@ import toast from "@/components/ui/toast";
 import Notification from "@/components/ui/Notification";
 import { t } from "i18next";
 import ToastNotification from "@/components/shared/myComponents/ToastNotification";
+import {
+  DroppedKeysDialog,
+  findDroppedKeys,
+  toCheckedKeys,
+} from "../form/permissionSave";
 
 injectReducer("roleEdit", reducer);
 
@@ -27,6 +32,7 @@ const PortfolioEdit = () => {
   const dispatch = useAppDispatch();
   const query = useQuery();
   const navigate = useNavigate();
+  const [dropped, setDropped] = useState<string[] | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -63,15 +69,27 @@ const PortfolioEdit = () => {
     setSubmitting: SetSubmitting
   ) => {
     setSubmitting(true);
-    const success = await updateDetails(values)
-      .then((response) => {
+    const sent = toCheckedKeys(values as never);
+    const success = await updateDetails({ ...values, permission: sent })
+      .then(async (response) => {
         if (response.id) {
           ToastNotification(
             t("permission.successEdit"),
             t("permission.edit"),
             "success"
           );
-          navigate("/permissions");
+          // Read the role back: report any checked key the server did not keep.
+          const missing = await findDroppedKeys(
+            String((response as { id?: string }).id),
+            sent
+          ).catch(
+            () => []
+          );
+          if (missing.length > 0) {
+            setDropped(missing);
+          } else {
+            navigate("/permissions");
+          }
         } else {
           ToastNotification(
             t("permission.failEdit"),
@@ -105,6 +123,13 @@ const PortfolioEdit = () => {
           />
         )}
       </Loading>
+      <DroppedKeysDialog
+        keys={dropped}
+        onClose={() => {
+          setDropped(null);
+          navigate("/permissions");
+        }}
+      />
     </Container>
   );
 };

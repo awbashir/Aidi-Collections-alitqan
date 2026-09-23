@@ -38,7 +38,10 @@ ADMIN_URL = os.environ.get("TEST_DATABASE_URL")
 DB_DIR = Path(os.environ.get("CAWP_DB_DIR") or (API_DIR.parent / "db")).resolve()
 BASELINE_SQL = DB_DIR / "schema" / "baseline.sql"
 SEED_SQL = Path(__file__).resolve().parent / "fixtures" / "seed.sql"
-BASE_DB, MAIN_DB, PREFIX = "cawp_test_base", "cawp_test", "cawp_test"
+# TEST_DB_PREFIX lets parallel runs share one test-db server without dropping each
+# other's databases (e.g. TEST_DB_PREFIX=cawp_test_money).
+PREFIX = os.environ.get("TEST_DB_PREFIX", "cawp_test")
+BASE_DB, MAIN_DB = f"{PREFIX}_base", PREFIX
 
 
 def db_url(name: str, driver: str = "") -> str:

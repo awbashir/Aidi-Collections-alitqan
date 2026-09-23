@@ -14,6 +14,11 @@ import { FaRegSquareCheck } from "react-icons/fa6";
 import { MdOutlineInsertDriveFile } from "react-icons/md";
 import { MdOutlineFolder } from "react-icons/md";
 import { FaRegFolderOpen } from "react-icons/fa";
+import {
+  PHASE1_PERMISSIONS,
+  PHASE1_PERMISSION_GROUPS,
+  phase1PermissionLabel,
+} from "@/constants/permissions.phase1";
 
 type FormFields = {
   id: string;
@@ -26,8 +31,25 @@ type Fields = {
 };
 
 const Fields = (props: Fields) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { values, touched, errors, contracts, reachability } = props;
+
+  /* Phase 1 keys (CAWP-API/core/permissions.py), grouped like the sidebar,
+     labelled in the current language. */
+  const phase1Node = {
+    value: "phase1_",
+    label: t("p1.perm.section"),
+    children: PHASE1_PERMISSION_GROUPS.map((group) => ({
+      value: `phase1_${group}_`,
+      label: t(`p1.perm.group.${group}`),
+      children: PHASE1_PERMISSIONS.filter((p) => p.group === group).map(
+        (p) => ({
+          value: p.key,
+          label: phase1PermissionLabel(p.key, i18n.language),
+        })
+      ),
+    })),
+  };
 
   const contractOtions = contracts?.map((contract) => ({
     value: contract.id,
@@ -411,17 +433,27 @@ const Fields = (props: Fields) => {
             },
           ],
         },
+        phase1Node,
       ],
     },
   ];
 
-  const [checked, setChecked] = useState([]);
-  const [expanded, setExpanded] = useState([]);
+  const [checked, setChecked] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<string[]>([]);
 
   useEffect(
     () => {
-      setChecked(values.permission_arr);
-      setExpanded(["all"]);
+      /* PortfolioForm normalises `permission` to the checked-key array. */
+      setChecked(
+        Array.isArray(values.permission)
+          ? values.permission
+          : values.permission_arr || []
+      );
+      setExpanded([
+        "all",
+        "phase1_",
+        ...PHASE1_PERMISSION_GROUPS.map((g) => `phase1_${g}_`),
+      ]);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -460,7 +492,21 @@ const Fields = (props: Fields) => {
                 form.setFieldValue(field.name, checked);
               }}
               onExpand={(expanded) => setExpanded(expanded)}
-              direction="rtl"
+              direction={i18n.dir()}
+              /* The package stylesheet is not loaded, so without explicit
+                 icons a checked and an unchecked box looked identical. */
+              icons={{
+                check: <FaRegSquareCheck className="text-navy-600 dark:text-azure-300" />,
+                uncheck: <FaRegSquare className="text-gray-500" />,
+                halfCheck: <FaRegSquareCheck className="text-gray-500" />,
+                expandClose: <MdOutlineFolder className="text-gray-500" />,
+                expandOpen: <FaRegFolderOpen className="text-gray-500" />,
+                expandAll: null,
+                collapseAll: null,
+                parentClose: null,
+                parentOpen: null,
+                leaf: null,
+              }}
             />
           )}
         </Field>

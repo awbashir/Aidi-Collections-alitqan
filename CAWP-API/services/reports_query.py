@@ -47,7 +47,9 @@ def col_pairs(entity):
     cached = _COL_PAIRS.get(entity)
     if cached is None:
         mapper = sa_inspect(entity).mapper
-        cached = tuple((prop.key, prop.columns[0].name) for prop in mapper.column_attrs)
+        secret = getattr(mapper.class_, "SECRET_COLUMNS", frozenset())  # User.password
+        cached = tuple((prop.key, prop.columns[0].name) for prop in mapper.column_attrs
+                       if prop.columns[0].name not in secret)
         _COL_PAIRS[entity] = cached
     return cached
 

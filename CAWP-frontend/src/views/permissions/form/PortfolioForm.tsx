@@ -12,6 +12,7 @@ import { AiOutlineSave } from "react-icons/ai";
 import * as Yup from "yup";
 import { useTranslation } from "react-i18next";
 import { t } from "i18next";
+import { toCheckedKeys } from "./permissionSave";
 
 // eslint-disable-next-line  @typescript-eslint/no-explicit-any
 type FormikRef = FormikProps<any>;
@@ -117,6 +118,12 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
         innerRef={ref}
         initialValues={{
           ...initialData,
+          /* Always the checked-key array, never the stored object: the legacy
+             PUT /roles sets every *listed* key to true, so sending the object
+             of an untouched tree granted every permission. */
+          permission: toCheckedKeys(
+            initialData as unknown as Parameters<typeof toCheckedKeys>[0]
+          ),
         }}
         validationSchema={validationSchema}
         onSubmit={(values: FormModel, { setSubmitting }) => {

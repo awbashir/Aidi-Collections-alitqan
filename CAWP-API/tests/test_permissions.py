@@ -101,8 +101,22 @@ def test_migrations_leave_role_permissions_alone(migrated_scratch_db):
         conn.close()
 
 
-def test_cli_sync_permissions_is_noop_with_shipped_registry(migrated_scratch_db, capsys):
+def test_cli_sync_permissions_is_noop_after_sync(migrated_scratch_db, capsys):
     import manage_db
     _name, url = migrated_scratch_db
+    assert manage_db.main(["--database-url", url, "sync-permissions"]) == 0
+    capsys.readouterr()
     assert manage_db.main(["--database-url", url, "sync-permissions", "--dry-run"]) == 0
     assert "every role already has every registered key" in capsys.readouterr().out
+
+
+def test_role_permission_template_keeps_new_keys():
+    """Legacy POST/PUT /roles rebuild `permission` from this template; it must carry the
+    registered new keys, or saving a role from the UI drops them."""
+    from core.permissions import NEW_PERMISSIONS, role_permission_template
+    from models import defult_permission
+    template = role_permission_template()
+    assert list(template)[:len(defult_permission)] == list(defult_permission)
+    assert {p.key for p in NEW_PERMISSIONS} <= set(template)
+    assert not any(template.values())
+    assert role_permission_template() is not template  # a fresh dict each call

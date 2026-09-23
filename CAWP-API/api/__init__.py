@@ -15,6 +15,9 @@ MODULES = [
     "api.reports",           # comments / payments / promise-to-pay reports (B2)
     "api.dashboard",         # dashboards (B2)
     "api.imports",           # Excel imports + bulk actions + async jobs (C)
+    "api.money",             # Phase 1 A: /v2 payments, reversals, promises
+    "api.worklist",          # Phase 1 B: /v2 follow-ups, attention queue
+    "api.case_history",      # Phase 1 C: /v2 note/contact history, case corrections
 ]
 
 

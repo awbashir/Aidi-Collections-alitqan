@@ -1,5 +1,6 @@
 """manage_db.py: fresh apply, idempotent re-run, checksum mismatch, baseline detection,
 no-transaction files, rollback on failure, dry-run, locking and the SQL splitter."""
+import re
 import shutil
 from pathlib import Path
 
@@ -43,7 +44,11 @@ def test_migration_files_are_well_formed():
     for m in migs[3:]:
         stmts = manage_db.split_sql(m.sql)  # parses: no meta-commands, balanced quoting
         assert stmts, m.name
-        assert m.transactional, f"{m.name}: foundation migrations are transactional"
+        if not m.transactional:
+            # no-transaction files exist only for CREATE/DROP INDEX CONCURRENTLY
+            body = [re.sub(r"^(\s*--[^\n]*\n)*\s*", "", st) for st in stmts]
+            assert all(re.match(r"(CREATE|DROP) INDEX CONCURRENTLY IF (NOT )?EXISTS", b, re.I)
+                       for b in body if b), f"{m.name}: no-transaction files may only (re)build indexes"
 
 
 def test_fresh_apply_then_idempotent_rerun(scratch_db):
@@ -75,8 +80,17 @@ def test_migration_sql_is_rerunnable_by_hand(migrated_scratch_db):
     try:
         for v in NEW_VERSIONS:
             m = next(m for m in manage_db.discover(DB_DIR) if m.version == v)
-            with conn, conn.cursor() as cur:
-                cur.execute(m.sql)
+            if m.transactional:
+                with conn, conn.cursor() as cur:
+                    cur.execute(m.sql)
+            else:
+                conn.autocommit = True
+                try:
+                    with conn.cursor() as cur:
+                        for st in manage_db.split_sql(m.sql):
+                            cur.execute(st)
+                finally:
+                    conn.autocommit = False
     finally:
         conn.close()
 

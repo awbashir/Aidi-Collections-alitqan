@@ -241,7 +241,9 @@ const Comments = ({ data }: NotificationSettingProps) => {
     // Combine date and time
     if (sendValues.nextContactDate) {
       if (sendValues.nextContactTime) {
-        sendValues.next_contact_date = `${sendValues.nextContactDate} ${sendValues.nextContactTime}`;
+        // The time is typed in Riyadh time; without the offset the API stored it as UTC
+        // (10:30 came back as 13:30).
+        sendValues.next_contact_date = `${sendValues.nextContactDate} ${sendValues.nextContactTime}+03:00`;
       } else {
         sendValues.next_contact_date = sendValues.nextContactDate;
       }
