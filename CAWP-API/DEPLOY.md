@@ -178,6 +178,77 @@ gunicorn --worker-class gthread --workers ${WEB_CONCURRENCY:-1} \
   restarted, or every response goes out uncompressed (the biggest dashboard is 7.5 MB raw
   vs 1.9 MB gzipped).
 
+## 5b. Bulk-job worker (Phase 2) — **separate process, same image**
+
+Reviewed bulk jobs (`/v2/bulk/*`, `/v2/jobs`, `/v2/uploads`) are validated and executed by a
+separate worker process, never inside a gunicorn request. It is the same image with another
+command. Details, the state machine and the API contract: `review/phase2-framework.md`.
+
+**Order:** apply migrations `0016`–`0019` (section 3b; new tables only, instant), deploy the
+API, then start the worker. Until a worker runs, jobs stay `queued` / `confirmed` (nothing
+is lost; the worker picks them up when it starts).
+
+```bash
+docker run -d --name cawp-worker --restart unless-stopped \
+  --env-file /etc/cawp/api.env \
+  -v /srv/cawp/uploads:/app/uploads \
+  --stop-timeout 90 \
+  --health-cmd "python -m worker --healthcheck" --health-interval 30s --health-retries 3 \
+  cawp-api:<tag> python -m worker
+```
+
+Local stack: `docker compose --profile worker up -d worker` (service `worker` in
+`docker-compose.yml`; it sits behind the `worker` profile until the migrations are applied).
+
+* **Same env and the same upload volume as the API.** Uploads and CSV artifacts live under
+  `BULK_STORAGE_DIR` (default `<UPLOAD_DIR>/private/bulk`); the API writes uploads and serves
+  downloads, the worker reads uploads and writes artifacts, so both must mount the same
+  persistent volume. Nothing under it is ever served statically (downloads go through
+  `GET /v2/bulk/jobs/<id>/artifacts/<kind>` with a permission check). Do not expose that
+  directory through nginx.
+* **No Redis needed.** Jobs live in PostgreSQL (`bulk_jobs`, `bulk_job_rows`, ...). The
+  in-memory `core/jobs.py` + `/jobs/<id>` path of the legacy `?async=1` routes is unchanged.
+* **Stopping:** `SIGTERM` finishes the current batch (one transaction), releases the job as
+  `retrying` and exits 0. Give it a stop timeout longer than one batch (90 s is ample; a
+  500-row lock batch takes ~0.1–0.5 s). A `SIGKILL`/crash is also safe: the lease expires after
+  `BULK_LEASE_SECONDS` and another (or the restarted) worker resumes the job; rows already
+  done are never done again.
+* **Scaling:** run more replicas if needed (`--scale worker=N`, or more containers with
+  distinct names). Claims use `FOR UPDATE SKIP LOCKED`; one job runs on one worker at a time.
+* **Health:** `python -m worker --healthcheck` exits 0 while the worker loop has touched
+  `BULK_WORKER_HEALTH_FILE` within `BULK_WORKER_HEALTH_MAX_AGE` seconds and PostgreSQL
+  answers. It checks the loop, not HTTP (the worker has no port). `--no-db` skips the ping.
+* **Retention:** the worker runs it every `BULK_RETENTION_INTERVAL_SECONDS` (one worker at a
+  time, advisory lock): expires stale previews, deletes expired upload and artifact files
+  (rows, run history and audit are kept), purges expired `idempotency_keys`. One-off:
+  `python -m worker --retention-once`.
+* **Permissions:** the kinds reuse the legacy keys (lock/unlock: `clints_bulk_lock` or
+  `clints_lock`); `bulk_jobs_all` (new, merged by `manage_db.py up`, true for ADMIN /
+  SuperAdmin only) lets supervisors and admins see other users' runs.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BULK_STORAGE_DIR` | `<UPLOAD_DIR>/private/bulk` | private root for uploads (`uploads/`), artifacts (`artifacts/`), temp (`tmp/`) |
+| `BULK_UPLOAD_MAX_MB` | `20` | upload size limit (413 above it); keep ≤ `MAX_UPLOAD_MB` (Flask, 50) |
+| `BULK_XLSX_MAX_UNCOMPRESSED_MB` | `300` | zip-bomb guard for workbooks |
+| `BULK_MAX_ROWS` | `100000` | most rows per job (selection, filter result, sheet) |
+| `BULK_MAX_COLUMNS` | `200` | most columns read from a sheet |
+| `BULK_UPLOAD_TTL_DAYS` | `7` | upload file lifetime |
+| `BULK_ARTIFACT_TTL_DAYS` | `14` | preview / errors / results CSV lifetime |
+| `BULK_PREVIEW_TTL_HOURS` | `24` | a `ready` preview must be confirmed (and execution must start) within this |
+| `BULK_BATCH_SIZE` | `500` | rows per execution batch = per transaction (a kind may override) |
+| `BULK_PREPARE_CHUNK` | `2000` | rows per validation chunk |
+| `BULK_LEASE_SECONDS` | `60` | worker lease; renewed every third of it by a heartbeat thread |
+| `BULK_MAX_ATTEMPTS` | `3` | crashed/errored attempts before a job is `failed` (graceful stops don't count) |
+| `BULK_WORKER_POLL_SECONDS` | `2` | idle poll interval |
+| `BULK_RETENTION_INTERVAL_SECONDS` | `600` | retention task period |
+| `BULK_WORKER_HEALTH_FILE` | `/tmp/cawp-worker.alive` | liveness file |
+| `BULK_WORKER_HEALTH_MAX_AGE` | `120` | healthcheck threshold (seconds) |
+| `WORKER_DB_POOL_SIZE` | `4` | SQLAlchemy pool of the worker (plus 2 overflow) |
+
+The API process reads the same `BULK_*` variables (upload limits, TTLs, storage path), so set
+them identically on both containers.
+
 ## 6. Smoke-check the release
 
 ```bash
