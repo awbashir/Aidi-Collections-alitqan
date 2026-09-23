@@ -19,6 +19,9 @@ MODULES = [
     "api.worklist",          # Phase 1 B: /v2 follow-ups, attention queue
     "api.case_history",      # Phase 1 C: /v2 note/contact history, case corrections
     "api.bulk",              # Phase 2: /v2 uploads, reviewed bulk jobs, jobs list
+    "api.requests_v2",       # Phase 3 A: internal requests
+    "api.plans",             # Phase 3 B: repayment plans
+    "api.admin_v2",          # Phase 3 C: targets, sessions, /v2/me
 ]
 
 
