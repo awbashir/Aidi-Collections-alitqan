@@ -263,6 +263,7 @@ def index():
 # Lock client
 @app.route('/clint/lock/<id>', methods=['PUT'])
 @jwt_required()
+@required_any('clints_lock', 'clints_bulk_lock')  # clients list row lock button (clints_lock)
 def lock_client(id):
     try:
         clint = Clints.query.get(id)
@@ -300,6 +301,7 @@ def lock_client(id):
 # Unlock client
 @app.route('/clint/unlock/<id>', methods=['PUT'])
 @jwt_required()
+@required_any('clints_lock', 'clints_bulk_lock')  # clients list row unlock button (clints_lock)
 def unlock_client(id):
     try:
         clint = Clints.query.get(id)
@@ -1371,6 +1373,7 @@ def download_recording():
 
 @app.route('/v2/clints', methods=['GET'])
 @jwt_required()
+@required_roles('client_query')  # only the inquiry screen (/client_query) calls it
 def getclints_v2():
     try:
         clints_list = []
@@ -2485,20 +2488,23 @@ def deleteClintDocument(doc_id):
 #update clint to archive true
 @app.route('/clint/archive/<id>' , methods =['PUT'])
 @jwt_required()
+@required_roles('clints_move_archive')  # clients list row archive button
 def updateClintToArchive(id):
     try:
         clint = Clints.query.get(id)
         if clint is None:
             return jsonify( {"message": "العميل غير موجود","status":False , "error": "role not found"}),201
         
-        clint.is_archive = True
-        db.session.commit()
-        #set client archive reason
-        data = request.get_json()
+        # The UI sends the case id as `id`; it used to become the history row's id, so
+        # archiving the same case again after a restore failed on a duplicate key after
+        # `is_archive` was already committed. The history row now gets its own id, and
+        # the row and both flags are written in one transaction.
+        data = dict(request.get_json() or {})
+        data.pop('id', None)
         archive_reason = ClintArchive(**data)
         db.session.add(archive_reason)
-        db.session.commit()
-        clint = db.session.get(Clints, id) 
+        db.session.flush()
+        clint.is_archive = True
         clint.clintArchive_id = archive_reason.id
         db.session.commit()
 
@@ -2517,6 +2523,7 @@ def updateClintToArchive(id):
 
 @app.route('/clint/unarchive/<id>' , methods =['PUT'])   
 @jwt_required()
+@required_any('clints_archive_move', 'clints_archive')  # archive screen row restore (route key clints_archive)
 def updateClintToUnArchive(id):
     try:
         clint = Clints.query.get(id)

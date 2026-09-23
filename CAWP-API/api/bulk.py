@@ -42,6 +42,19 @@ def _require_any_bulk():
 
 
 # --------------------------------------------------------------------------- kinds / uploads
+@bp.get("/v2/bulk/assign/collectors")
+@jwt_required()
+def assign_collectors():
+    """Collectors the caller may pick as an assignment target (same rules as the preview)."""
+    from core.auth import has_permission
+    from extensions import db
+    from services import bulk_assign
+    if not has_permission("clints_sepcifyUser"):
+        svc.forbidden(["clints_sepcifyUser"])
+    items = bulk_assign.eligible_collectors(db.session, svc.Viewer().scope)
+    return ok({"items": items, "total": len(items)})
+
+
 @bp.get("/v2/bulk/kinds")
 @jwt_required()
 def kinds():

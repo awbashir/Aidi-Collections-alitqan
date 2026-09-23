@@ -120,3 +120,13 @@ def test_note_delete_follows_the_timeline_rule(db):
     assert call("DELETE", f"/comments/{others}", author)["status"] == 403     # someone else's
     assert call("DELETE", f"/comments/{old}", deleter)["status"] == 200       # delete-any key
     assert q1(db, 'SELECT count(*) FROM "Comments" WHERE id IN (%s, %s)', (fresh, old)) == (0,)
+
+
+def test_inquiry_endpoint_needs_the_inquiry_key(db):
+    """GET /v2/clints backs only the /client_query screen; it had no check at all."""
+    nobody = make_user(db, {"clints": True})
+    finder = make_user(db, {"client_query": True})
+    path = "/v2/clints?customeFilrerAccountNumberValue=NO-SUCH-ACCOUNT"
+    assert call("GET", path, nobody)["status"] == 403
+    r = call("GET", path, finder)
+    assert r["status"] == 200 and r["body"]["clints"] == []

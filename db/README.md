@@ -23,6 +23,20 @@ db/
 | 0004 | `migrations/0004_audit_events.sql` | `audit_events` (append-only: UPDATE/DELETE/TRUNCATE rejected by triggers) + 5 indexes | new table only, instant | Yes |
 | 0005 | `migrations/0005_idempotency_keys.sql` | `idempotency_keys` (unique `(user_id, key)`, expiry index) | new table only, instant | Yes |
 | 0006 | `migrations/0006_revision_columns.sql` | `revision int NOT NULL DEFAULT 0` + `cawp_bump_revision()` BEFORE UPDATE trigger on `clints`, `"Comments"`, `"Payments"`, `"ClintContacts"`, `"paymentDates"` | metadata-only `ADD COLUMN` (no rewrite) but a brief `ACCESS EXCLUSIVE` per table; `lock_timeout 5s`; measured 5 ms on the full local copy | Yes |
+| 0007 | `migrations/0007_money_ledger_tables.sql` | `payment_reversals`, `payment_events`, `promise_events`, `promise_allocations`; unmapped cancel columns on `"paymentDates"` | new tables + metadata-only columns; 0.3-0.5 s | Yes |
+| 0008 | `migrations/0008_money_triggers_and_promise_state.sql` | legacy payment/promise capture triggers, allocation capacity trigger, `v_promise_state` view | instant | Yes |
+| 0009 | – | (not used) | | |
+| 0010 | `migrations/0010_follow_ups.sql` | `follow_ups`, `follow_up_events`, `"Comments"` -> follow-up trigger, owner-sync trigger on `clints` | instant | Yes |
+| 0011 | `migrations/0011_follow_ups_backfill.sql` | one open follow-up per live case from the legacy next-calls rule (source `imported`) | ~1.5 s on the full copy | Yes |
+| 0012 | `migrations/0012_worklist_indexes.sql` | two `CREATE INDEX CONCURRENTLY` on `clints` (no-transaction) | online, ~1 s locally | Yes |
+| 0013 | `migrations/0013_note_history.sql` | audit triggers on `"Comments"` UPDATE/DELETE, `note_revisions` | instant | Yes |
+| 0014 | `migrations/0014_contact_history.sql` | unmapped `is_blocked` columns on `"ClintContacts"`, audit triggers, history index | ~1.7 s on the full copy | Yes |
+| 0015 | `migrations/0015_case_corrections.sql` | `case_corrections` (no self-approval, status CHECKs) | instant | Yes |
+| 0016 | `migrations/0016_bulk_uploads.sql` | `bulk_uploads` (private uploads, inspection, expiry) | new table only | Yes |
+| 0017 | `migrations/0017_bulk_jobs.sql` | `bulk_jobs` (status lifecycle CHECKs, lease, revision) | new table only | Yes |
+| 0018 | `migrations/0018_bulk_job_rows.sql` | `bulk_job_rows` (eligibility, expected revision, outcome) | new table only | Yes |
+| 0019 | `migrations/0019_bulk_job_attempts_artifacts.sql` | `bulk_job_attempts`, `bulk_job_artifacts` | new tables only | Yes |
+| 0024 | `migrations/0024_follow_up_events_bulk_source.sql` | `follow_up_events.source` also accepts `'bulk_job'` (follow-up close-out) | constraint swap, instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

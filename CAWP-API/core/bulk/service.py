@@ -580,6 +580,10 @@ def preview_summary(job_id) -> dict:
         "needs_accept_partial": (job["excluded_rows"] + job["error_rows"]) > 0,
         "can_confirm": _actions(v, job, kind).get("confirm", False),
         "rows_limited_to_your_scope": not _full_access(v, job),
+        # optional per-kind summary (e.g. per-collector totals for assign / round_robin),
+        # over the same visible rows as `by_code`
+        "kind_summary": (kind.summarize(_s(), job, rows_pred, params)
+                         if kind is not None and hasattr(kind, "summarize") else None),
     }
 
 
