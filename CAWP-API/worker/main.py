@@ -35,6 +35,8 @@ import uuid
 
 log = logging.getLogger("cawp.worker")
 
+TARGET_SYNC_SECONDS = int(os.getenv("TARGET_SYNC_SECONDS", "3600"))
+
 
 def create_app():
     """A minimal Flask app (config + SQLAlchemy only), like the test harness; not app.py."""
@@ -113,6 +115,18 @@ class Worker:
         signal.signal(signal.SIGTERM, handler)
         signal.signal(signal.SIGINT, handler)
 
+    def _sync_targets(self):
+        from extensions import db
+        from services import targets
+        try:
+            changed = targets.sync_legacy_columns(db.session)
+            db.session.commit()
+            if changed:
+                log.info("target sync: %d legacy target column(s) updated for the new month", len(changed))
+        except Exception:  # noqa: BLE001 - e.g. migration 0034 not applied yet; never stop the worker
+            db.session.rollback()
+            log.exception("target sync failed")
+
     def run_forever(self) -> int:
         from core.bulk import engine, registry, retention
         from extensions import db
@@ -121,12 +135,18 @@ class Worker:
             registry.discover()
             log.info("worker %s started; kinds: %s", self.id, ", ".join(k.key for k in registry.all_kinds()))
             next_retention = 0.0
+            next_target_sync = 0.0
             while not self.stop.is_set():
                 self.touch()
                 try:
                     if time.monotonic() >= next_retention:
                         retention.run()
                         next_retention = time.monotonic() + self.settings.retention_interval_seconds
+                    if time.monotonic() >= next_target_sync:
+                        # Phase 3: a target set in advance reaches the legacy dashboard columns
+                        # when its month starts (idempotent; hourly, so within an hour of rollover)
+                        self._sync_targets()
+                        next_target_sync = time.monotonic() + TARGET_SYNC_SECONDS
                     engine.recover_expired()
                     job = engine.claim(self.id)
                 except Exception:  # noqa: BLE001 - DB down / restarting: keep the process alive

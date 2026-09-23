@@ -61,6 +61,7 @@ from extensions import db, jwt, socketIO
 from extensions import init_app as init_extensions
 from models import *  # noqa: F401,F403 - the 29 models + defult_permission
 from services import excel
+from services import sessions, sessions_admin_gates
 
 logging.basicConfig(
     level=logging.INFO,
@@ -166,20 +167,21 @@ def user_lookup_callback(_jwt_header, jwt_data):
 
 @jwt.token_in_blocklist_loader
 def check_if_token_revoked(_jwt_header, jwt_payload):
-    """Revocation list in Redis (`jwt:block:<jti>`), TTL = the token's remaining lifetime.
+    """Server-side sessions (Phase 3, services/sessions.py, migration 0036).
 
-    The old code set JWT_BLACKLIST_ENABLED and kept an in-memory `set()` that no loader
-    ever consulted, so a stolen 24 h token could not be revoked. Best effort: if Redis is
-    unreachable the token is treated as valid rather than logging everybody out.
+    Rejects (401) a token when its user is deleted or inactive, when it was issued before
+    `users.sessions_valid_after` (disable, role change, password change, "sign out
+    everywhere"), or when its jti was ended by POST /logout. One Redis round trip per
+    request (cached user state + the legacy `jwt:block:<jti>` key); if Redis is down the
+    state is read from the database - never "allow".
     """
-    jti = jwt_payload.get("jti")
-    if not jti:
-        return False
-    try:
-        return bool(cache.client().exists(f"jwt:block:{jti}"))
-    except redis_lib.RedisError as e:
-        log.warning("blocklist check failed (redis): %s", e)
-        return False
+    return sessions.token_revoked(jwt_payload)
+
+
+@jwt.additional_claims_loader
+def add_session_claims(_identity):
+    """`iat_ms`: millisecond issue time, so a login right after a revocation stays valid."""
+    return sessions.issue_claims()
 
 
 # --------------------------------------------------------------- ops / health / jobs
@@ -242,11 +244,9 @@ def download_job_result(job_id):
 def logout():
     try:
         token = get_jwt()
-        jti = token.get("jti")
-        exp = token.get("exp")
-        ttl = int(exp - time.time()) if exp else int(Config.JWT_ACCESS_TOKEN_EXPIRES.total_seconds())
-        if jti and ttl > 0:
-            cache.client().setex(f"jwt:block:{jti}", ttl, b"1")
+        exp = token.get("exp") or (time.time() + Config.JWT_ACCESS_TOKEN_EXPIRES.total_seconds())
+        # this token only: database row (survives a Redis restart) + the jwt:block Redis key
+        sessions.revoke_token(token.get("jti"), get_jwt_identity(), exp)
         return jsonify({"message": "تم تسجيل الخروج بنجاح", "status": True}), 200
     except Exception as e:
         db.session.rollback()
@@ -651,6 +651,7 @@ def refresh():
 # get LoginLog by user_id
 @app.route('/loginLog/user/<id>', methods=['GET'])
 @jwt_required()
+@required_any('users_login_history', 'users_details')  # login history tab (LoginLogs.tsx); own key per §2.6
 def getLoginLog(id):
     try:
         loginLogList = []
@@ -767,6 +768,7 @@ def getusers():
 
 @app.route('/users/<id>', methods=['GET'])
 @jwt_required()
+@required_any('users_details', 'users_edit')  # /users/details and /users/edit load it
 def getuser(id):
     try:
         user = User.query.get(id)
@@ -810,6 +812,9 @@ def create_user():
 # update user
 @app.route('/uesrs/<id>', methods=['PUT'])
 @jwt_required()
+@required_any('users_edit', 'users_details')  # /users/edit form; /users/details edit drawer
+@sessions_admin_gates.legacy_user_fields_gate('id')  # hidden form blocks: users_edit_general / users_edit_target
+@sessions.legacy_user_write('id')  # role / password / is_active change ends the user's sessions
 def update_user(id):
      
     try:
@@ -852,6 +857,8 @@ def update_user(id):
 #inactive user
 @app.route('/user/inactive/<id>' ,methods=['PUT'])
 @jwt_required()
+@required_any('users_delete', 'users_details')  # users list switch (users_delete); details page switch
+@sessions.legacy_user_write('id')  # disabling ends the user's sessions
 def inactive_user(id):
     try:
         user = User.query.get(id)
@@ -869,6 +876,8 @@ def inactive_user(id):
 #active user 
 @app.route('/user/active/<id>',methods=['PUT'])
 @jwt_required()
+@required_any('users_delete', 'users_details')  # users list switch (users_delete); details page switch
+@sessions.legacy_user_write('id')
 def active_user(id):
     try:
         user = User.query.get(id)
@@ -886,6 +895,7 @@ def active_user(id):
 
 @app.route('/roles', methods=['GET'])
 @jwt_required()
+@required_any('roles', 'users_add', 'users_edit')  # roles list; role select on the user forms
 def getroles():
     try:
         role_list = []
@@ -979,6 +989,7 @@ def update_role(id):
 # get role by id
 @app.route('/roles/<id>', methods=['GET'])
 @jwt_required()
+@required_any('roles_edit', 'roles_add')  # role edit page; dropped-key check after saving
 def getrole(id):
     try:
         role = Role.query.get(id)
@@ -1002,6 +1013,7 @@ def getrole(id):
 # get nationalities    
 @app.route('/nationalities', methods=['GET'])
 @jwt_required()
+@required_any('settings_general_nationalities', 'users_add', 'users_edit')  # settings list; user forms
 def getnationalities():
     try:
         nationalies_list = []
@@ -1021,6 +1033,7 @@ def getnationalities():
 # get nationalities by id
 @app.route('/nationalities/<id>', methods=['GET'])
 @jwt_required()
+@required_roles('settings_general_nationalities_edit')  # settings edit page
 def getnationality(id):
     try:
         nationality = Nationality.query.get(id)
@@ -1034,6 +1047,7 @@ def getnationality(id):
 # insert nationality
 @app.route('/nationalities', methods=['POST'])
 @jwt_required()
+@required_roles('settings_general_nationalities_add')  # settings add page
 def create_nationality():
    
    
@@ -1052,6 +1066,7 @@ def create_nationality():
 # update nationality
 @app.route('/nationalities/<id>', methods=['PUT'])
 @jwt_required()
+@required_roles('settings_general_nationalities_edit')  # settings edit page
 def update_nationality(id):
     try:
         nationality = Nationality.query.get(id)
@@ -1089,6 +1104,7 @@ def getupdateSides():
 # get updateSide by id
 @app.route('/updateSides/<id>', methods=['GET'])
 @jwt_required()
+@required_roles('settings_general_updateSide_edit')  # settings edit page
 def getupdateSide(id):
     try:
         updateSide = UpdateSides.query.get(id)
@@ -1102,6 +1118,7 @@ def getupdateSide(id):
 # insert updateSide
 @app.route('/updateSides', methods=['POST'])
 @jwt_required()
+@required_roles('settings_general_updateSide_add')  # settings add page
 def create_updateSide():
        
    
@@ -1120,6 +1137,7 @@ def create_updateSide():
 # update updateSide
 @app.route('/updateSides/<id>', methods=['PUT'])
 @jwt_required()
+@required_roles('settings_general_updateSide_edit')  # settings edit page
 def update_updateSide(id):
     try:
         updateSide = UpdateSides.query.get(id)
@@ -1260,6 +1278,7 @@ def update_contract(id):
 # deactivate contract
 @app.route('/contract/deactivate/<id>' ,methods=['PUT'])
 @jwt_required()
+@required_roles('contracts')  # status switch on the contracts list
 def deactivate_contract(id):
     try:
         contract = Contract.query.get(id)
@@ -1276,6 +1295,7 @@ def deactivate_contract(id):
 #activate user 
 @app.route('/contract/activate/<id>',methods=['PUT'])
 @jwt_required()
+@required_roles('contracts')  # status switch on the contracts list (contract activate)
 def activate_user(id):
     try:
         contract = Contract.query.get(id)
@@ -1628,6 +1648,7 @@ def getArchiveReason():
 
 @app.route('/clints/archive/reson', methods=['POST'])
 @jwt_required()
+@required_roles('settings_general_archiveReasons_add')  # settings add page
 def createArchiveReason():
     try:
         data = request.get_json()
@@ -1643,6 +1664,7 @@ def createArchiveReason():
 
 @app.route('/clints/archive/reson/<id>', methods=['GET'])
 @jwt_required()
+@required_roles('settings_general_archiveReasons_edit')  # settings edit page
 def getArchiveReasonById(id):
     try:
         archive_reason = ArchiveReason.query.get(id)
@@ -1655,6 +1677,7 @@ def getArchiveReasonById(id):
     
 @app.route('/clints/archive/reson/<id>', methods=['PUT'])
 @jwt_required()
+@required_roles('settings_general_archiveReasons_edit')  # settings edit page
 def updateArchiveReason(id):
     try:
         archive_reason = ArchiveReason.query.get(id)
@@ -1687,6 +1710,7 @@ def getDelinquencyReasons():
 #create DelinquencyReasons
 @app.route('/clints/delinquency_reasons', methods=['POST'])
 @jwt_required()
+@required_roles('settings_general_delinquencyReasons_add')  # settings add page
 def createDelinquencyReasons():
     try:
         data = request.get_json()
@@ -1703,6 +1727,7 @@ def createDelinquencyReasons():
 #get  DelinquencyReasons by id
 @app.route('/clints/delinquency_reasons/<id>', methods=['GET'])
 @jwt_required()
+@required_roles('settings_general_delinquencyReasons_edit')  # settings edit page
 def getDelinquencyReasonsById(id):
     try:
         delinquency_reason = DelinquencyReason.query.get(id)
@@ -1716,6 +1741,7 @@ def getDelinquencyReasonsById(id):
 #update DelinquencyReasons
 @app.route('/clints/delinquency_reasons/<id>', methods=['PUT'])
 @jwt_required()
+@required_roles('settings_general_delinquencyReasons_edit')  # settings edit page
 def updateDelinquencyReasons(id):   
     try:
         delinquency_reason = DelinquencyReason.query.get(id)
@@ -1767,6 +1793,7 @@ def createClintContacts():
 #add comment status
 @app.route('/comment_status' , methods =['POST'])
 @jwt_required()
+@required_roles('settings_comments_status_add')  # settings add page
 def createCommentStatus():
     try:
         data = request.get_json()
@@ -1783,6 +1810,7 @@ def createCommentStatus():
 #get comment status by id
 @app.route('/comment_status/<id>' , methods =['GET'])
 @jwt_required()
+@required_roles('settings_comments_status_edit')  # settings edit page
 def getCommentStatus(id):
     try:
         comment_status = CommentStatuses.query.get(id)
@@ -1797,6 +1825,7 @@ def getCommentStatus(id):
 #update comment status
 @app.route('/comment_status/<id>' , methods =['PUT'])
 @jwt_required()
+@required_roles('settings_comments_status_edit')  # settings edit page
 def updateCommentStatus(id):
     try:
         comment_status = CommentStatuses.query.get(id)
@@ -2006,6 +2035,7 @@ def getCollectionMethods():
 #add collection method
 @app.route('/collection_methods' , methods =['POST'])
 @jwt_required()
+@required_roles('settings_general_collectionMethods_add')  # settings add page
 def createCollectionMethod():
     try:
         data = request.get_json()
@@ -2022,6 +2052,7 @@ def createCollectionMethod():
 #get collecton Methods by id
 @app.route('/collection_methods/<id>' , methods =['GET'])
 @jwt_required()
+@required_roles('settings_general_collectionMethods_edit')  # settings edit page
 def getCollectionMethodsById(id):
     try:
         collection_method = CollectionMethods.query.get(id)
@@ -2035,6 +2066,7 @@ def getCollectionMethodsById(id):
 #update collection method
 @app.route('/collection_methods/<id>' , methods =['PUT'])
 @jwt_required()
+@required_roles('settings_general_collectionMethods_edit')  # settings edit page
 def updateCollectionMethod(id):
     try:
         collection_method = CollectionMethods.query.get(id)
@@ -2370,12 +2402,13 @@ _MAX_CLINT_DOC_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 # upload a document for a clint (pdf or image)
 @app.route('/clint/<id>/documents', methods=['POST'])
 @jwt_required()
+@required_roles('clints_documents')
 def uploadClintDocument(id):
     try:
         current_user_id = get_jwt_identity()
 
         clint = Clints.query.get(id)
-        if clint is None:
+        if clint is None or not _case_visible(id):
             return jsonify({"message": "العميل غير موجود", "status": False, "error": "clint not found"}), 201
 
         if 'file' not in request.files:
@@ -2429,12 +2462,25 @@ def uploadClintDocument(id):
 
 
 # list documents for a clint
+def _case_visible(case_id):
+    """True when the case is inside the caller's scope (collector / supervisor / super).
+    Out-of-scope documents answer exactly like missing ones: no existence leak."""
+    from services.clients_scope import resolve_scope
+    from services.money import case_in_scope
+    try:
+        return case_in_scope(case_id, resolve_scope(get_jwt_identity()))
+    except Exception:  # noqa: BLE001 - a malformed id is simply not visible
+        db.session.rollback()
+        return False
+
+
 @app.route('/clint/<id>/documents', methods=['GET'])
 @jwt_required()
+@required_roles('clints_documents')  # the case page's documents tab; plus case scope below
 def getClintDocuments(id):
     try:
         clint = Clints.query.get(id)
-        if clint is None:
+        if clint is None or not _case_visible(id):
             return jsonify({"message": "العميل غير موجود", "status": False, "error": "clint not found"}), 201
 
         docs = ClintDocuments.query.filter_by(clint_id=id, is_deleted=False).order_by(ClintDocuments.create_at.desc()).all()
@@ -2449,10 +2495,11 @@ def getClintDocuments(id):
 # download / view a single document
 @app.route('/clint/document/<doc_id>/download', methods=['GET'])
 @jwt_required()
+@required_roles('clints_documents')
 def downloadClintDocument(doc_id):
     try:
         doc = ClintDocuments.query.filter_by(id=doc_id, is_deleted=False).first()
-        if doc is None:
+        if doc is None or not _case_visible(doc.clint_id):
             return jsonify({"message": "المستند غير موجود", "status": False, "error": "document not found"}), 201
 
         file_path = _clint_document_path(doc.file_name)
@@ -2472,10 +2519,11 @@ def downloadClintDocument(doc_id):
 # delete a document (soft delete)
 @app.route('/clint/document/<doc_id>', methods=['DELETE'])
 @jwt_required()
+@required_roles('clints_documents')
 def deleteClintDocument(doc_id):
     try:
         doc = ClintDocuments.query.filter_by(id=doc_id, is_deleted=False).first()
-        if doc is None:
+        if doc is None or not _case_visible(doc.clint_id):
             return jsonify({"message": "المستند غير موجود", "status": False, "error": "document not found"}), 201
 
         doc.is_deleted = True
@@ -2676,6 +2724,7 @@ def delete_supervisor(id):
 #create supervisor-contract 
 @app.route('/supervisor_contract' , methods =['POST'])
 @jwt_required()
+@required_roles('supervisors_add')  # supervisor add page
 def createSupervisorContract():
     try:
         data = request.get_json()
@@ -2700,6 +2749,7 @@ def createSupervisorContract():
 #create supervisor-users
 @app.route('/supervisor_user' , methods =['POST'])
 @jwt_required()
+@required_roles('supervisors_add')  # supervisor add page
 def createSupervisorUsers():
     try:
         data = request.get_json()
@@ -2861,6 +2911,7 @@ def getPortfolios():
 #export
 @app.route('/portfolios/export' , methods =['GET'])
 @jwt_required()
+@required_any('portfolios', 'report_portfolios')  # export on /portfolios and the portfolios report
 def exportPortfolios():
     try:
 
@@ -2957,6 +3008,7 @@ def exportPortfolios():
 #get portfolio by id
 @app.route('/portfolio/<id>' , methods =['GET'])
 @jwt_required()
+@required_roles('portfolios_edit')  # portfolio edit page
 def getPortfolioById(id):
     try:
         portfolio =  Portfolios.query.get(id)
@@ -2982,6 +3034,7 @@ def getPortfolioById(id):
 #update portfolio by id
 @app.route('/portfolio/<id>' , methods =['PUT'])
 @jwt_required()
+@required_roles('portfolios_edit')  # portfolio edit page
 def updatePortfolio(id):
     try:
         portfolio = Portfolios.query.get(id)

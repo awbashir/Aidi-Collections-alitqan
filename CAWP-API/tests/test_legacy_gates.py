@@ -130,3 +130,26 @@ def test_inquiry_endpoint_needs_the_inquiry_key(db):
     assert call("GET", path, nobody)["status"] == 403
     r = call("GET", path, finder)
     assert r["status"] == 200 and r["body"]["clints"] == []
+
+
+def test_documents_need_the_tab_key_and_the_case_scope(db):
+    """The documents routes had no check at all: any login could list, download, upload or
+    delete any case's documents by id. Now `clints_documents` (the tab key) plus case scope;
+    an out-of-scope case answers like a missing one."""
+    nobody = make_user(db, {"clints": True})
+    reader = make_user(db, {"clints_documents": True})
+    own = make_case(db, 1000, owner=reader)
+    other = make_case(db, 1000)                                   # owned by M.col, not in reader's scope
+    doc = str(uuid.uuid4())
+    q(db, "INSERT INTO clint_documents (id, clint_id, file_name, original_name, file_type) "
+          "VALUES (%s, %s, 'x.pdf', 'x.pdf', 'pdf')", (doc, other))
+    for method, path in (("GET", f"/clint/{own}/documents"), ("GET", f"/clint/document/{doc}/download"),
+                         ("DELETE", f"/clint/document/{doc}")):
+        assert call(method, path, nobody)["status"] == 403, path
+    r = call("GET", f"/clint/{own}/documents", reader)
+    assert r["status"] == 200 and r["body"]["documents"] == []
+    for method, path in (("GET", f"/clint/{other}/documents"), ("GET", f"/clint/document/{doc}/download"),
+                         ("DELETE", f"/clint/document/{doc}")):
+        r = call(method, path, reader)
+        assert r["status"] == 201 and r["body"]["status"] is False, (path, r)   # "not found", as legacy
+    assert q1(db, "SELECT is_deleted FROM clint_documents WHERE id = %s", (doc,)) == (False,)

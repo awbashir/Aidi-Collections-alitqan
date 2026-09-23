@@ -70,6 +70,7 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     PermissionKey("plans_manage", _RECOVERY, "Create and cancel repayment plans", "إنشاء وإلغاء خطط السداد"),
     # Phase 3: sessions
     PermissionKey("users_sessions", _CONTROL, "Sign users out everywhere", "إنهاء جلسات المستخدمين"),
+    PermissionKey("users_login_history", _CONTROL, "View login history", "عرض سجل الدخول"),
 )
 
 

@@ -37,6 +37,18 @@ db/
 | 0018 | `migrations/0018_bulk_job_rows.sql` | `bulk_job_rows` (eligibility, expected revision, outcome) | new table only | Yes |
 | 0019 | `migrations/0019_bulk_job_attempts_artifacts.sql` | `bulk_job_attempts`, `bulk_job_artifacts` | new tables only | Yes |
 | 0024 | `migrations/0024_follow_up_events_bulk_source.sql` | `follow_up_events.source` also accepts `'bulk_job'` (follow-up close-out) | constraint swap, instant | Yes |
+| 0026 | `migrations/0026_inquiry_mobile_normalizer.sql` | `cawp_norm_mobile()` for spreadsheet inquiry | instant | Yes |
+| 0027 | `migrations/0027_inquiry_mobile_index.sql` | partial expression index on `"ClintContacts".contact` (concurrent, no-transaction) | online, ~27 s on the full copy | Yes |
+| 0028 | `migrations/0028_requests.sql` | `requests` (transitions, immutable core fields, no self-review) | new table | Yes |
+| 0029 | `migrations/0029_request_events.sql` | `request_events`, `request_documents` (append-only) | new tables | Yes |
+| 0030 | `migrations/0030_request_indexes.sql` | indexes on the request tables | instant | Yes |
+| 0031 | `migrations/0031_repayment_plans_tables.sql` | `repayment_plans`, `plan_installments`, `plan_allocations`, `plan_events` | new tables | Yes |
+| 0032 | `migrations/0032_repayment_plans_triggers.sql` | capacity guards, schedule check, auto-allocate/void triggers on `"Payments"` | brief `SHARE ROW EXCLUSIVE` on `"Payments"` | Yes |
+| 0033 | `migrations/0033_repayment_plans_state.sql` | `v_plan_installment_state`, plan state view | instant | Yes |
+| 0034 | `migrations/0034_targets.sql` | `targets` (append-only history), capture triggers on `users`/`contracts` | instant | Yes |
+| 0035 | `migrations/0035_targets_baseline.sql` | one `imported_baseline` target row per user and contract | instant | Yes |
+| 0036 | `migrations/0036_user_sessions.sql` | unmapped `users.sessions_valid_after`, revoke trigger, `revoked_tokens` | brief exclusive lock on `users` (~4 ms) | Yes |
+| 0037 | `migrations/0037_promise_guard_payment_lock.sql` | promise allocation guard locks the payment row `FOR SHARE` | instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy
