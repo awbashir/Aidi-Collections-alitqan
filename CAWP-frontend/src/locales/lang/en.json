@@ -87,17 +87,70 @@
     "reports": {
       "reports": "Reports",
       "menu": "Reports",
-      "header": "Reports"
+      "header": "Reports",
+      "userReports": {
+        "userReports": "User reports",
+        "comments": "Follow-up reports",
+        "paymentsDates": "Payment date reports",
+        "menu": "User reports",
+        "header": "User reports"
+      },
+      "clientReports": {
+        "clientReports": "Client reports",
+        "activeClients": "Active clients",
+        "inactiveClients": "Inactive clients",
+        "menu": "Client reports",
+        "header": "Client reports"
+      },
+      "portfolioReports": {
+        "portfolioReports": "Portfolio reports",
+        "portfolioReport": "Portfolio report",
+        "menu": "Portfolio reports",
+        "header": "Portfolio reports"
+      },
+      "qualityReports": {
+        "qualityReports": "Monitoring & quality reports",
+        "qualityReport": "Quality report",
+        "neglectReport": "Neglect report",
+        "menu": "Monitoring & quality reports",
+        "header": "Monitoring & quality reports"
+      },
+      "collectorReports": {
+        "collectorReports": "Collector reports"
+      }
     },
     "settings": {
       "settings": "Settings",
       "menu": "Settings",
-      "header": "Settings"
+      "header": "Settings",
+      "comments": "Follow-up settings",
+      "general": "General settings",
+      "archiveReasons": "Archive reasons",
+      "delinquencyReasons": "Delinquency reasons",
+      "collectionMethods": "Collection methods",
+      "nationality": "Nationalities",
+      "updateSide": "Update sources",
+      "commentStatus": "Client statuses"
     },
     "permissions": {
       "permissions": "Permissions",
       "menu": "Permissions",
       "header": "Permissions"
+    },
+    "groups": {
+      "dailyOperations": "Daily operations",
+      "recoveryTeam": "Recovery & team",
+      "intelligenceControl": "Intelligence & control"
+    },
+    "clients": {
+      "clients": "Clients",
+      "menu": "Clients",
+      "header": "Clients"
+    },
+    "clients_query": {
+      "clients_query": "Client query",
+      "menu": "Client query",
+      "header": "Client query"
     }
   },
   "auth": {
@@ -195,7 +248,9 @@
     "adds": "Add Clients",
     "addByExcel": "Add Clients By Excel",
     "addByExcelSuccess": "Clients added successfully",
-    "addByExcelFail": "Failed to add clients"
+    "addByExcelFail": "Failed to add clients",
+    "filtersApplied": "Filters applied",
+    "clearFilters": "Clear filters"
   },
   "comments": {
     "title": "Comments",
@@ -458,5 +513,14 @@
     "total": "Total",
     "items": "Items",
     "range": "Rows {{from}}–{{to}} of {{total}}"
+  },
+  "report": {
+    "collectorReports": {
+      "title": "Collector reports",
+      "comments": "Follow-up reports",
+      "paymentDates": "Payment dates",
+      "nextCalls": "Upcoming calls",
+      "myComments": "My follow-ups"
+    }
   }
 }

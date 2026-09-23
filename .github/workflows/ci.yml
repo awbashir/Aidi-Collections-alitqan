@@ -1,0 +1,97 @@
+# CI for the CAWP monorepo (repository root).
+# CAWP-API/.github/workflows/pushdocker.yml is nested, so GitHub never runs it; it is left as is.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: api (Python 3.11 + Postgres 16)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres   # throwaway CI service, not a secret
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      # admin URL for the pytest harness (it creates/drops only cawp_test* databases)
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    defaults:
+      run:
+        working-directory: CAWP-API
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            CAWP-API/requirements.txt
+            CAWP-API/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Baseline schema + migrations on a fresh database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cawp_ci
+        run: |
+          psql -d postgres -c 'CREATE DATABASE cawp_ci'
+          python manage_db.py load-schema ../db/schema/baseline.sql
+          python manage_db.py baseline
+          python manage_db.py up
+          python manage_db.py verify
+          python manage_db.py status
+          # a second run must be a no-op
+          python manage_db.py up | tee /tmp/second-up.txt
+          grep -q "nothing to apply" /tmp/second-up.txt
+
+      - name: pytest
+        run: python -m pytest -q
+
+  web:
+    name: web (Node 22 build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: CAWP-frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: CAWP-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build

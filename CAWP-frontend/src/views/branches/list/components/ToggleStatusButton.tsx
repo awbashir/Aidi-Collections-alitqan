@@ -9,7 +9,7 @@ import {
 } from "../store";
 import Tooltip from "@/components/ui/Tooltip";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
-import PopNotification from "./popNotification";
+import PopNotification from "./PopNotification";
 
 const ToggleStatusButton = ({
   row,

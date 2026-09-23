@@ -19,7 +19,7 @@ import { Button } from "@/components/ui";
 import { HiPlusCircle, HiDownload } from "react-icons/hi";
 import { NumericFormat } from "react-number-format";
 import ExportExcel from "@/components/shared/myComponents/export";
-import ExportByExcel from "@/components/shared/myComponents/exportcomment";
+import ExportByExcel from "@/components/shared/myComponents/exportComment";
 import InquiryClintByExcel from "@/components/shared/myComponents/modelForm";
 
 import cloneDeep from "lodash/cloneDeep";

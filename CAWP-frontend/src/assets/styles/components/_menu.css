@@ -31,3 +31,36 @@
 .menu-transparent {
   @apply bg-transparent;
 }
+
+/* Sidebar groups (`navigationGroups` in navigation.config). The group label is
+ * the nav-group eyebrow above: 11px/800 micro caps, subtle, +0.12em tracking
+ * that is zeroed under RTL (Arabic is never letter-spaced). */
+.menu-nav-group-first > .menu-title {
+  @apply mt-1;
+}
+
+/* Collapsed rail: no labels, so a 1px hairline separates the groups. */
+.menu-nav-group-divider {
+  @apply bg-gray-200 dark:bg-night-border;
+  height: 1px;
+  margin: 8px 12px;
+}
+
+/* A title item inside a group (Reports, Settings) becomes a quieter
+ * sub-section: a #E7EEF2 divider inset 12px, then a muted sentence-case label,
+ * so it does not read as a fourth group. */
+.menu-group-nested {
+  @apply mt-2;
+
+  &::before {
+    @apply block bg-gray-200 dark:bg-night-border;
+    content: "";
+    height: 1px;
+    margin: 0 12px 8px;
+  }
+
+  & > .menu-title {
+    @apply normal-case tracking-normal mt-0 mb-1 text-gray-600 dark:text-night-muted;
+    font-size: 12px;
+  }
+}

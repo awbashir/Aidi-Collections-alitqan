@@ -1,9 +1,13 @@
 """Environment-driven configuration.
 
-Defaults reproduce the values that were hard-coded in app.py so an unchanged
-production deployment keeps working; anything can be overridden via .env / env vars.
+Non-secret defaults reproduce the values that were hard-coded in app.py. Secrets have
+no default in source (they were committed there before and must be rotated): set
+SECRET_KEY / JWT_SECRET_KEY, DATABASE_URL, CDR_PASSWORD and the recordings SSH
+credentials via .env / env vars (see DEPLOY.md).
 """
+import logging
 import os
+import secrets
 from datetime import timedelta
 
 from dotenv import load_dotenv
@@ -25,9 +29,29 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+log = logging.getLogger("cawp.config")
+
+
+def _secret_key() -> str:
+    key = os.getenv("SECRET_KEY")
+    if key:
+        return key
+    # A known default let anyone forge a JWT. A per-process random key keeps the app
+    # up but logs everybody out on restart, so set SECRET_KEY in every deployment.
+    log.critical("SECRET_KEY is not set; using a random per-process key (sessions end on restart)")
+    return secrets.token_urlsafe(48)
+
+
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL is required, e.g. postgresql+psycopg2://user:pass@host:5432/mydata")
+    return url
+
+
 class Config:
     # --- Flask / auth ---
-    SECRET_KEY = os.getenv("SECRET_KEY", "super-secret")
+    SECRET_KEY = _secret_key()
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=_int("JWT_ACCESS_HOURS", 24))
     DEBUG = _bool("FLASK_DEBUG", False)
@@ -37,9 +61,7 @@ class Config:
     UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads"))
 
     # --- Database ---
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL", "postgresql+psycopg2://postgres:101016@10.10.10.240:5433/mydata"
-    )
+    SQLALCHEMY_DATABASE_URI = _database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_size": _int("DB_POOL_SIZE", 20),
@@ -68,7 +90,7 @@ class Config:
     CDR_HOST = os.getenv("CDR_HOST", "10.10.0.220")
     CDR_DB = os.getenv("CDR_DB", "asteriskcdrdb")
     CDR_USER = os.getenv("CDR_USER", "crm")
-    CDR_PASSWORD = os.getenv("CDR_PASSWORD", "Admin123@123")
+    CDR_PASSWORD = os.getenv("CDR_PASSWORD", "")
     CDR_CONNECT_TIMEOUT = _int("CDR_CONNECT_TIMEOUT", 3)
     CDR_ENABLED = _bool("CDR_ENABLED", True)
 
@@ -78,7 +100,7 @@ class Config:
     RECORDINGS_ROOT = os.getenv("RECORDINGS_ROOT", "/var/spool/asterisk/monitor/")
     RECORDINGS_SSH_HOST = os.getenv("RECORDINGS_SSH_HOST", "10.10.0.220")
     RECORDINGS_SSH_USER = os.getenv("RECORDINGS_SSH_USER", "root")
-    RECORDINGS_SSH_PASSWORD = os.getenv("RECORDINGS_SSH_PASSWORD", "Alitqan@1313")
+    RECORDINGS_SSH_PASSWORD = os.getenv("RECORDINGS_SSH_PASSWORD", "")
     RECORDINGS_SSH_KEY = os.getenv("RECORDINGS_SSH_KEY", "/root/.ssh/id_rsa")
     RECORDINGS_SSH_TIMEOUT = _int("RECORDINGS_SSH_TIMEOUT", 10)
 
