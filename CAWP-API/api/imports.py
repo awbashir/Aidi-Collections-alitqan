@@ -308,7 +308,7 @@ def updateClintToArchiveByIds():
 
 @bp.route('/clint/archive/portofolio/<id>', methods=['PUT'])
 @jwt_required()
-@required_any('portfolios', 'clints_move_archive')  # portfolios screen (route key portfolios) / archive key
+@required_roles('clints_move_archive')  # decision 2026-09-24: portfolio-wide archive needs the archive key
 def updateClintToArchiveByPortofolioId(id):
     try:
         data = request.get_json()

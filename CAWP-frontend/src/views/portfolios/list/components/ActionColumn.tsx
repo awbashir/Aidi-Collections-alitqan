@@ -21,6 +21,7 @@ import ToggleStatusButton from "./ToggleStatusButton";
 import DeleteButton from "./DeleteButton";
 import MoveArchiveButton from "./MoveArchiveButton";
 import { BulkMenu } from "@/views/phase2/bulk/entry";
+import { useAppSelector as useRootSelector } from "@/store";
 
 const ActionColumn = ({
   row,
@@ -33,6 +34,8 @@ const ActionColumn = ({
   const [direction, updateDirection] = useDirection();
   const { textTheme } = useThemeClass();
   const dispatch = useAppDispatch();
+  const { permissions } = useRootSelector((state) => state.auth.user);
+  const canArchive = Boolean((permissions as Record<string, boolean> | undefined)?.clints_move_archive);
   const navigate = useNavigate();
 
   const onEdit = () => {
@@ -104,6 +107,8 @@ const ActionColumn = ({
         ]}
       />
 
+      {/* Portfolio-wide archive needs clints_move_archive (decision 2026-09-24). */}
+      {canArchive && (
       <MoveArchiveButton
         row={row}
         fetchData={fetchadata}
@@ -114,6 +119,7 @@ const ActionColumn = ({
         confirmDialogMessage={"portfolios.confirmArchive"}
         api={putPortfoliolsToArchive}
       />
+      )}
 
       <DeleteButton
         row={row}

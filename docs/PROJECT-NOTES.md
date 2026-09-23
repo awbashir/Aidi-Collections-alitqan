@@ -217,7 +217,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 |---|---|---|
 | 0 | Foundation: SQL migration runner (`CAWP-API/manage_db.py`, `db/migrations/`), `audit_events`, `idempotency_keys`, `revision` columns + triggers, `core/{audit,idempotency,revisions,riyadh,permissions,api_response}.py`, pytest on a small test DB, root CI, secret defaults removed, sidebar groups, URL-hash list state (clients list) | **Done 2026-09-23**: `review/phase0-backend.md`, `review/phase0-frontend.md` |
 | 1 | Core workflow: attention queue, first-class follow-ups, promise lifecycle + evidence ledger, payment reversal + exact-balance approval, reviewed corrections, contact/note history | **Done 2026-09-23**: `docs/phase1-spec.md`, `review/phase1-{money,worklist,history,frontend}.md`; migrations 0007–0015 |
-| 2 | Reviewed bulk jobs: durable jobs + worker, uploads/mapping/preview/confirm/rechecks, lock/unlock, assign + round-robin, archive/restore, notes, follow-up close-out, spreadsheet inquiry, attribute corrections (via review), jobs screen + wizard, retention | **Done 2026-09-23** (close-out not executed yet): `docs/phase2-spec.md`, `review/phase2-{framework,assign,archive,notes,inquiry,frontend}.md`; migrations 0016–0019, 0024, 0026–0027 |
+| 2 | Reviewed bulk jobs: durable jobs + worker, uploads/mapping/preview/confirm/rechecks, lock/unlock, assign + round-robin, archive/restore, notes, follow-up close-out, spreadsheet inquiry, attribute corrections (via review), jobs screen + wizard, retention | **Done 2026-09-24** (close-out ready, not executed): `docs/phase2-spec.md`, `review/phase2-{framework,assign,archive,notes,inquiry,frontend}.md`; migrations 0016–0019, 0024, 0026–0027 |
 | 3 | Internal requests, targets, repayment plans, session revocation on grant change | |
 | 4 | Reports RPT-01…25, formula-safe exports, Arabic XLSX | |
 | 5 | Calling (track B): 5a Issabel commissioning (start now), 5b calling backend, 5c in-app softphone, 5d campaigns, 5e CDR attribution | 5a waiting on PBX access |
@@ -279,10 +279,13 @@ Phase 2 decisions and fixes (2026-09-23):
 - **Legacy single-case archive** no longer uses the case id as the `"clintArchive"` row id, and writes the history and the flags in one transaction. Re-archiving after a restore used to fail and leave the case half-archived.
 - **Worker:** `cawp-worker` runs with the stack. Scale out with `--scale worker=N`.
 
-Phase 2 open items (need a decision):
-- **Follow-up close-out rule:** a later note on or after the due day gives 1,971 cases (1,950 closable, 21 locked); "any later note" gives 2,083. The job has been previewed only.
-- **Scope of the legacy inquiry:** `GET /v2/clints` searches all cases, while the spreadsheet inquiry is scoped. Should the legacy inquiry be scoped too?
-- **Portfolio-wide archive:** the legacy route accepts `portfolios` (view key). Tightening it to `clints_move_archive` would cost no current user anything.
+Phase 2 decisions (2026-09-24):
+- **Follow-up close-out:** *any* later note counts (a note after the source note; the due day is used only when the source note is gone). The live preview gives 2,084: 2,063 closable and 21 on locked cases. It has not been executed; run it from Follow-ups → "Close out late imported follow-ups".
+- **The legacy inquiry keeps finding every case.** `GET /v2/clints` needs `client_query` but is not scoped. The spreadsheet inquiry stays scoped to the caller's cases.
+- **Portfolio-wide archive requires `clints_move_archive`,** on the legacy route and on the portfolio screen's classic button.
+- **Collectors keep "Inquiry from spreadsheet"** (`client_query`), with results limited to their own cases.
+
+Phase 2 open items:
 - **Collector eligibility for assignment:** `collections_currentUser`, which gives 139 in `aidi.dev`'s scope.
 - **Data:** placeholder mobiles (`0500000000`, 943 cases) and identity numbers with surrounding spaces (265).
 - **Later:** a reviewed portfolio import (new cases). The legacy `addClintsByExcel` stays as it is.

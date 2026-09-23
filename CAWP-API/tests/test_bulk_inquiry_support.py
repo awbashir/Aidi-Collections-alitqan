@@ -221,7 +221,7 @@ def test_inquiry_seed_and_blueprints_loaded(ic, idb):
     assert q1(idb, "SELECT to_regclass('ix_clintcontacts_mobile_norm') IS NOT NULL")[0]
     kinds = {k["key"]: k for k in ic.get("/v2/bulk/kinds", D.col1).get_json()["data"]}
     assert kinds["inquiry"]["read_only"] is True and kinds["inquiry"]["allowed"] is True
-    assert kinds["attribute_corrections"]["permissions"] == ["case_corrections_request"]
+    assert kinds["attribute_corrections"]["permissions"] == ["case_corrections_request", "clints_UpdateByExcel"]
     assert kinds["attribute_corrections"]["allowed"] is True
     none = {k["key"]: k for k in ic.get("/v2/bulk/kinds", D.none).get_json()["data"]}
     assert none["inquiry"]["allowed"] is False and none["attribute_corrections"]["allowed"] is False

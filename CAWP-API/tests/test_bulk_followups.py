@@ -23,6 +23,7 @@ def test_selection_only_imported_late_with_a_later_note(nc, db):
     ok, ok_fu, _s, [first, _second] = imported_case(db, due=due, portfolio=pf,
                                                     later=[(riy(-3, 11), False), (riy(-1, 12), False)])
     none_later = imported_case(db, due=due, portfolio=pf)[0]
+    # a note after the source note but before the due day counts (decision 2026-09-24: any later note)
     before_day = imported_case(db, due=due, portfolio=pf, later=[(riy(-7), False)])[0]
     same_day, *_ = imported_case(db, due=riy(-5, 14), portfolio=pf, later=[(riy(-5, 10), False)])
     deleted_later = imported_case(db, due=due, portfolio=pf, later=[(riy(-2), True)])[0]
@@ -41,11 +42,11 @@ def test_selection_only_imported_late_with_a_later_note(nc, db):
     job = _closeout(nc, N.sup, portfolio_id=pf)
     assert job["status"] == "ready" and job["params"] == {"reason": DEFAULT_REASON, "portfolio_id": pf}
     rows = _by_case(db, job["id"])
-    assert set(rows) == {ok, same_day, last_minute, locked, missing_src}
+    assert set(rows) == {ok, same_day, last_minute, locked, missing_src, before_day}
     assert {c: (r["eligibility"], r["eligibility_code"]) for c, r in rows.items()} == {
         ok: ("eligible", None), same_day: ("eligible", None), last_minute: ("eligible", None),
-        missing_src: ("eligible", None), locked: ("excluded", "case_locked")}
-    for excluded in (none_later, before_day, deleted_later, not_late, from_note, archived, backdated):
+        missing_src: ("eligible", None), before_day: ("eligible", None), locked: ("excluded", "case_locked")}
+    for excluded in (none_later, deleted_later, not_late, from_note, archived, backdated):
         assert excluded not in rows
     d = rows[ok]["details"]
     assert d["follow_up_id"] == ok_fu and d["follow_up_revision"] == 0 and d["due_at"] == z(due)
@@ -54,7 +55,7 @@ def test_selection_only_imported_late_with_a_later_note(nc, db):
     assert rows[last_minute]["details"]["days_late"] == 1
     assert rows[locked]["details"]["follow_up_id"] == locked_fu
     summary = nc.get(f"/v2/bulk/jobs/{job['id']}/preview", N.sup).get_json()["data"]
-    assert summary["counts"] == {"total": 5, "eligible": 4, "excluded": 1, "error": 0}
+    assert summary["counts"] == {"total": 6, "eligible": 5, "excluded": 1, "error": 0}
 
 
 def test_filters_owner_and_contract_only_narrow(nc, db):

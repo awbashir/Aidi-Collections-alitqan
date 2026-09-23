@@ -14,11 +14,9 @@ Selection (source `query`, `resolve_query`), all in the creator's scope (framewo
   the same rule as the `late` bucket and the attention queue's `late_follow_up`;
 * the case is live (`is_archive = false`), like every follow-up list;
 * **the case has a later note**: a non-deleted `"Comments"` row, other than the source note,
-  created after the source note AND on or after the start of the follow-up's Riyadh due
-  day. A note written before the callback's day does not show the callback was handled
-  (on cawp-db 112 follow-ups have only such notes); a note on the due day itself counts,
-  because "late" is decided on civil dates. When the source note is gone, only the due-day
-  bound applies;
+  created after the source note (decision 2026-09-24: *any* later note counts, including
+  one written before the callback's due day). When the source note is gone, a note on or
+  after the start of the follow-up's Riyadh due day is required instead;
 * optional filters `owner` (the case owner, which an open follow-up always follows),
   `contract_id`, `portfolio_id`. They only narrow the scope.
 
@@ -61,14 +59,14 @@ from services.bulk_common import REASON_MAX, reject_unknown
 
 CLOSEOUT_KEYS = ("follow_ups_manage",)
 DEFAULT_REASON = "no further action (imported) / لا يلزم إجراء إضافي (متابعة مستوردة)"
-OUTCOME_RULE = "first note after the source note, on or after the Riyadh due day"
+OUTCOME_RULE = "first note after the source note (or on/after the Riyadh due day when the source note is gone)"
 
 # a qualifying later note of follow-up `f` (source note `s` LEFT JOINed)
 _LATER_NOTE = """
     m.clint_id = f.case_id AND m.is_deleted = false
     AND (f.source_comment_id IS NULL OR m.id <> f.source_comment_id)
-    AND m.create_at > coalesce(s.create_at, '-infinity'::timestamptz)
-    AND m.create_at >= (worklist_riyadh_date(f.due_at)::timestamp AT TIME ZONE 'Asia/Riyadh')
+    AND CASE WHEN s.id IS NOT NULL THEN m.create_at > s.create_at
+             ELSE m.create_at >= (worklist_riyadh_date(f.due_at)::timestamp AT TIME ZONE 'Asia/Riyadh') END
 """
 
 # open imported late follow-ups of the given cases, with their earliest qualifying note

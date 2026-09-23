@@ -132,9 +132,10 @@ def test_archive_key_opens_the_archive_routes_only(ac, db):
 def test_screen_keys_open_their_own_routes(ac, db):
     st, _res, _ids = _statuses(db, {"clints_UpdateByExcel": True})           # clients list Excel menu
     assert [k for k, v in st.items() if v != 403] == ["archivebyexcel"]
-    st, _res, (pid, case, *_rest) = _statuses(db, {"portfolios": True})       # portfolios screen
-    assert [k for k, v in st.items() if v != 403] == ["archive/portofolio"]
-    assert arch_state(db, case)[0] is True
+    # decision 2026-09-24: the portfolios view key no longer opens portfolio-wide archive
+    st, _res, (pid, case, *_rest) = _statuses(db, {"portfolios": True})
+    assert [k for k, v in st.items() if v != 403] == []
+    assert arch_state(db, case)[0] is False
     for key in ("clints_archive", "clints_archive_move"):                       # archive screen / dedicated key
         st, res, (_p, _c, _l, archived) = _statuses(db, {key: True})
         assert [k for k, v in st.items() if v != 403] == ["unarchive/<id>", "unarchivebyexcel"], key
