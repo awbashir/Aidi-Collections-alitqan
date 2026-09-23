@@ -54,6 +54,8 @@ export class V2Error extends Error {
                 'promise_not_cancellable',
                 'allocation_already_voided',
                 'correction_not_pending',
+                // Phase 2: the bulk job moved on (confirmed/cancelled elsewhere) since it was loaded
+                'job_not_ready',
             ].includes(this.code)
         )
     }

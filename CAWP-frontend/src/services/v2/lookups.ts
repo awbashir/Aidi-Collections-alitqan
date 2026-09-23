@@ -94,6 +94,12 @@ export const lookups = {
                 .filter((c) => !c.is_deleted)
                 .map((c) => ({ value: c.id, label: c.name }))
         }),
+    /** Phase 2: the archive reason select (legacy route, as the legacy archive dialogs use). */
+    archiveReasons: () =>
+        cached('archiveReasons', async () => {
+            const d = await get<{ reson_archive?: Named[] }>('/clints/archive/reson')
+            return (d.reson_archive || []).map((c) => ({ value: c.id, label: (c.name || '').trim() || c.id }))
+        }),
     delinquencyReasons: () =>
         cached('delinquencyReasons', async () => {
             const d = await get<{ delinquency_reasons?: Named[] }>('/clints/delinquency_reasons')

@@ -29,6 +29,7 @@ import { CompleteFollowUpDialog, RescheduleFollowUpDialog } from './FollowUpDial
 import { FollowUpHistoryDialog } from './FollowUpHistory'
 import { SourceCell } from './parts'
 import { useFollowUpAccess } from './access'
+import { BulkLaunchButton } from '@/views/phase2/bulk/entry'
 
 export { CompleteFollowUpDialog, RescheduleFollowUpDialog, CreateFollowUpDialog } from './FollowUpDialogs'
 export { FollowUpHistory, FollowUpHistoryDialog } from './FollowUpHistory'
@@ -140,6 +141,23 @@ const FollowUpsScreen = () => {
                 }
                 onRefresh={query.reload}
                 refreshing={query.loading && !!data}
+                actions={
+                    /* Phase 2: reviewed close-out of late imported follow-ups
+                     * (preview first; follow_ups_manage). */
+                    <BulkLaunchButton
+                        kind="followup_closeout"
+                        label={t('p2.entry.closeout')}
+                        testId="p2-entry-closeout"
+                        launch={{
+                            from: { path: '/follow-ups', labelKey: 'p2.back.followUps' },
+                            params: {
+                                owner: state.owner ? String(state.owner) : undefined,
+                                contract_id: state.contract ? String(state.contract) : undefined,
+                                portfolio_id: state.portfolio ? String(state.portfolio) : undefined,
+                            },
+                        }}
+                    />
+                }
             />
 
             <ScopeFilters

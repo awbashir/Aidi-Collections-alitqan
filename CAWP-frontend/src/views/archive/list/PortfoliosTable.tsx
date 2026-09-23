@@ -19,8 +19,12 @@ import cloneDeep from "lodash/cloneDeep";
 import ActionColumn from "./components/ActionColumn";
 import MoveFromArchiveByExcel from "@/components/shared/myComponents/modelFormMoveFromArchiveByExcel";
 import StatusPill from "@/components/shared/StatusPill";
+import { useLocation } from "react-router-dom";
+import { listQueryString } from "@/services/v2";
+import { BulkMenu } from "@/views/phase2/bulk/entry";
+import type { BulkLaunch } from "@/views/phase2/bulk/shared";
 
-const TableOptions = () => {
+const TableOptions = ({ selectedIds = [] }: { selectedIds?: string[] }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const [selectedInquiryClintByExcel, setSelectedInquiryClintByExcel] =
@@ -28,6 +32,25 @@ const TableOptions = () => {
   const pramas = useAppSelector((state) => state.archiveList.data.filterData);
   const search = useAppSelector((state) => state.archiveList.data.search);
   const sort = useAppSelector((state) => state.archiveList.data.tableData.sort);
+  const tableState = useAppSelector((state) => state.archiveList.data.tableData);
+  const location = useLocation();
+
+  /* Phase 2: reviewed restore gets the selected rows, or this list's current
+   * filter exactly as the list sends it (list "archive"; paging is dropped). */
+  const restoreLaunch = (): BulkLaunch => ({
+    from: { path: `/archive${location.hash || ""}`, labelKey: "p2.back.archive" },
+    caseIds: selectedIds,
+    filter: {
+      list: "archive",
+      query: listQueryString("/clints/archive/", {
+        ...pramas,
+        sort: tableState.sort?.order,
+        page: tableState.page,
+        pageSize: tableState.pageSize,
+      }),
+      count: typeof tableState.total === "number" ? tableState.total : null,
+    },
+  });
 
   const onclick = () => {
     search ? dispatch(setSearchClose()) : dispatch(setSearchOpen());
@@ -74,7 +97,7 @@ const TableOptions = () => {
     },
     {
       key: "moveFromArchive",
-      label: t("archive.moveFromArchive"),
+      label: `${t("archive.moveFromArchive")} (${t("p2.entry.classic")})`,
       icon: <HiOutlineArchive />,
     },
   ];
@@ -104,6 +127,27 @@ const TableOptions = () => {
 
       {/* Trailing edge — actions. */}
       <div className="ms-auto flex flex-wrap items-center gap-2">
+        <BulkMenu
+          testId="p2-archive-bulk"
+          title={t("p2.entry.restoreMenu")}
+          groups={[
+            {
+              header: t("p2.entry.forCases", { n: selectedIds.length }),
+              entries: [{ kind: "restore", launch: restoreLaunch(), testId: "p2-entry-restore" }],
+            },
+            {
+              header: t("p2.entry.fromFile"),
+              entries: [
+                {
+                  kind: "restore",
+                  launch: { ...restoreLaunch(), source: "spreadsheet" as const },
+                  label: t("p2.entry.file.restore"),
+                  testId: "p2-entry-file-restore",
+                },
+              ],
+            },
+          ]}
+        />
         <ExportExcel
           pramas={{ ...pramas, sort }}
           notificationFailedMessage={t("archive.failExport")}
@@ -327,10 +371,30 @@ const PortfoliosTable = () => {
     dispatch(setTableData(newTableData));
   };
 
+  /* Phase 2: row selection for the reviewed restore (the legacy screen had
+   * none). Cleared whenever the page of data changes, like the clients list. */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [data]);
+  const onRowSelect = (checked: boolean, row: { id: string }) =>
+    setSelectedIds((prev) =>
+      checked
+        ? prev.includes(row.id)
+          ? prev
+          : [...prev, row.id]
+        : prev.filter((id) => id !== row.id)
+    );
+  const onAllRowSelect = (checked: boolean, rows: { original: { id: string } }[]) =>
+    setSelectedIds(checked ? rows.map((r) => r.original.id) : []);
+
   return (
     <div className="mt-5">
-      <TableOptions />
+      <TableOptions selectedIds={selectedIds} />
       <DataTable
+        selectable
+        onCheckBoxChange={onRowSelect}
+        onIndeterminateCheckBoxChange={onAllRowSelect}
         columns={columns}
         data={data}
         skeletonAvatarColumns={[0]}

@@ -55,6 +55,10 @@ import {
 } from "./hooks/useClientsHashState";
 import { HiX } from "react-icons/hi";
 import LockUnlockSelectedButton from "./components/LockUnlockSelectedButton";
+import { useLocation } from "react-router-dom";
+import { listQueryString } from "@/services/v2";
+import { BulkMenu } from "@/views/phase2/bulk/entry";
+import type { BulkLaunch } from "@/views/phase2/bulk/shared";
 
 const TableOptions = () => {
   const { t } = useTranslation();
@@ -68,6 +72,37 @@ const TableOptions = () => {
   const selectedRow = useAppSelector(
     (state) => state.clientsList.data.selectedRow,
   );
+  const tableState = useAppSelector(
+    (state) => state.clientsList.data.tableData,
+  );
+  const location = useLocation();
+
+  /* Phase 2: the reviewed bulk wizard gets the selection and the list's
+   * current filter exactly as the list sends it (same params, same axios
+   * serializer; the API drops paging and re-runs this list's query). */
+  const bulkLaunch = (): BulkLaunch => {
+    const portfolios = (pramas as Record<string, unknown>)
+      ?.customeFilterPortfoliosValue as unknown[] | undefined;
+    return {
+      from: { path: `/clients${location.hash || ""}`, labelKey: "p2.back.clients" },
+      caseIds: (selectedRow as string[]) || [],
+      filter: {
+        list: "clients",
+        query: listQueryString("/clints", {
+          ...pramas,
+          field: tableState.sort?.key,
+          sort: tableState.sort?.order,
+          page: tableState.page,
+          pageSize: tableState.pageSize,
+        }),
+        count: typeof tableState.total === "number" ? tableState.total : null,
+      },
+      params:
+        Array.isArray(portfolios) && portfolios.length === 1
+          ? { portfolio_id: String(portfolios[0]) }
+          : undefined,
+    };
+  };
 
   const onclick = () => {
     search ? dispatch(setSearchClose()) : dispatch(setSearchOpen());
@@ -116,13 +151,13 @@ const TableOptions = () => {
   }[] = [
     {
       key: "specifyUsers",
-      label: t("clients.SepcifyClientToUserByExcel"),
+      label: `${t("clients.SepcifyClientToUserByExcel")} (${t("p2.entry.classic")})`,
       icon: <HiOutlineUserAdd />,
       visible: !!perm.clints_sepcifyUser,
     },
     {
       key: "moveArchive",
-      label: t("clients.moveArchiveByExcel"),
+      label: `${t("clients.moveArchiveByExcel")} (${t("p2.entry.classic")})`,
       icon: <HiOutlineArchive />,
       visible: !!perm.clints_UpdateByExcel,
     },
@@ -152,7 +187,7 @@ const TableOptions = () => {
     },
     {
       key: "comments",
-      label: t("addcommentsByExcel"),
+      label: `${t("addcommentsByExcel")} (${t("p2.entry.classic")})`,
       icon: <HiOutlineChatAlt2 />,
       visible: !!perm.clints_UpdateByExcel,
     },
@@ -213,17 +248,58 @@ const TableOptions = () => {
           notificationSuccessMessage={t("clients.successExport")}
         />
 
-        {perm.clints_sepcifyUser && (
-          <SepcifyUsersSelectedButton ids={selectedRow} />
-        )}
-        {perm.clints_move_archive && (
-          <MoveToArchiveSelectedButton ids={selectedRow} />
-        )}
-        {perm.clints_lock && (
-          <LockUnlockSelectedButton ids={selectedRow} isLocking={true} />
-        )}
-        {perm.clints_lock && (
-          <LockUnlockSelectedButton ids={selectedRow} isLocking={false} />
+        {/* Phase 2: reviewed bulk actions (preview, then explicit confirmation)
+         * are the default entry; the direct legacy buttons stay as "classic". */}
+        <BulkMenu
+          testId="p2-clients-bulk"
+          groups={[
+            {
+              header: t("p2.entry.forCases", {
+                n: (selectedRow as string[])?.length || 0,
+              }),
+              entries: ["assign", "round_robin", "archive", "lock", "unlock", "notes"].map(
+                (kind) => ({
+                  kind,
+                  launch: bulkLaunch(),
+                  testId: `p2-entry-${kind}`,
+                }),
+              ),
+            },
+            {
+              header: t("p2.entry.fromFile"),
+              entries: ["assign", "archive", "lock", "unlock", "notes"].map(
+                (kind) => ({
+                  kind,
+                  launch: { ...bulkLaunch(), source: "spreadsheet" as const },
+                  label: t(`p2.entry.file.${kind}`),
+                  testId: `p2-entry-file-${kind}`,
+                }),
+              ),
+            },
+          ]}
+        />
+
+        {(perm.clints_sepcifyUser || perm.clints_move_archive || perm.clints_lock) && (
+          <span
+            className="inline-flex flex-wrap items-center gap-2 rounded-md border border-dashed border-gray-300 px-2 py-1 dark:border-night-border"
+            data-testid="p2-classic-actions"
+          >
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-gray-500">
+              {t("p2.entry.classic")}
+            </span>
+            {perm.clints_sepcifyUser && (
+              <SepcifyUsersSelectedButton ids={selectedRow} />
+            )}
+            {perm.clints_move_archive && (
+              <MoveToArchiveSelectedButton ids={selectedRow} />
+            )}
+            {perm.clints_lock && (
+              <LockUnlockSelectedButton ids={selectedRow} isLocking={true} />
+            )}
+            {perm.clints_lock && (
+              <LockUnlockSelectedButton ids={selectedRow} isLocking={false} />
+            )}
+          </span>
         )}
         {perm.clints_delete && (
           <DeleteSelectedButton

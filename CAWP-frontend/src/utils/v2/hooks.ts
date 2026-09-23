@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppSelector } from '@/store'
 import { newIdempotencyKey } from '@/services/v2/http'
+import { withDerivedPermissions } from './derivedPermissions'
 
-/** The signed-in role's permission map (`role.permission`), never undefined. */
+/** The signed-in role's permission map (`role.permission`) plus derived keys, never undefined. */
 export function usePermissions(): Record<string, boolean> {
     const permissions = useAppSelector((state) => state.auth.user.permissions)
-    return (permissions ?? {}) as Record<string, boolean>
+    return useMemo(() => withDerivedPermissions(permissions) as Record<string, boolean>, [permissions])
 }
 
 export type QueryState<T> = {

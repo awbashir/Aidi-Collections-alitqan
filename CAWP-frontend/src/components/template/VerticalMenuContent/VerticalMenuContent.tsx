@@ -16,6 +16,7 @@ import { Direction, NavMode } from "@/@types/theme";
 import type { NavigationGroup, NavigationTree } from "@/@types/navigation";
 import { useAppSelector } from "@/store";
 import { navigationGroups as defaultNavigationGroups } from "@/configs/navigation.config";
+import { withDerivedPermissions } from "@/utils/v2/derivedPermissions";
 
 export interface VerticalMenuContentProps {
   navMode: NavMode;
@@ -135,7 +136,9 @@ const VerticalMenuContent = (props: VerticalMenuContentProps) => {
   /* A stale persisted store (or a user record that predates permissions) has
    * no `permissions` object at all — reading it unguarded took the whole shell
    * down before the nav could render. */
-  const perm = (permissions ?? {}) as Record<string, boolean>;
+  /* Derived keys (`bulk_jobs`: any bulk kind key, mirroring GET /v2/jobs)
+   * are added; real keys are unchanged. */
+  const perm = withDerivedPermissions(permissions) as Record<string, boolean>;
 
   /* Permission filtering is unchanged: a top-level item shows only when its
    * key is granted. Grouping happens after it, so a group whose items are all

@@ -38,6 +38,8 @@ import ActionColumn from "./components/ActionColumn";
 import ExportByExcel from "./components/export";
 import { useFetchClients } from "./hooks/GetClientHook";
 import StatusPill from "@/components/shared/StatusPill";
+import { BulkLaunchButton } from "@/views/phase2/bulk/entry";
+import { HiOutlineDocumentSearch } from "react-icons/hi";
 
 const TableOptions = () => {
   const { t } = useTranslation();
@@ -78,7 +80,19 @@ const TableOptions = () => {
 
   return (
     <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center mb-4 gap-y-2">
-     
+      {/* Phase 2: spreadsheet inquiry (read-only, scoped; client_query). */}
+      <div className="ms-auto">
+        <BulkLaunchButton
+          kind="inquiry"
+          label={t("p2.entry.inquiry")}
+          testId="p2-entry-inquiry"
+          icon={<HiOutlineDocumentSearch />}
+          launch={{
+            from: { path: "/client_query", labelKey: "p2.back.inquiry" },
+            source: "spreadsheet",
+          }}
+        />
+      </div>
     </div>
   );
 };

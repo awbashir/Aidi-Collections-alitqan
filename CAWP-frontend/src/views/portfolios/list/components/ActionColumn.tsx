@@ -20,6 +20,7 @@ import {
 import ToggleStatusButton from "./ToggleStatusButton";
 import DeleteButton from "./DeleteButton";
 import MoveArchiveButton from "./MoveArchiveButton";
+import { BulkMenu } from "@/views/phase2/bulk/entry";
 
 const ActionColumn = ({
   row,
@@ -66,6 +67,42 @@ const ActionColumn = ({
           </span>
         </Link>
       </Tooltip>
+
+      {/* Phase 2: reviewed portfolio actions (preview, then explicit
+       * confirmation). The direct legacy archive stays as "classic". */}
+      <BulkMenu
+        compact
+        testId={`p2-portfolio-bulk-${row.id}`}
+        title={t("p2.entry.portfolioMenu")}
+        groups={[
+          {
+            entries: [
+              {
+                kind: "archive",
+                label: t("p2.entry.archivePortfolio"),
+                testId: "p2-entry-archive-portfolio",
+                launch: {
+                  from: { path: "/portfolios", labelKey: "p2.back.portfolios" },
+                  source: "portfolio",
+                  portfolioId: row.id,
+                  portfolioName: row.name,
+                },
+              },
+              {
+                kind: "round_robin",
+                label: t("p2.entry.roundRobinPortfolio"),
+                testId: "p2-entry-rr-portfolio",
+                launch: {
+                  from: { path: "/portfolios", labelKey: "p2.back.portfolios" },
+                  portfolioId: row.id,
+                  portfolioName: row.name,
+                  params: { portfolio_id: row.id },
+                },
+              },
+            ],
+          },
+        ]}
+      />
 
       <MoveArchiveButton
         row={row}

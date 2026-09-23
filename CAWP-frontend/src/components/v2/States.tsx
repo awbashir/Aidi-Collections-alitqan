@@ -10,6 +10,7 @@ import { HiOutlineExclamation, HiOutlineLockClosed, HiOutlineRefresh, HiOutlineI
 import Button from '@/components/ui/Button'
 import Skeleton from '@/components/ui/Skeleton'
 import { describeV2Error, isV2Error } from '@/services/v2'
+import type { Translate } from '@/services/v2'
 import type { ReactNode } from 'react'
 
 export const SkeletonLines = ({ rows = 3, className }: { rows?: number; className?: string }) => (
@@ -86,10 +87,13 @@ export const ErrorState = ({
     error,
     onRetry,
     className,
+    describe,
 }: {
     error: unknown
     onRetry?: () => void
     className?: string
+    /** Message builder for the error (default `describeV2Error`); Phase 2 passes `describeBulkError`. */
+    describe?: (error: unknown, t: Translate) => string
 }) => {
     const { t } = useTranslation()
     if (isV2Error(error) && error.status === 403) {
@@ -104,7 +108,7 @@ export const ErrorState = ({
         >
             <HiOutlineExclamation aria-hidden className="text-[22px] text-danger" />
             <div className="text-[14px] font-extrabold text-navy-600 dark:text-gray-100">{t('p1.state.errorTitle')}</div>
-            <div className="max-w-[560px] text-[13px] text-gray-600">{describeV2Error(error, t)}</div>
+            <div className="max-w-[560px] text-[13px] text-gray-600">{(describe || describeV2Error)(error, t)}</div>
             {onRetry && (
                 <Button size="sm" icon={<HiOutlineRefresh />} onClick={onRetry}>
                     {t('p1.action.retry')}
@@ -122,10 +126,13 @@ export const InlineError = ({
     error,
     onReload,
     className,
+    describe,
 }: {
     error: unknown
     onReload?: () => void
     className?: string
+    /** Message builder for the error (default `describeV2Error`). */
+    describe?: (error: unknown, t: Translate) => string
 }) => {
     const { t } = useTranslation()
     const ref = useRef<HTMLDivElement>(null)
@@ -146,7 +153,7 @@ export const InlineError = ({
             <HiOutlineExclamation aria-hidden className="mt-0.5 shrink-0 text-[16px]" />
             <div className={classNames('min-w-0 flex-1', className)}>
                 {conflict && <div className="font-extrabold">{t('p1.state.conflictTitle')}</div>}
-                <div className="break-words">{describeV2Error(error, t)}</div>
+                <div className="break-words">{(describe || describeV2Error)(error, t)}</div>
                 {conflict && onReload && (
                     <button
                         type="button"
