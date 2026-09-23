@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import classNames from "classnames";
 import Menu from "@/components/ui/Menu";
 import AuthorityCheck from "@/components/shared/AuthorityCheck";
 import VerticalSingleMenuItem from "./VerticalSingleMenuItem";
@@ -12,8 +13,9 @@ import {
 import useMenuActive from "@/utils/hooks/useMenuActive";
 import { useTranslation } from "react-i18next";
 import { Direction, NavMode } from "@/@types/theme";
-import type { NavigationTree } from "@/@types/navigation";
+import type { NavigationGroup, NavigationTree } from "@/@types/navigation";
 import { useAppSelector } from "@/store";
+import { navigationGroups as defaultNavigationGroups } from "@/configs/navigation.config";
 
 export interface VerticalMenuContentProps {
   navMode: NavMode;
@@ -23,6 +25,9 @@ export interface VerticalMenuContentProps {
   userAuthority: string[];
   onMenuItemClick?: () => void;
   direction?: Direction;
+  /** Titled sections for items that carry a `group`. Defaults to the app's
+   *  sidebar groups; trees without grouped items render flat, as before. */
+  navigationGroups?: NavigationGroup[];
 }
 
 const { MenuGroup } = Menu;
@@ -36,6 +41,7 @@ const VerticalMenuContent = (props: VerticalMenuContentProps) => {
     userAuthority = [],
     onMenuItemClick,
     direction = themeConfig.direction,
+    navigationGroups = defaultNavigationGroups,
   } = props;
 
   const { t } = useTranslation();
@@ -90,7 +96,10 @@ const VerticalMenuContent = (props: VerticalMenuContentProps) => {
             userAuthority={userAuthority}
             authority={nav.authority}
           >
-            <MenuGroup label={t(nav.translateKey) || nav.title}>
+            <MenuGroup
+              label={t(nav.translateKey) || nav.title}
+              className={nav.group ? "menu-group-nested" : undefined}
+            >
               {nav.subMenu.map((subNav) =>
                 subNav.subMenu.length > 0 ? (
                   <VerticalCollapsedMenuItem
@@ -128,7 +137,57 @@ const VerticalMenuContent = (props: VerticalMenuContentProps) => {
    * down before the nav could render. */
   const perm = (permissions ?? {}) as Record<string, boolean>;
 
-  var permission = perm[routeKey];
+  /* Permission filtering is unchanged: a top-level item shows only when its
+   * key is granted. Grouping happens after it, so a group whose items are all
+   * filtered out never renders its header. */
+  const permitted = navigationTree.filter((nav) => nav && perm[nav.key]);
+
+  const isGrouped = permitted.some((nav) => nav.group);
+
+  const renderGrouped = () => {
+    const sections = navigationGroups
+      .map((group) => ({
+        group,
+        items: permitted.filter((nav) => nav.group === group.key),
+      }))
+      .filter((section) => section.items.length > 0);
+
+    const knownGroups = new Set(navigationGroups.map((group) => group.key));
+    const ungrouped = permitted.filter(
+      (nav) => !nav.group || !knownGroups.has(nav.group)
+    );
+
+    return (
+      <>
+        {sections.map(({ group, items }, index) => {
+          const label = t(group.translateKey, group.title);
+          return (
+            <div
+              key={group.key}
+              role="group"
+              aria-label={label}
+              className={classNames(
+                "menu-nav-group",
+                index === 0 && "menu-nav-group-first"
+              )}
+            >
+              {collapsed ? (
+                index > 0 && <div className="menu-nav-group-divider" />
+              ) : (
+                <div
+                  className={classNames("menu-title", `menu-title-${navMode}`)}
+                >
+                  {label}
+                </div>
+              )}
+              {items.map((nav) => getNavItem(nav))}
+            </div>
+          );
+        })}
+        {ungrouped.map((nav) => getNavItem(nav))}
+      </>
+    );
+  };
 
   return (
     <Menu
@@ -139,9 +198,7 @@ const VerticalMenuContent = (props: VerticalMenuContentProps) => {
       defaultActiveKeys={activedRoute?.key ? [activedRoute.key] : []}
       defaultExpandedKeys={defaulExpandKey}
     >
-      {navigationTree
-        .filter((nav) => perm[nav.key])
-        .map((nav) => getNavItem(nav))}
+      {isGrouped ? renderGrouped() : permitted.map((nav) => getNavItem(nav))}
     </Menu>
   );
 };

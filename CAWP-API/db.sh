@@ -17,6 +17,9 @@ for f in 01_performance_indexes.sql 02_jsonb_attribute.sql 03_last_comment.sql; 
   psql "${PSQL_ARGS[@]}" -v ON_ERROR_STOP=0 -f "$DB_DIR/$f"
 done
 
+# Then record 01-03 and apply db/migrations/* (needs python + psycopg2, e.g. in the image):
+#   python manage_db.py baseline && python manage_db.py up        (see ../db/README.md)
+#
 # `flask db migrate` is deliberately absent: models.py already declares every index and
 # autogenerate would emit destructive DDL. Hand-written revisions only:
 #   flask db upgrade

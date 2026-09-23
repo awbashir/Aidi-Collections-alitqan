@@ -2,6 +2,7 @@
 #   docker compose up -d db redis        # infra only (API/frontend run locally)
 #   docker compose up -d                 # infra + API
 #   docker compose --profile web up -d   # + frontend dev server
+#   docker compose --profile test run --rm api-test   # pytest against a throwaway Postgres (test-db)
 services:
   db:
     image: postgres:16-alpine
@@ -65,6 +66,7 @@ services:
     volumes:
       - ./CAWP-API:/app
       - cawp_uploads:/app/uploads
+      - ./db:/db:ro   # migrations: docker exec cawp-api python manage_db.py status|baseline|up
     depends_on:
       db:
         condition: service_healthy
@@ -86,6 +88,46 @@ services:
       - cawp_node_modules:/app/node_modules
     depends_on:
       - api
+
+  # --- tests (profile "test"): small, throwaway Postgres; never the 2.2 GB dump -------------
+  # docker compose --profile test run --rm api-test          # whole pytest suite
+  # docker compose --profile test run --rm api-test tests/test_riyadh.py -k boundary
+  test-db:
+    profiles: ["test"]
+    image: postgres:16-alpine
+    container_name: cawp-test-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres   # throwaway test instance only
+      POSTGRES_DB: postgres
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off",
+              "-c", "shared_buffers=128MB", "-c", "max_connections=50", "-c", "jit=off"]
+    ports:
+      - "5439:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api-test:
+    profiles: ["test"]
+    build: ./CAWP-API
+    working_dir: /app
+    environment:
+      # admin connection; the suite creates/drops only databases named cawp_test*
+      TEST_DATABASE_URL: postgresql://postgres:postgres@test-db:5432/postgres
+      PYTHONDONTWRITEBYTECODE: "1"
+    entrypoint: ["sh", "-c", "pip install -q --disable-pip-version-check --root-user-action=ignore -r requirements-dev.txt && exec python -m pytest -p no:cacheprovider \"$$@\"", "--"]
+    command: ["-q", "tests"]
+    volumes:
+      - ./CAWP-API:/app
+      - ./db:/db:ro
+    depends_on:
+      test-db:
+        condition: service_healthy
 
 volumes:
   cawp_pgdata:

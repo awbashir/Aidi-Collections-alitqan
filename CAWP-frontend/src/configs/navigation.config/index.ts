@@ -2,13 +2,45 @@ import {
   NAV_ITEM_TYPE_TITLE,
   NAV_ITEM_TYPE_ITEM,
   NAV_ITEM_TYPE_COLLAPSE,
+  NAV_GROUP_DAILY_OPERATIONS,
+  NAV_GROUP_RECOVERY_TEAM,
+  NAV_GROUP_INTELLIGENCE_CONTROL,
 } from "@/constants/navigation.constant";
-import type { NavigationTree } from "@/@types/navigation";
-import { useAppSelector } from "@/store";
+import type {
+  NavigationGroup,
+  NavigationTree,
+} from "@/@types/navigation";
 
+/* Sidebar sections, in display order. A group renders only when at least one
+ * of its items passes the permission filter, so a role never sees an empty
+ * header. Later phases add their screens (attention queue, follow-ups, calls,
+ * campaigns, plans, promises, requests, AI, quality, jobs, PBX) to these same
+ * groups; do not add nav items for screens that do not exist yet. */
+export const navigationGroups: NavigationGroup[] = [
+  {
+    key: NAV_GROUP_DAILY_OPERATIONS,
+    title: "Daily operations",
+    translateKey: "nav.groups.dailyOperations",
+  },
+  {
+    key: NAV_GROUP_RECOVERY_TEAM,
+    title: "Recovery & team",
+    translateKey: "nav.groups.recoveryTeam",
+  },
+  {
+    key: NAV_GROUP_INTELLIGENCE_CONTROL,
+    title: "Intelligence & control",
+    translateKey: "nav.groups.intelligenceControl",
+  },
+];
+
+/* Top-level `key`s double as permission keys: the side nav shows an item only
+ * when `role.permission[key]` is true. Never rename them. */
 const navigationConfig: NavigationTree[] = [
+  /* ── Daily operations: work on cases. ── */
   {
     key: "dashbord",
+    group: NAV_GROUP_DAILY_OPERATIONS,
     path: "/home",
     title: "Home",
     translateKey: "nav.home.home",
@@ -17,39 +49,9 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
-
-  {
-    key: "users",
-    path: "/users",
-    title: "Users",
-    translateKey: "nav.users.users",
-    icon: "user",
-    type: NAV_ITEM_TYPE_ITEM,
-    authority: [],
-    subMenu: [],
-  },
-  {
-    key: "contracts",
-    path: "/contracts",
-    title: "Contract",
-    translateKey: "nav.contracts.contracts",
-    icon: "contract",
-    type: NAV_ITEM_TYPE_ITEM,
-    authority: [],
-    subMenu: [],
-  },
-  {
-    key: "portfolios",
-    path: "/portfolios",
-    title: "portfolio",
-    translateKey: "nav.portfolio.portfolio",
-    icon: "portfolio",
-    type: NAV_ITEM_TYPE_ITEM,
-    authority: [],
-    subMenu: [],
-  },
   {
     key: "clints",
+    group: NAV_GROUP_DAILY_OPERATIONS,
     path: "/clients",
     title: "Client",
     translateKey: "nav.clients.clients",
@@ -60,6 +62,7 @@ const navigationConfig: NavigationTree[] = [
   },
   {
     key: "client_query",
+    group: NAV_GROUP_DAILY_OPERATIONS,
     path: "/client_query",
     title: "Client",
     translateKey: "nav.clients_query.clients_query",
@@ -70,6 +73,7 @@ const navigationConfig: NavigationTree[] = [
   },
   {
     key: "clints_archive",
+    group: NAV_GROUP_DAILY_OPERATIONS,
     path: "/archive",
     title: "Archive",
     translateKey: "nav.archive.archive",
@@ -78,38 +82,11 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
-  {
-    key: "branches",
-    path: "/branch_supervisor",
-    title: "Branch Supervisor",
-    translateKey: "nav.branchs_supervisors.branchs_supervisors",
-    icon: "branch_supervisor",
-    type: NAV_ITEM_TYPE_COLLAPSE,
-    authority: [],
-    subMenu: [
-      {
-        key: "branch",
-        path: "/branch",
-        title: "Branch",
-        translateKey: "nav.branches.branches",
-        type: NAV_ITEM_TYPE_ITEM,
-        authority: [],
-        subMenu: [],
-      },
-      {
-        key: "supervisor",
-        path: "/supervisor",
-        title: "Supervisor",
-        translateKey: "nav.supervisors.supervisors",
-        type: NAV_ITEM_TYPE_ITEM,
-        authority: [],
-        subMenu: [],
-      },
-    ],
-  },
 
+  /* ── Recovery & team: money in, and the reports on it. ── */
   {
     key: "accounts_payments",
+    group: NAV_GROUP_RECOVERY_TEAM,
     path: "/accounting",
     title: "Accounting",
     translateKey: "nav.accounts.accounts",
@@ -128,10 +105,9 @@ const navigationConfig: NavigationTree[] = [
       },
     ],
   },
-
-  ,
   {
     key: "collections",
+    group: NAV_GROUP_RECOVERY_TEAM,
     path: "/collection",
     title: "Collection",
     translateKey: "nav.collections.collections",
@@ -160,18 +136,8 @@ const navigationConfig: NavigationTree[] = [
     ],
   },
   {
-    key: "roles",
-    path: "/permissions",
-    title: "Permission",
-    translateKey: "nav.permissions.permissions",
-    icon: "permission",
-    type: NAV_ITEM_TYPE_ITEM,
-    authority: [],
-    subMenu: [],
-  },
-
-  {
     key: "reports",
+    group: NAV_GROUP_RECOVERY_TEAM,
     path: "/reports",
     title: "Reports",
     translateKey: "nav.reports.reports",
@@ -280,6 +246,7 @@ const navigationConfig: NavigationTree[] = [
   },
   {
     key: "report_collectors",
+    group: NAV_GROUP_RECOVERY_TEAM,
     path: "/report/collectors",
     title: "Report",
     translateKey: "nav.reports.collectorReports.collectorReports",
@@ -316,8 +283,84 @@ const navigationConfig: NavigationTree[] = [
     ],
   },
 
+  /* ── Intelligence & control: settings and administration. ── */
+  {
+    key: "users",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/users",
+    title: "Users",
+    translateKey: "nav.users.users",
+    icon: "user",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  {
+    key: "branches",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/branch_supervisor",
+    title: "Branch Supervisor",
+    translateKey: "nav.branchs_supervisors.branchs_supervisors",
+    icon: "branch_supervisor",
+    type: NAV_ITEM_TYPE_COLLAPSE,
+    authority: [],
+    subMenu: [
+      {
+        key: "branch",
+        path: "/branch",
+        title: "Branch",
+        translateKey: "nav.branches.branches",
+        type: NAV_ITEM_TYPE_ITEM,
+        authority: [],
+        subMenu: [],
+      },
+      {
+        key: "supervisor",
+        path: "/supervisor",
+        title: "Supervisor",
+        translateKey: "nav.supervisors.supervisors",
+        type: NAV_ITEM_TYPE_ITEM,
+        authority: [],
+        subMenu: [],
+      },
+    ],
+  },
+  {
+    key: "contracts",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/contracts",
+    title: "Contract",
+    translateKey: "nav.contracts.contracts",
+    icon: "contract",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  {
+    key: "portfolios",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/portfolios",
+    title: "portfolio",
+    translateKey: "nav.portfolio.portfolio",
+    icon: "portfolio",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  {
+    key: "roles",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/permissions",
+    title: "Permission",
+    translateKey: "nav.permissions.permissions",
+    icon: "permission",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   {
     key: "settings_general_archiveReasons",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
     path: "/settings",
     title: "Settings",
     translateKey: "nav.settings.settings",

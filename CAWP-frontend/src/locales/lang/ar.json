@@ -139,12 +139,18 @@
       "collectionMethods": "طرق التحصيل",
       "nationality": "الجنسيات",
       "updateSide": "جهات التحديث ",
-      "commentStatus": "حالات العميل "
+      "commentStatus": "حالات العميل ",
+      "delinquencyReasons": "اسباب التعثر عن السداد"
     },
     "permissions": {
       "permissions": "الصلاحيات",
       "menu": "الصلاحيات",
       "header": "الصلاحيات"
+    },
+    "groups": {
+      "dailyOperations": "العمليات اليومية",
+      "recoveryTeam": "التحصيل والفريق",
+      "intelligenceControl": "الذكاء والتحكم"
     }
   },
   "auth": {
@@ -292,7 +298,9 @@
     "adds": "اضافة عملاء",
     "addByExcel": "اضافة عملاء بملف اكسل",
     "addByExcelSuccess": "تمت اضافة العملاء بنجاح",
-    "addByExcelFail": "فشل اضافة العملاء"
+    "addByExcelFail": "فشل اضافة العملاء",
+    "filtersApplied": "فلاتر مطبقة",
+    "clearFilters": "مسح الفلاتر"
   },
   "comments": {
     "comments": "المتابعات",

@@ -64,7 +64,7 @@ const CommentsSetting = lazy(() => import("./tabs/Comments"));
 const Payments = lazy(() => import("./tabs/Payments"));
 const PaymentsDate = lazy(() => import("./tabs/PaymentsDate"));
 const UsersArchive = lazy(() => import("./tabs/UsersArchive"));
-//const Messages = lazy(() => import("./tabs/Messages")); // This line is missing in the original file
+//const Messages = lazy(() => import("./tabs/messages")); // This line is missing in the original file
 const CallsRecord = lazy(() => import("./tabs/CallsRecord"));
 const LockHistory = lazy(() => import("./tabs/LockHistory"));
 const Documents = lazy(() => import("./tabs/Documents"));

@@ -48,6 +48,12 @@ import cloneDeep from "lodash/cloneDeep";
 import ActionColumn from "./components/ActionColumn";
 import ExportByExcel from "./components/export";
 import { useFetchClients } from "./hooks/GetClientHook";
+import {
+  clearHashFilters,
+  countAppliedClientFilters,
+  useClientsSelectedCase,
+} from "./hooks/useClientsHashState";
+import { HiX } from "react-icons/hi";
 import LockUnlockSelectedButton from "./components/LockUnlockSelectedButton";
 
 const TableOptions = () => {
@@ -66,6 +72,8 @@ const TableOptions = () => {
   const onclick = () => {
     search ? dispatch(setSearchClose()) : dispatch(setSearchOpen());
   };
+
+  const appliedFilterCount = countAppliedClientFilters(pramas);
 
   const firstRender = useRef(true);
 
@@ -173,6 +181,27 @@ const TableOptions = () => {
         >
           {t("cancelEnquiry")}
         </Button>
+      )}
+
+      {/* Applied filters are kept in the URL hash, so a reload or a shared
+       * link can open the list filtered while the search panel is closed.
+       * This chip says so, and clears them. */}
+      {appliedFilterCount > 0 && (
+        <span className="inline-flex h-7 items-center gap-2 rounded-full border border-azure-500 bg-azure-50 ps-3 pe-1 text-[12.5px] font-extrabold text-azure-600 dark:border-azure-300 dark:bg-night-raised dark:text-azure-300">
+          <span>
+            {t("clients.filtersApplied")}
+            <span className="ms-1 tabular-nums">({appliedFilterCount})</span>
+          </span>
+          <button
+            type="button"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-azure-100 dark:hover:bg-night-border"
+            aria-label={String(t("clients.clearFilters"))}
+            title={String(t("clients.clearFilters"))}
+            onClick={() => dispatch(setFilterData(clearHashFilters(pramas)))}
+          >
+            <HiX />
+          </button>
+        </span>
       )}
 
       {/* Trailing edge — actions. Exactly one primary. */}
@@ -319,6 +348,14 @@ const ClientsTable = () => {
   const filterData = useAppSelector(
     (state) => state.clientsList.data.filterData,
   );
+
+  /* The case last opened from this list, kept in the URL hash (`case=`), so
+   * its row is marked again after a reload or Back. The columns are built
+   * once, so the cell reaches the setter through a ref. */
+  const { caseId: selectedCaseId, select: selectCase } =
+    useClientsSelectedCase();
+  const selectCaseRef = useRef(selectCase);
+  selectCaseRef.current = selectCase;
 
   const defaultColumns: ColumnDef<User>[] = useMemo(
     () => [
@@ -468,7 +505,12 @@ const ClientsTable = () => {
         header: "",
         id: "action",
         cell: (props) => {
-          return <ActionColumn row={props.row.original} />;
+          return (
+            <ActionColumn
+              row={props.row.original}
+              onOpenDetail={(id) => selectCaseRef.current(id)}
+            />
+          );
         },
       },
     ],
@@ -575,6 +617,8 @@ const ClientsTable = () => {
           onSort={onSort}
           onCheckBoxChange={handleRowSelect}
           onIndeterminateCheckBoxChange={handleAllRowSelect}
+          activeRowId={selectedCaseId}
+          sortState={sort}
           pageSizes={[100, 500, 1000]}
           footerTotalAmount={{
             status: true,

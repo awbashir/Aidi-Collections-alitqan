@@ -4,7 +4,7 @@ This is the upgrade path from the current production release to the refactored t
 (`app.py` + `api/` blueprints + `services/` + `core/`). The HTTP contract is unchanged, so
 the frontend does **not** have to be deployed at the same time.
 
-Order matters: the database migrations come first (steps 1–3), then the image (4–6).
+Order matters: the database migrations come first (steps 1–3, then 3b), then the image (4–6).
 
 ---
 
@@ -78,6 +78,50 @@ SELECT count(*) FROM clints c
          WHERE m.clint_id = c.id AND m.is_deleted = false
          ORDER BY m.create_at DESC, m.id DESC LIMIT 1);              -- must be 0
 ```
+
+## 3b. Record 01–03 and apply `db/migrations` with `manage_db.py` — **online**
+
+From Phase 0 on, schema changes are numbered SQL files in `db/migrations/`, applied and
+recorded (version, sha256, time, duration) in `schema_migrations` by
+`CAWP-API/manage_db.py`. See `db/README.md` for the rules. The runner ships in the image;
+the SQL files do not (the image is built from `CAWP-API/` only), so mount `db/` from the
+release checkout:
+
+```bash
+# on the deploy host, from the checkout of the release being deployed
+RUN="docker run --rm --env-file /etc/cawp/api.env -v $PWD/db:/db:ro cawp-api:<tag> python manage_db.py"
+$RUN status                 # 0001-0003 "pending (legacy)", 0004+ "pending"
+$RUN baseline --dry-run     # must say "present, would be recorded" for 0001, 0002, 0003
+$RUN baseline               # records them; never executes them
+$RUN up --dry-run           # lists what will run, in which mode, with which lock timeout
+$RUN up
+$RUN verify                 # exit 0 = every applied file matches its checksum
+```
+
+`--env-file` supplies `DATABASE_URL`; set `MIGRATE_DATABASE_URL` instead if migrations
+should use a different (owner) role than the application. If `baseline` reports a legacy
+script as *not present*, run that script with psql first (steps 1–3), then `baseline`
+again. `up` refuses to run until 0001–0003 are recorded, and refuses while any applied
+file's checksum differs from the file on disk.
+
+What each Phase 0 migration locks:
+
+| Migration | Statements | Locks | Duration |
+|---|---|---|---|
+| `0004_audit_events` | `CREATE TABLE audit_events`, 5 indexes, append-only trigger function + 2 triggers | only the new table | instant |
+| `0005_idempotency_keys` | `CREATE TABLE idempotency_keys`, 1 index | only the new table | instant |
+| `0006_revision_columns` | `ALTER TABLE … ADD COLUMN revision integer NOT NULL DEFAULT 0` on `clints`, `"Comments"`, `"Payments"`, `"ClintContacts"`, `"paymentDates"`; `cawp_bump_revision()`; 5 `BEFORE UPDATE` triggers | brief `ACCESS EXCLUSIVE` per table (metadata-only on PG ≥ 11: no rewrite, no backfill) + `SHARE ROW EXCLUSIVE` for each trigger, all in one transaction | 5 ms on the full local copy (474k clients, 1.27M comments, 1.8M contacts) |
+
+Every transactional migration runs with `lock_timeout = 5s`: if a long report query holds a
+lock on one of those tables, the migration aborts and rolls back completely (nothing is
+recorded) instead of making every other request wait behind it. Re-run `up` a moment
+later. The migrations are additive and the current code never reads the new objects, so
+they can be applied while the old image is still serving.
+
+What the triggers change at run time: every UPDATE on the five tables now also sets
+`revision` (a `to_jsonb(OLD)`/`to_jsonb(NEW)` comparison per row, microseconds). On
+`clints`, changes that only touch `last_comment_at`/`last_comment_id` (rewritten by the
+`"Comments"` trigger on every new note) do not bump the revision.
 
 ---
 
@@ -165,9 +209,11 @@ alembic.autogenerate.compare_metadata(ctx, db.metadata)  ->  0 differences
 
 Autogenerate would nevertheless try to "fix" things it cannot express (the mutual
 `clints` ↔ `clintArchive` foreign-key cycle, the two `SERIAL` sequences) and would happily
-emit `DROP INDEX` for anything you add by hand outside the model. The schema changes in
-this release are the three reviewed, idempotent SQL scripts in `db/`, which is also the
-audit trail.
+emit `DROP INDEX` for anything you add by hand outside the model — and for the Phase 0
+objects that are deliberately *not* in the model (`audit_events`, `idempotency_keys`,
+`schema_migrations`, the `revision` columns), it would emit `DROP TABLE` / `DROP COLUMN`.
+Schema changes are the reviewed SQL files in `db/`, applied by `manage_db.py` (step 3b);
+`schema_migrations` is the audit trail. Flask-Migrate/Alembic stay installed but unused.
 
 If you keep Alembic in the deployment pipeline:
 
@@ -189,7 +235,23 @@ indexes) or widened (`attribute` `json` → `jsonb`, which the old code reads fi
 psycopg2 decodes both to `dict`).
 
 So a rollback is just `docker run` with the previous image tag. Leave the database
-migrations in place — reverting them is neither necessary nor safe.
+migrations in place — reverting them is neither necessary nor safe. The same holds for the
+Phase 0 migrations (0004–0006): the previous code never reads `audit_events`,
+`idempotency_keys` or the `revision` columns, and the triggers only maintain `revision`.
+
+If you must remove the revision triggers (e.g. to rule them out while debugging a write
+path), drop the triggers only and keep the columns:
+
+```sql
+DROP TRIGGER IF EXISTS clints_bump_revision ON clints;
+DROP TRIGGER IF EXISTS comments_bump_revision ON "Comments";
+DROP TRIGGER IF EXISTS payments_bump_revision ON "Payments";
+DROP TRIGGER IF EXISTS clintcontacts_bump_revision ON "ClintContacts";
+DROP TRIGGER IF EXISTS paymentdates_bump_revision ON "paymentDates";
+```
+
+Recreate them by re-running the statements of `0006_revision_columns.sql` by hand (the
+file is idempotent); do not delete its `schema_migrations` row.
 
 If you must remove the denormalisation:
 

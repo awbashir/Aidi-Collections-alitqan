@@ -34,7 +34,7 @@ import Tooltip from "@/components/ui/Tooltip";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import cloneDeep from "lodash/cloneDeep";
 
-import PopNotification from "./components/popNotification";
+import PopNotification from "./components/PopNotification";
 
 import ToggleStatusButton from "./components/ToggleStatusButton";
 

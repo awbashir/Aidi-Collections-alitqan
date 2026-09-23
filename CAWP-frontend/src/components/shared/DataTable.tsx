@@ -84,6 +84,12 @@ type DataTableProps<T> = {
   };
   clickAbility?: boolean;
   clintID?: string;
+  /** Marks the row whose `id` matches (e.g. the case last opened from this
+   *  list, restored from the URL hash) with a leading azure rail. */
+  activeRowId?: string | number;
+  /** Controlled sort display (e.g. a sort restored from the URL hash). When
+   *  set, the header arrows follow it; clicks still report through `onSort`. */
+  sortState?: OnSortParam;
   footerTotalAmount?: {
     status: boolean;
     label: string;
@@ -182,6 +188,8 @@ function _DataTable<T>(
     },
     clickAbility = false,
     clintID = "id",
+    activeRowId,
+    sortState,
     footerTotalAmount = { status: false, label: "", value: 0, place: 0 },
   } = props;
 
@@ -194,6 +202,12 @@ function _DataTable<T>(
   const pageIndex = pagingData.pageIndex ?? pagingData.page ?? 1;
 
   const [sorting, setSorting] = useState<ColumnSort[] | null>(null);
+
+  const displaySorting: ColumnSort[] | null = sortState
+    ? sortState.key !== "" && sortState.order
+      ? [{ id: String(sortState.key), desc: sortState.order === "desc" }]
+      : []
+    : sorting;
 
   const pageSizeOption = useMemo(
     () =>
@@ -292,10 +306,15 @@ function _DataTable<T>(
     manualPagination: true,
     manualSorting: true,
     onSortingChange: (sorter) => {
+      // Controlled: toggle from what the header shows, not the internal copy.
+      if (sortState && typeof sorter === "function") {
+        setSorting(sorter(displaySorting ?? []) as ColumnSort[]);
+        return;
+      }
       setSorting(sorter as ColumnSort[]);
     },
     state: {
-      sorting: sorting as ColumnSort[],
+      sorting: displaySorting as ColumnSort[],
     },
   });
 
@@ -414,6 +433,11 @@ function _DataTable<T>(
               const rawColor =
                 original?.comment_status?.color || original?.status?.color;
               const selected = row.getIsSelected();
+              const current =
+                activeRowId !== undefined &&
+                activeRowId !== null &&
+                activeRowId !== "" &&
+                String(original?.id) === String(activeRowId);
               const tone = rawColor ? statusTint(rawColor, scheme) : null;
 
               return (
@@ -435,8 +459,10 @@ function _DataTable<T>(
                   key={row.id}
                   className={classNames(
                     selected && "table-row-selected",
+                    current && "table-row-current",
                     clickAbility && "cursor-pointer"
                   )}
+                  aria-current={current ? "true" : undefined}
                   style={
                     tone && !selected
                       ? { backgroundColor: tone.tint }

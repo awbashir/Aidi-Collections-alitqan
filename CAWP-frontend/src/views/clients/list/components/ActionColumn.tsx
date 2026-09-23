@@ -10,6 +10,7 @@ import {
   HiOutlinePencil,
   HiOutlineUserGroup,
   HiArrowSmLeft,
+  HiArrowSmRight,
   HiOutlineTrash,
   HiOutlineArchive,
   HiLockClosed,
@@ -26,9 +27,12 @@ import { useAppSelector } from "@/store";
 const ActionColumn = ({
   row,
   fetchadata,
+  onOpenDetail,
 }: {
   row: Client;
   fetchadata: void;
+  /** Called when the case detail link is opened (records the selected case). */
+  onOpenDetail?: (id: string) => void;
 }) => {
   const { t } = useTranslation();
   const [direction, updateDirection] = useDirection();
@@ -53,6 +57,7 @@ const ActionColumn = ({
           target="_blank"
           className={`cursor-pointer p-2 hover:text-azure-600 font-semibold`}
           to={`/clients/details/details?id=${row.id}`}
+          onClick={() => onOpenDetail?.(row.id)}
         >
           <span>
             {direction === "rtl" ? <HiArrowSmLeft /> : <HiArrowSmRight />}

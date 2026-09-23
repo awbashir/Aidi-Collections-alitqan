@@ -141,6 +141,29 @@
   @apply bg-navy-50 dark:bg-night-raised;
 }
 
+/* The row last opened from a list (restored from the URL hash): the same
+   leading azure rail, without the selection tint, so it never reads as a
+   checked row. */
+.table-row-current > td:first-child,
+.table-row-current > .td:first-child {
+  box-shadow: inset 2px 0 0 #2f5fd6;
+}
+
+[dir="rtl"] .table-row-current > td:first-child,
+[dir="rtl"] .table-row-current > .td:first-child {
+  box-shadow: inset -2px 0 0 #2f5fd6;
+}
+
+.dark .table-row-current > td:first-child,
+.dark .table-row-current > .td:first-child {
+  box-shadow: inset 2px 0 0 #7d9dea;
+}
+
+.dark[dir="rtl"] .table-row-current > td:first-child,
+.dark[dir="rtl"] .table-row-current > .td:first-child {
+  box-shadow: inset -2px 0 0 #7d9dea;
+}
+
 .table-resizer {
   @apply ltr:right-0 rtl:left-0 h-full absolute top-0 z-10 ltr:border-r-2 rtl:border-l-2 border-gray-300 dark:border-night-border w-2;
   touch-action: none;

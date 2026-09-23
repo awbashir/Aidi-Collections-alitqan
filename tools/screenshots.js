@@ -49,5 +49,38 @@ const PAGES = [
       console.log('client_detail ok', popup ? '(popup)' : '(same tab)');
     }
   } catch (e) { console.log('client_detail:', String(e).slice(0, 100)); }
+
+  // Phase 0 extras: the clients list opened from a hash URL (filters, sort and
+  // Arabic text in the fragment), and the side nav in Arabic and English.
+  // HASH_URL overrides the fragment; the default uses the dev data set.
+  const HASH = process.env.HASH_URL ||
+    '#sort=name:asc&contract=bf69e026-5a52-446c-99a6-b596f886dbf0&attr=' + encodeURIComponent('الشمري');
+  const shot = async (name, path, opts = {}) => {
+    const f = `${outDir}/${String(i++).padStart(2, '0')}_${name}.png`;
+    try {
+      await page.goto(FE + path, { waitUntil: 'networkidle', timeout: 90000 });
+      await page.waitForTimeout(1500);
+      if (opts.element) await page.locator(opts.element).first().screenshot({ path: f });
+      else await page.screenshot({ path: f, fullPage: false });
+      console.log(`${name.padEnd(22)} ${path.slice(0, 60)} -> ${f}`);
+    } catch (e) { console.log(`  ${name}: ${String(e).slice(0, 120)}`); }
+  };
+  try {
+    // A fresh navigation to a URL that carries a hash: the list must open in
+    // the state the hash describes (after-shots) or ignore it (before-shots).
+    await page.goto('about:blank');
+    await shot('clients_hash', '/clients' + HASH);
+    await page.setViewportSize({ width: 1440, height: 1400 });
+    await shot('sidebar_ar', '/home', { element: '.side-nav' });
+    // Switch to English through the header language menu.
+    await page.locator('.header img[src*="/img/countries/"]').first().click();
+    await page.getByText('English', { exact: true }).first().click();
+    await page.waitForTimeout(1000);
+    await shot('sidebar_en', '/home', { element: '.side-nav' });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await shot('home_en', '/home');
+    await page.goto('about:blank');
+    await shot('clients_hash_en', '/clients' + HASH);
+  } catch (e) { console.log('phase0 extras:', String(e).slice(0, 160)); }
   await browser.close();
 })();

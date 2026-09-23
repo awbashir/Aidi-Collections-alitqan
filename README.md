@@ -1,6 +1,8 @@
 # Aidi Collections (CAWP) — local stack
 
-Debt-collection CRM for فنية الاتقان. Two apps + a database dump:
+Debt-collection CRM for فنية الاتقان. Two apps + a database dump.
+
+> **Important:** read [`docs/PROJECT-NOTES.md`](docs/PROJECT-NOTES.md) first. It holds the target feature catalogue, the "extend, don't replace" rule, and the Issabel / in-app browser softphone plan.
 
 | Path | What | Docs |
 | --- | --- | --- |

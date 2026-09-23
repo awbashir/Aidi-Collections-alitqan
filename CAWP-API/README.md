@@ -15,6 +15,7 @@ CAWP-API/
 ├── app.py                 Flask app factory-less entry point + 105 routes
 ├── extensions.py          db / migrate / jwt / cors / compress / socketio singletons
 ├── models.py              the 29 SQLAlchemy models + `defult_permission`
+├── manage_db.py           schema migration runner for ../db (status / baseline / up / verify)
 ├── core/                  framework-level helpers, no business logic
 │   ├── config.py          `Config` - every setting from env vars, with the old
 │   │                      hard-coded values as defaults
@@ -23,9 +24,16 @@ CAWP-API/
 │   ├── serialization.py   orjson JSON provider (RFC-822 datetimes, big-int fallback)
 │   ├── lookups.py         tiny process-local TTL map cache
 │   ├── jobs.py            background thread pool behind `?async=1` / `GET /jobs/<id>`
-│   ├── http.py            `error_response(message, e, status=201)`
-│   └── files.py           safe upload/temp/export/document paths (`secure_filename`
-│                          + realpath containment)
+│   ├── http.py            `error_response(message, e, status=201)`  (legacy routes)
+│   ├── files.py           safe upload/temp/export/document paths (`secure_filename`
+│   │                      + realpath containment)
+│   │   -- Phase 0 helpers, used by NEW routes only --
+│   ├── api_response.py    real HTTP codes, `{message, status, data}` / `{message, status:false, error, code}`
+│   ├── audit.py           `record()` an `audit_events` row in the caller's transaction
+│   ├── idempotency.py     `@idempotent()` for the `Idempotency-Key` header (replay / 422 / 409)
+│   ├── revisions.py       expected-revision checks on the unmapped `revision` columns (409)
+│   ├── riyadh.py          Asia/Riyadh `today()`, `day_bounds()`, `range_bounds()`, `is_overdue()`
+│   └── permissions.py     registry of new permission keys + merge into `roles.permission`
 ├── services/              SQL builders and row serializers - **no Flask imports**
 │   ├── clients_query.py   /clints, archive, have/not_have payments, neglect, next calls
 │   ├── clients_scope.py   `resolve_scope()` - who may see which clients
@@ -42,7 +50,7 @@ CAWP-API/
 │   └── imports.py         14 routes - Excel imports, bulk actions, `?async=1`
 ├── classes/               `FilterServerSide` - the legacy `*_Qkey[]` filter quad
 ├── issable/               Asterisk CDR access (MySQL + SFTP for recordings)
-└── tests/                 see "Tests" below
+└── tests/                 see "Tests" below (pytest suite + live-stack scripts)
 ```
 
 `app.py` keeps the routes that are plain CRUD over a single table (users, roles,
@@ -50,6 +58,13 @@ nationalities, branches, contracts, portfolios, comment statuses, collection met
 contacts, documents, notifications, CDR, auth, `/health`, `/jobs/<id>`). Everything that
 was a report, an export, a dashboard or an Excel import lives in `api/` on top of
 `services/`.
+
+**New routes (Phase 0+)** live in new blueprints and use `core/api_response.py`: real
+HTTP status codes (400/403/404/409/422) with `{"message", "status": false, "error", "code"}`,
+and `{"message", "status": true, "data"}` on success; mutating ones take an
+`Idempotency-Key` header (`core/idempotency.py`) and an expected revision
+(`core/revisions.py`), and write an `audit_events` row (`core/audit.py`). None of this
+applies to the legacy routes below.
 
 **Wire compatibility is frozen.** Path spellings (`clints`, `uesrs`, `dashbord`,
 `sepcify`, `reson`, `frist_name`, `portofolio`, …), response envelopes, Arabic messages
@@ -127,17 +142,17 @@ container.
 |---|---|---|
 | `PORT` | `9797` | also used by the Docker `HEALTHCHECK` |
 | `FLASK_DEBUG` | `0` | when on, `error` in error bodies carries the real exception |
-| `DATABASE_URL` | `postgresql+psycopg2://…/mydata` | pool 20 + 30 overflow, `pool_pre_ping`, `statement_timeout` |
+| `DATABASE_URL` | – (**required**, startup fails without it) | pool 20 + 30 overflow, `pool_pre_ping`, `statement_timeout` |
 | `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_STATEMENT_TIMEOUT_MS` | `20`, `30`, `120000` | |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD` | `10.10.10.240`, `6379`, `0`, – | cache + JWT blocklist + job state |
 | `CACHE_DEFAULT_TTL` | `120` | dashboard fragment TTL |
-| `SECRET_KEY`, `JWT_SECRET_KEY` | `super-secret` | **must** be set in production |
+| `SECRET_KEY`, `JWT_SECRET_KEY` | – (random per process, logged as CRITICAL) | **must** be set, or every restart logs everyone out |
 | `JWT_ACCESS_HOURS` | `24` | |
 | `CORS_ORIGINS` | `*` | comma-separated list |
 | `MAX_UPLOAD_MB` | `50` | `MAX_CONTENT_LENGTH` |
 | `UPLOAD_DIR` | `./uploads` | `temp/`, `documents/`, `exports/` are created on boot |
-| `CDR_HOST`, `CDR_DB`, `CDR_USER`, `CDR_PASSWORD`, `CDR_CONNECT_TIMEOUT`, `CDR_ENABLED` | Asterisk box | `/cdr*` and the dashboard call charts |
-| `RECORDINGS_ROOT`, `RECORDINGS_SSH_HOST/USER/PASSWORD/KEY/TIMEOUT` | Asterisk box | only paths under `RECORDINGS_ROOT` can be downloaded |
+| `CDR_HOST`, `CDR_DB`, `CDR_USER`, `CDR_PASSWORD`, `CDR_CONNECT_TIMEOUT`, `CDR_ENABLED` | Asterisk box; no password default | `/cdr*` and the dashboard call charts |
+| `RECORDINGS_ROOT`, `RECORDINGS_SSH_HOST/USER/PASSWORD/KEY/TIMEOUT` | Asterisk box; no password default (falls back to the SSH key) | only paths under `RECORDINGS_ROOT` can be downloaded |
 | `JOB_WORKERS`, `JOB_RESULT_TTL` | `4`, `3600` | background jobs |
 | `WEB_CONCURRENCY`, `GUNICORN_THREADS` | `1`, `32` | SocketIO in threading mode needs one worker |
 | `SENTRY_DSN` | – | Sentry is only initialised when this is set |
@@ -212,7 +227,34 @@ thousand rows.
 
 ## Tests
 
-All of them run inside the API container.
+### pytest suite (new code; no live stack needed)
+
+`tests/test_*.py` cover the migration runner, `audit_events`, idempotency, the revision
+triggers and helpers, Asia/Riyadh dates, the permission merge and the new-route response
+convention. They run against a small throwaway PostgreSQL 16 (`test-db`, tmpfs, port
+5439), never the 2.2 GB dump: the harness loads `db/schema/baseline.sql` (schema-only),
+runs `manage_db.py baseline` + `up`, and seeds `tests/fixtures/seed.sql`.
+
+```bash
+# from the repository root: one command, everything in Docker
+docker compose --profile test run --rm api-test
+docker compose --profile test run --rm api-test -k riyadh -vv     # pytest args pass through
+docker compose --profile test rm -sf test-db                         # stop + remove only test-db (`down` would stop the whole stack)
+
+# or from the host (Python 3.11 + requirements.txt + requirements-dev.txt installed)
+docker compose --profile test up -d test-db
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5439/postgres python -m pytest -q CAWP-API/tests
+```
+
+`TEST_DATABASE_URL` is an admin connection; the suite creates and drops only databases
+named `cawp_test*` (`KEEP_TEST_DB=1` keeps them for inspection). Without it, only the
+tests marked `no_db` run. `pytest` lives in `requirements-dev.txt`, not in the production
+`requirements.txt`. CI (`.github/workflows/ci.yml` at the repository root) runs the same
+suite on every push/PR after loading the baseline and applying the migrations.
+
+### Live-stack scripts
+
+These run inside the API container against the running server.
 
 ```bash
 # post-integration smoke test: imports (sync + async), bulk actions, DELETE /clints,
