@@ -1,6 +1,7 @@
 """Daily attention queue (Phase 1, stream B): `GET /v2/attention`.
 
-Reasons (docs/phase1-spec.md; live = not archived, always inside the caller's scope):
+Reasons (docs/phase1-spec.md; live = not archived, always inside the caller's scope;
+pending_approval also covers archived cases, flagged `case.is_archived`):
 
   late_follow_up    open follow-up whose Riyadh civil due date is before Riyadh today
   missed_promise    a promise in v_promise_state with state 'overdue' (stream A's view)
@@ -65,7 +66,7 @@ def _pending(flt, day):
     return (sa.select(PAYMENTS.c.clint_id.label("case_id"), sa.literal(PRIORITY["pending_approval"]).label("prio"),
                       sa.func.min(PAYMENTS.c.create_at).label("since"))
             .select_from(PAYMENTS.join(CLINTS, CLINTS.c.id == PAYMENTS.c.clint_id))
-            .where(PAYMENT_PENDING, *flt.clauses())
+            .where(PAYMENT_PENDING, *flt.clauses(include_archived=True))
             .group_by(PAYMENTS.c.clint_id))
 
 
@@ -205,14 +206,15 @@ def details(session, ids, day) -> list[dict]:
         if case is None:        # deleted between the id page and this lookup
             continue
         reasons, facts = [], {}
+        archived = bool(case["is_archived"])   # archived: pending_approval only
         fu = open_fu.get(cid)
-        if fu is not None and fu["due_at"] < day.start:
+        if fu is not None and fu["due_at"] < day.start and not archived:
             reasons.append("late_follow_up")
             facts["late_follow_up"] = {"follow_up_id": str(fu["id"]), "due_at": wc.iso(fu["due_at"]),
                                        "due_date": wc.civil(fu["due_at"]), "days_late": day.days_late(fu["due_at"]),
                                        "next_action": fu["next_action"], "revision": fu["revision"]}
         pr = promises.get(cid)
-        if pr is not None and pr["overdue_count"]:
+        if pr is not None and pr["overdue_count"] and not archived:
             reasons.append("missed_promise")
             facts["missed_promise"] = {"count": int(pr["overdue_count"]),
                                        "oldest_due_date": wc.iso(pr["oldest_due_date"]),
@@ -222,10 +224,10 @@ def details(session, ids, day) -> list[dict]:
             reasons.append("pending_approval")
             facts["pending_approval"] = {"count": int(pp["n"]), "oldest_created_at": wc.iso(pp["oldest"]),
                                          "amount": wc.money(pp["amount"])}
-        if case["case_owner_id"] is None and case["is_active"]:
+        if case["case_owner_id"] is None and case["is_active"] and not archived:
             reasons.append("unassigned")
             facts["unassigned"] = {}
-        if (case["is_active"] and case["case_owner_id"] is not None and fu is None
+        if (case["is_active"] and not archived and case["case_owner_id"] is not None and fu is None
                 and not (pr is not None and pr["active_count"])):
             reasons.append("unscheduled")
             facts["unscheduled"] = {"last_comment_at": wc.iso(case["last_comment_at"])}

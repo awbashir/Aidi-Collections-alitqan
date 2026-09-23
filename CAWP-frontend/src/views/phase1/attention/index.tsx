@@ -19,7 +19,7 @@ import { useV2Query } from '@/utils/v2/hooks'
 import { formatCount, formatRiyadhDateTime } from '@/utils/v2/format'
 import { caseLink } from '@/utils/v2/links'
 import { CivilDate, Ltr, MoneyText, RiyadhTime } from '@/components/v2/Display'
-import { BucketBadge, ReasonBadge } from '@/components/v2/Badges'
+import { BucketBadge, PlainBadge, ReasonBadge } from '@/components/v2/Badges'
 import { EmptyState, ErrorState, Note, SkeletonRows } from '@/components/v2/States'
 import { CountTabs, PageHead, PagerFooter, ScopeFilters, TableFrame, rowClass } from '@/components/v2/ListParts'
 
@@ -233,6 +233,13 @@ const AttentionQueue = () => {
                                                 {item.case.name}
                                             </div>
                                             <Ltr className="text-[12.5px] text-gray-600">{item.case.accountNumber}</Ltr>
+                                            {item.case.is_archived && (
+                                                <div className="mt-1" data-testid="p1-archived">
+                                                    <PlainBadge tone="neutral" size="row">
+                                                        {t('p1.attention.archived')}
+                                                    </PlainBadge>
+                                                </div>
+                                            )}
                                         </Td>
                                         <Td>
                                             <div className="flex flex-wrap gap-1.5" data-testid="p1-reasons">

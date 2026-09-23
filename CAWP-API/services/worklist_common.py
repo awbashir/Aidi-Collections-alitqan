@@ -246,8 +246,10 @@ class CaseFilter:
                    contract_id=parse_uuid(args.get("contract_id"), "contract_id"),
                    portfolio_id=parse_uuid(args.get("portfolio_id"), "portfolio_id"))
 
-    def clauses(self) -> list:
-        out = [CLINTS.c.is_archive == sa.false()]
+    def clauses(self, include_archived: bool = False) -> list:
+        # Archived cases are left out of every list except the pending-approval reason of
+        # the attention queue (decision 2026-09-23): a pending payment still needs a decision.
+        out = [] if include_archived else [CLINTS.c.is_archive == sa.false()]
         cond = scope_condition(self.scope, [self.contract_id] if self.contract_id else None)
         if cond is not None:
             out.append(cond)
@@ -324,6 +326,7 @@ def case_columns(owner_alias):
         sa.func.round(sa.cast(CLINTS.c.amount, sa.Numeric), 2).label("original_amount"),
         CLINTS.c.is_locked.label("is_locked"),
         CLINTS.c.is_active.label("is_active"),
+        CLINTS.c.is_archive.label("is_archived"),
         CLINTS.c.user_id.label("case_owner_id"),
         CLINTS.c.last_comment_at.label("last_comment_at"),
         PORTFOLIOS.c.id.label("portfolio_id"),
@@ -343,6 +346,7 @@ def case_block(r) -> dict:
         "identityNumber": r["identity_number"],
         "original_amount": money(r["original_amount"]),
         "is_locked": bool(r["is_locked"]),
+        "is_archived": bool(r["is_archived"]),
         "last_comment_at": iso(r["last_comment_at"]),
         "owner": ({"id": sid(r["case_owner_id"]), "name": r["case_owner_name"],
                    "user_name": r["case_owner_user_name"]} if r["case_owner_id"] else None),

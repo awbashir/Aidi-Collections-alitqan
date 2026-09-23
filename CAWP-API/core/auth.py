@@ -93,3 +93,20 @@ def required_roles(*roles):
             return f(*args, **kwargs)
         return wrapped
     return wrapper
+
+
+def required_any(*keys):
+    """Like `required_roles`, but passes when the caller has *any* of `keys`.
+
+    Used for the legacy routes whose buttons appear on more than one screen, so the
+    server check matches what the UI already allows. Place **below** `@jwt_required()`.
+    Same 403 body as `required_roles`.
+    """
+    def wrapper(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            if not any(has_permission(k) for k in keys):
+                return jsonify({'message': 'You are not authorized to access this resource'}), 403
+            return f(*args, **kwargs)
+        return wrapped
+    return wrapper

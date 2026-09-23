@@ -622,6 +622,7 @@
     },
     "attention": {
       "title": "Attention queue",
+      "archived": "Archived",
       "all": "All",
       "emptyTitle": "Nothing needs attention here",
       "emptyHint": "No case in your scope matches this reason and these filters.",
