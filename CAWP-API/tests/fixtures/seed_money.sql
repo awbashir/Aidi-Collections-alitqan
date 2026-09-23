@@ -12,11 +12,11 @@
 
 INSERT INTO roles (id, name, permission) VALUES
   ('aaaaaaaa-0000-4000-8000-000000000201', 'SuperAdmin',
-   '{"clints": true, "clints_Payments": true, "clints_PayemntDates": true, "accounts_payments": true,
+   '{"clints": true, "collections_users": true, "clints_Payments": true, "clints_PayemntDates": true, "accounts_payments": true,
      "payments_approve": true, "payments_reverse": true, "promises": true, "promises_cancel": true,
      "promises_allocate": true}'),
   ('aaaaaaaa-0000-4000-8000-000000000202', 'MoneySupervisor',
-   '{"clints": true, "clints_Payments": true, "accounts_payments": true,
+   '{"clints": true, "collections_users": true, "clints_Payments": true, "accounts_payments": true,
      "payments_approve": true, "payments_reverse": true, "promises": true, "promises_cancel": true,
      "promises_allocate": true}'),
   ('aaaaaaaa-0000-4000-8000-000000000203', 'MoneyCollector',

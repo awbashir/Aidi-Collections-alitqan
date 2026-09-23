@@ -49,8 +49,8 @@ from werkzeug.utils import secure_filename
 
 from classes.FilterServerSide import FilterServerSide
 from core import cache, files, jobs
-from core.auth import (invalidate_permission_maps, is_admin_identity,
-                       required_roles)
+from core.auth import (has_permission, invalidate_permission_maps,
+                       is_admin_identity, required_any, required_roles)
 from core.config import Config
 from core.permissions import role_permission_template
 from core.files import (document_path, ensure_dirs, resolve_temp_file,
@@ -1556,6 +1556,7 @@ def getclint(id):
  #update clint
 @app.route('/clints/<id>', methods=['PUT'])
 @jwt_required()
+@required_roles('clints_details')  # the case page's update-data tab
 @check_client_lock
 def update_clint(id):
     try:
@@ -1584,6 +1585,7 @@ def update_clint(id):
 #update just DelinquencyReason_id for clint
 @app.route('/clints/delinquency/<id>', methods=['PUT'])
 @jwt_required()
+@required_roles('clints_details')  # set from the case page's notes tab
 def update_clint_delinquency(id):
     try:
         clint = Clints.query.get(id)
@@ -1928,6 +1930,12 @@ def deleteComment(id):
         comment = Comments.query.get(id)
         if comment is None:
             return jsonify( {"message": "التعليق غير موجود","status":False , "error": "comment not found"}),201
+        # Same rule as the case timeline: `clints_comments_delete`, or the author within
+        # 60 s of writing it (+15 s grace for network and clock skew).
+        if not has_permission('clints_comments_delete'):
+            age = (datetime.datetime.now(datetime.timezone.utc) - comment.create_at).total_seconds()
+            if str(comment.user_id) != str(get_jwt_identity()) or age > 75:
+                return jsonify({'message': 'You are not authorized to access this resource'}), 403
         db.session.delete(comment)
         db.session.commit()
     except Exception as e:
@@ -2060,6 +2068,7 @@ def getPaymentsById(id):
 #update payment
 @app.route('/payment/<id>' , methods =['PUT'])
 @jwt_required()
+@required_any('accounts_payments', 'collections_users')  # edit button on /payment and /user_collection
 def updatePayment(id):
     try:
         payment = Payments.query.get(id)
@@ -2099,6 +2108,7 @@ def updatePayment(id):
 #delete payment by id
 @app.route('/payments/<id>' , methods =['DELETE'])
 @jwt_required()
+@required_roles('accounts_payments')  # delete button on /payment
 def deletePayment(id):
     try:
         payment = Payments.query.get(id)
@@ -2144,6 +2154,7 @@ def createPayment():
 #approve payment by id
 @app.route('/payment/approve/<id>' , methods =['PUT'])
 @jwt_required()
+@required_any('collections_users', 'collections_currentUser')  # both collections screens show approve
 def approvePayment(id):
     try:
         payment = db.session.get(Payments, id)
@@ -2177,6 +2188,7 @@ def approvePayment(id):
 #reject payment by id
 @app.route('/payment/reject/<id>' , methods =['PUT'])
 @jwt_required()
+@required_any('collections_users', 'collections_currentUser')  # both collections screens show reject
 def rejectPayment(id):
     try:
         payment = Payments.query.get(id)

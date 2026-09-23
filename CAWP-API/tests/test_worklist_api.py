@@ -466,8 +466,9 @@ def queue(pgw, team):
     add_note(pgw, k["today_fu"], c1, days_from_today(0))
     k["open_promise"] = make_case(pgw, c1, p)
     add_promise(pgw, k["open_promise"], c1, days_from_today(3))
-    k["archived"] = make_case(pgw, c1, p, archived=True)
+    k["archived"] = make_case(pgw, c1, p, archived=True)                   # pending approval only
     add_payment(pgw, k["archived"], c1)
+    add_note(pgw, k["archived"], c1, days_from_today(-2))                   # late, but archived: hidden
     k["inactive_unassigned"] = make_case(pgw, None, p, active=False)
     return k
 
@@ -481,19 +482,22 @@ def _att(wl_client, h, **params):
 def test_attention_reasons_counts_and_order(wl_client, headers, team, queue):
     by_id = {v: k for k, v in queue.items()}
     data = _att(wl_client, headers(W.super), contract_id=team["contract"])
-    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 2,
+    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 3,
                               "unassigned": 1, "unscheduled": 3}
-    assert data["total"] == 7                     # 5 in tier 1 + 2 unscheduled-only
+    assert data["total"] == 8                     # 6 in tier 1 + 2 unscheduled-only
     got = [(by_id[i["case"]["id"]], i["reasons"]) for i in data["items"]]
     assert got == [
         ("multi", ["late_follow_up", "missed_promise", "pending_approval"]),
         ("late", ["late_follow_up"]),
         ("promise", ["missed_promise"]),
         ("pending", ["pending_approval", "unscheduled"]),
+        ("archived", ["pending_approval"]),        # archived: pending approval only, flagged
         ("unassigned", ["unassigned"]),
         ("unsched_never", ["unscheduled"]),        # never contacted before oldest contact
         ("unsched", ["unscheduled"]),
     ]
+    archived = {by_id[i["case"]["id"]] for i in data["items"] if i["case"]["is_archived"]}
+    assert archived == {"archived"}
     facts = {by_id[i["case"]["id"]]: i["facts"] for i in data["items"]}
     assert facts["late"]["late_follow_up"]["days_late"] == 3
     assert facts["promise"]["missed_promise"]["count"] == 2
@@ -509,7 +513,7 @@ def test_attention_reasons_counts_and_order(wl_client, headers, team, queue):
 @pytest.mark.parametrize("reason,expected", [
     ("late_follow_up", ["multi", "late"]),
     ("missed_promise", ["multi", "promise"]),
-    ("pending_approval", ["multi", "pending"]),
+    ("pending_approval", ["multi", "pending", "archived"]),
     ("unassigned", ["unassigned"]),
     ("unscheduled", ["pending", "unsched_never", "unsched"]),
 ])
@@ -529,26 +533,27 @@ def test_attention_paging_crosses_tiers(wl_client, headers, team, queue):
     pages = []
     for page in (1, 2, 3, 4, 5):
         data = _att(wl_client, headers(W.super), contract_id=team["contract"], page=page, pageSize=2)
-        assert data["total"] == 7
+        assert data["total"] == 8
         pages.append([by_id[i["case"]["id"]] for i in data["items"]])
-    assert pages == [["multi", "late"], ["promise", "pending"], ["unassigned", "unsched_never"], ["unsched"], []]
+    assert pages == [["multi", "late"], ["promise", "pending"], ["archived", "unassigned"],
+                     ["unsched_never", "unsched"], []]
 
 
 def test_attention_scope(wl_client, headers, team, queue, pgw):
     flt = {"contract_id": team["contract"]}
     c1 = _att(wl_client, headers(team["c1"]), **flt)
-    assert c1["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 2,
+    assert c1["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 3,
                             "unassigned": 0, "unscheduled": 3}              # a collector never sees unassigned
-    assert c1["total"] == 6
+    assert c1["total"] == 7
     c2 = _att(wl_client, headers(team["c2"]), **flt)
     assert c2["total"] == 0 and set(c2["counts"].values()) == {0}
     sup = _att(wl_client, headers(W.supervisor), **flt)
-    assert sup["counts"]["unassigned"] == 0 and sup["total"] == 6          # via supervised users only
+    assert sup["counts"]["unassigned"] == 0 and sup["total"] == 7          # via supervised users only
     supervise_contract(pgw, W.supervisor_rec, team["contract"])
     sup = _att(wl_client, headers(W.supervisor), **flt)
-    assert sup["counts"]["unassigned"] == 1 and sup["total"] == 7          # + the contract's unassigned case
+    assert sup["counts"]["unassigned"] == 1 and sup["total"] == 8          # + the contract's unassigned case
     own = _att(wl_client, headers(W.super), owner=team["c1"], **flt)
-    assert own["counts"]["unassigned"] == 0 and own["total"] == 6
+    assert own["counts"]["unassigned"] == 0 and own["total"] == 7
     other = _att(wl_client, headers(team["c1"]), owner=team["c2"], **flt)
     assert other["total"] == 0
 
@@ -561,9 +566,9 @@ def test_attention_reason_transitions(wl_client, headers, team, queue, pgw):
     run(pgw, 'UPDATE "Payments" SET approval_status = true WHERE clint_id = %s', queue["pending"])
     run(pgw, "UPDATE clints SET user_id = %s WHERE id = %s", team["c1"], queue["unassigned"])
     data = _att(wl_client, headers(W.super), **flt)
-    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 1,
+    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 2,
                               "unassigned": 0, "unscheduled": 3}       # pending, unsched_never, unassigned
-    assert data["total"] == 3 + 3
+    assert data["total"] == 4 + 3                 # multi, late, promise, archived + 3 unscheduled
 
 
 def test_attention_validation(wl_client, headers):

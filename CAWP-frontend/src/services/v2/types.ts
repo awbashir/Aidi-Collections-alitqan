@@ -23,6 +23,8 @@ export type WorkCase = {
     identityNumber: string
     original_amount: Money
     is_locked: boolean
+    /** Archived cases appear only under pending_approval. */
+    is_archived: boolean
     last_comment_at: Iso | null
     owner: { id: string; name: string; user_name?: string } | null
     portfolio: { id: string; name: string } | null

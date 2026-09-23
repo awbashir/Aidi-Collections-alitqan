@@ -217,7 +217,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 |---|---|---|
 | 0 | Foundation: SQL migration runner (`CAWP-API/manage_db.py`, `db/migrations/`), `audit_events`, `idempotency_keys`, `revision` columns + triggers, `core/{audit,idempotency,revisions,riyadh,permissions,api_response}.py`, pytest on a small test DB, root CI, secret defaults removed, sidebar groups, URL-hash list state (clients list) | **Done 2026-09-23**: `review/phase0-backend.md`, `review/phase0-frontend.md` |
 | 1 | Core workflow: attention queue, first-class follow-ups, promise lifecycle + evidence ledger, payment reversal + exact-balance approval, reviewed corrections, contact/note history | **Done 2026-09-23**: `docs/phase1-spec.md`, `review/phase1-{money,worklist,history,frontend}.md`; migrations 0007–0015 |
-| 2 | Reviewed bulk jobs: review → confirm → per-case results on `core/jobs.py`; assignment + round-robin, archive/restore, lock, notes, corrections, spreadsheet inquiry; jobs screen; retention worker | |
+| 2 | Reviewed bulk jobs: review → confirm → per-case results on `core/jobs.py`; assignment + round-robin, archive/restore, lock, notes, corrections, spreadsheet inquiry; jobs screen; retention worker Includes: reviewed close-out of the 2,804 late imported follow-ups. | |
 | 3 | Internal requests, targets, repayment plans, session revocation on grant change | |
 | 4 | Reports RPT-01…25, formula-safe exports, Arabic XLSX | |
 | 5 | Calling (track B): 5a Issabel commissioning (start now), 5b calling backend, 5c in-app softphone, 5d campaigns, 5e CDR attribution | 5a waiting on PBX access |
@@ -244,13 +244,22 @@ Phase 1 decisions and fixes:
 - **Legacy note form** sends timed callbacks with the `+03:00` offset. About 7k older date-only callbacks are stored at 00:00 UTC and display as 03:00; a few hundred older timed ones are 3 h off.
 - **Case timeline** (`/comments/clint/<id>`) hides notes retired through v2.
 
-Phase 1 open items (need a decision):
-- **Permission gates on legacy routes.** These legacy routes still have no permission check: payment approve/reject/edit/delete, `PUT /clints/<id>`, `/clints/delinquency/<id>`, and `DELETE /comments/<id>` (which hard-deletes).
-- **Late imported follow-ups:** 2,804 are late, and 2,083 of those cases have a later note. Candidate for a reviewed bulk "no further action" job (Phase 2).
-- **Archived cases:** the attention queue leaves them out, which hides 446 archived cases with pending payments.
+Phase 1 decisions (2026-09-23):
+- **Legacy routes are now permission-checked**, using the keys the old screens already use (tests: `tests/test_legacy_gates.py`):
+  - `PUT /payment/approve|reject/<id>`: `collections_users` or `collections_currentUser`;
+  - `PUT /payment/<id>`: `accounts_payments` or `collections_users`;
+  - `DELETE /payments/<id>`: `accounts_payments`;
+  - `PUT /clints/<id>` and `PUT /clints/delinquency/<id>`: `clints_details`;
+  - `DELETE /comments/<id>`: `clints_comments_delete`, or the author within 60 s (plus 15 s grace).
+  - **Collectors can still approve and reject payments.** The collector role (119 active users) has `collections_currentUser`, and the "my collections" page shows those buttons. Restricting approval to `collections_users` / `payments_approve` is a separate decision.
+- **Reversed payments on legacy screens:** accepted as they are (they show as rejected or are hidden).
+- **Late imported follow-ups** go to Phase 2: a reviewed bulk action closes those with a later note, with the reason "no further action (imported)", after a preview and confirmation. History is kept.
+- **Attention queue:** archived cases now count for `pending_approval` only, flagged `case.is_archived` and labelled "Archived". The count went from 75 to 521 cases.
+- **Local test reviewer:** `aidi.reviewer` / `Aidi@2026` (role "ZZ-TEST corrections reviewer (local)", supervisor of all contracts). Approve, reject, stale 409 and own-request 403 are verified via the API and the UI (`scripts/verify-phase1-reviewer.cjs`).
+
+Other open items:
 - **Default contacts:** 127,885 debtors have none. The identity check accepts Saudi 10-digit IDs only.
-- **Blocked contacts:** only v2 knows about blocking. Legacy screens can still show and dial a blocked number, so Phase 5 calling must check `is_blocked`.
-- **Second corrections reviewer:** only `aidi.dev` holds `case_corrections_review`, so a real approval was not exercised end to end.
+- **Blocked contacts:** only v2 knows about blocking; Phase 5 calling must check `is_blocked`.
 - **`audit_events` retention** is not planned yet. It grows by about 0.75 KB per imported contact row.
 - **Smaller API gaps** (listed in `review/phase1-frontend.md` §6): payment detail has no events, and the worklist 403 responses have no `code`.
 - **Test data:** ZZ-TEST portfolio, cases and role in the Docker test DB. `aidi.collector` is a local-only test collector.
