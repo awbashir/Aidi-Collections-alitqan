@@ -14,6 +14,7 @@ import Input from '@/components/ui/Input'
 import { useActionKey } from '@/utils/v2/hooks'
 import { InlineError } from './States'
 import type { ReactNode } from 'react'
+import type { Translate } from '@/services/v2'
 
 export type ActionDialogProps = {
     isOpen: boolean
@@ -29,6 +30,8 @@ export type ActionDialogProps = {
     width?: number
     children?: ReactNode
     testId?: string
+    /** Message builder for errors (default `describeV2Error`). */
+    describeError?: (error: unknown, t: Translate) => string
 }
 
 const ActionDialog = ({
@@ -43,6 +46,7 @@ const ActionDialog = ({
     width = 560,
     children,
     testId,
+    describeError,
 }: ActionDialogProps) => {
     const { t } = useTranslation()
     const { key } = useActionKey(isOpen)
@@ -77,6 +81,7 @@ const ActionDialog = ({
                     {children}
                     <InlineError
                         error={error}
+                        describe={describeError}
                         onReload={
                             onReload
                                 ? () => {

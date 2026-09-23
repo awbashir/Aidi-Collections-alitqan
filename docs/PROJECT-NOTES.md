@@ -217,7 +217,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 |---|---|---|
 | 0 | Foundation: SQL migration runner (`CAWP-API/manage_db.py`, `db/migrations/`), `audit_events`, `idempotency_keys`, `revision` columns + triggers, `core/{audit,idempotency,revisions,riyadh,permissions,api_response}.py`, pytest on a small test DB, root CI, secret defaults removed, sidebar groups, URL-hash list state (clients list) | **Done 2026-09-23**: `review/phase0-backend.md`, `review/phase0-frontend.md` |
 | 1 | Core workflow: attention queue, first-class follow-ups, promise lifecycle + evidence ledger, payment reversal + exact-balance approval, reviewed corrections, contact/note history | **Done 2026-09-23**: `docs/phase1-spec.md`, `review/phase1-{money,worklist,history,frontend}.md`; migrations 0007–0015 |
-| 2 | Reviewed bulk jobs: review → confirm → per-case results on `core/jobs.py`; assignment + round-robin, archive/restore, lock, notes, corrections, spreadsheet inquiry; jobs screen; retention worker Includes: reviewed close-out of the 2,804 late imported follow-ups. | |
+| 2 | Reviewed bulk jobs: durable jobs + worker, uploads/mapping/preview/confirm/rechecks, lock/unlock, assign + round-robin, archive/restore, notes, follow-up close-out, spreadsheet inquiry, attribute corrections (via review), jobs screen + wizard, retention | **Done 2026-09-24** (close-out ready, not executed): `docs/phase2-spec.md`, `review/phase2-{framework,assign,archive,notes,inquiry,frontend}.md`; migrations 0016–0019, 0024, 0026–0027 |
 | 3 | Internal requests, targets, repayment plans, session revocation on grant change | |
 | 4 | Reports RPT-01…25, formula-safe exports, Arabic XLSX | |
 | 5 | Calling (track B): 5a Issabel commissioning (start now), 5b calling backend, 5c in-app softphone, 5d campaigns, 5e CDR attribution | 5a waiting on PBX access |
@@ -246,12 +246,12 @@ Phase 1 decisions and fixes:
 
 Phase 1 decisions (2026-09-23):
 - **Legacy routes are now permission-checked**, using the keys the old screens already use (tests: `tests/test_legacy_gates.py`):
-  - `PUT /payment/approve|reject/<id>`: `collections_users` or `collections_currentUser`;
+  - `PUT /payment/approve|reject/<id>`: `collections_users` (supervisors only);
   - `PUT /payment/<id>`: `accounts_payments` or `collections_users`;
   - `DELETE /payments/<id>`: `accounts_payments`;
   - `PUT /clints/<id>` and `PUT /clints/delinquency/<id>`: `clints_details`;
   - `DELETE /comments/<id>`: `clints_comments_delete`, or the author within 60 s (plus 15 s grace).
-  - **Collectors can still approve and reject payments.** The collector role (119 active users) has `collections_currentUser`, and the "my collections" page shows those buttons. Restricting approval to `collections_users` / `payments_approve` is a separate decision.
+  - **Approval is limited to supervisors** (decision 2026-09-23). Legacy approve/reject require `collections_users`, which only the supervisor, manager, operations and ADMIN roles hold. The collector "my collections" page hides the buttons. The sidebar also hides sub-items whose permission key is explicitly `false`.
 - **Reversed payments on legacy screens:** accepted as they are (they show as rejected or are hidden).
 - **Late imported follow-ups** go to Phase 2: a reviewed bulk action closes those with a later note, with the reason "no further action (imported)", after a preview and confirmation. History is kept.
 - **Attention queue:** archived cases now count for `pending_approval` only, flagged `case.is_archived` and labelled "Archived". The count went from 75 to 521 cases.
@@ -263,3 +263,29 @@ Other open items:
 - **`audit_events` retention** is not planned yet. It grows by about 0.75 KB per imported contact row.
 - **Smaller API gaps** (listed in `review/phase1-frontend.md` §6): payment detail has no events, and the worklist 403 responses have no `code`.
 - **Test data:** ZZ-TEST portfolio, cases and role in the Docker test DB. `aidi.collector` is a local-only test collector.
+
+Phase 2 decisions and fixes (2026-09-23):
+- **Approval is limited to supervisors** (see Phase 1 decisions).
+- **Permission keys follow the screen-key rule**, and every legacy bulk route is now gated:
+  - bulk lock: `clints_lock` or `clints_bulk_lock`;
+  - assign and round-robin: `clints_sepcifyUser`;
+  - archive: `clints_move_archive`;
+  - restore: `clints_archive_move` or `clints_archive`;
+  - notes: `clints_UpdateByExcel`;
+  - inquiry: `client_query`;
+  - attribute corrections: `case_corrections_request` or `clints_UpdateByExcel`;
+  - close-out: `follow_ups_manage`;
+  - `GET /v2/clints` (the inquiry screen) now needs `client_query`.
+- **Legacy single-case archive** no longer uses the case id as the `"clintArchive"` row id, and writes the history and the flags in one transaction. Re-archiving after a restore used to fail and leave the case half-archived.
+- **Worker:** `cawp-worker` runs with the stack. Scale out with `--scale worker=N`.
+
+Phase 2 decisions (2026-09-24):
+- **Follow-up close-out:** *any* later note counts (a note after the source note; the due day is used only when the source note is gone). The live preview gives 2,084: 2,063 closable and 21 on locked cases. It has not been executed; run it from Follow-ups → "Close out late imported follow-ups".
+- **The legacy inquiry keeps finding every case.** `GET /v2/clints` needs `client_query` but is not scoped. The spreadsheet inquiry stays scoped to the caller's cases.
+- **Portfolio-wide archive requires `clints_move_archive`,** on the legacy route and on the portfolio screen's classic button.
+- **Collectors keep "Inquiry from spreadsheet"** (`client_query`), with results limited to their own cases.
+
+Phase 2 open items:
+- **Collector eligibility for assignment:** `collections_currentUser`, which gives 139 in `aidi.dev`'s scope.
+- **Data:** placeholder mobiles (`0500000000`, 943 cases) and identity numbers with surrounding spaces (265).
+- **Later:** a reviewed portfolio import (new cases). The legacy `addClintsByExcel` stays as it is.

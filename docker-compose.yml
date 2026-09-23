@@ -73,6 +73,38 @@ services:
       redis:
         condition: service_healthy
 
+  # Reviewed bulk jobs (Phase 2): validation, execution and retention run here, not in the API.
+  # Same image, env and upload volume as `api` (uploads and CSV artifacts live under
+  # UPLOAD_DIR/private/bulk). Needs migrations 0016+ (`python manage_db.py up`).
+  # Scale out with `--scale worker=2` (claims use FOR UPDATE SKIP LOCKED; drop container_name first).
+  worker:
+    build: ./CAWP-API
+    container_name: cawp-worker
+    restart: unless-stopped
+    env_file: ./CAWP-API/.env.docker
+    environment:
+      BULK_BATCH_SIZE: "500"
+      BULK_LEASE_SECONDS: "60"
+      BULK_MAX_ATTEMPTS: "3"
+      BULK_RETENTION_INTERVAL_SECONDS: "600"
+      BULK_WORKER_HEALTH_FILE: /tmp/cawp-worker.alive
+    command: ["python", "-m", "worker"]
+    stop_signal: SIGTERM
+    stop_grace_period: 90s      # the current batch finishes, then the job is released
+    volumes:
+      - ./CAWP-API:/app
+      - cawp_uploads:/app/uploads
+    healthcheck:
+      # the worker loop touches the file between batches and while idle; the check also pings the DB
+      test: ["CMD", "python", "-m", "worker", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+
   web:
     profiles: ["web"]
     image: node:22-alpine

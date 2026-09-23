@@ -25,6 +25,7 @@ import {
   Handshake,
   ClipboardCheck,
   FilePenLine,
+  ListChecks,
 } from "lucide-react";
 
 
@@ -55,6 +56,8 @@ const navigationIcon: NavigationIcons = {
   promises: <Handshake strokeWidth={2} size={18} />,
   payment_approvals: <ClipboardCheck strokeWidth={2} size={18} />,
   corrections: <FilePenLine strokeWidth={2} size={18} />,
+  /* Phase 2 */
+  bulk_jobs: <ListChecks strokeWidth={2} size={18} />,
 };
 
 export default navigationIcon;

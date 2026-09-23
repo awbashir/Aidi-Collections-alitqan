@@ -58,6 +58,8 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     PermissionKey("clints_history", _DAILY, "View case history", "عرض سجل العميل"),
     PermissionKey("case_corrections_request", _CONTROL, "Request case corrections", "طلب تصحيح بيانات العميل"),
     PermissionKey("case_corrections_review", _CONTROL, "Review case corrections", "مراجعة تصحيحات بيانات العميل"),
+    # Phase 2: reviewed bulk jobs (each kind reuses its legacy key; this one sees everyone's runs)
+    PermissionKey("bulk_jobs_all", _CONTROL, "See all bulk job runs", "عرض جميع العمليات الجماعية"),
 )
 
 

@@ -16,6 +16,7 @@ import { Direction, NavMode } from "@/@types/theme";
 import type { NavigationGroup, NavigationTree } from "@/@types/navigation";
 import { useAppSelector } from "@/store";
 import { navigationGroups as defaultNavigationGroups } from "@/configs/navigation.config";
+import { withDerivedPermissions } from "@/utils/v2/derivedPermissions";
 
 export interface VerticalMenuContentProps {
   navMode: NavMode;
@@ -135,12 +136,31 @@ const VerticalMenuContent = (props: VerticalMenuContentProps) => {
   /* A stale persisted store (or a user record that predates permissions) has
    * no `permissions` object at all — reading it unguarded took the whole shell
    * down before the nav could render. */
-  const perm = (permissions ?? {}) as Record<string, boolean>;
+  /* Derived keys (`bulk_jobs`: any bulk kind key, mirroring GET /v2/jobs)
+   * are added; real keys are unchanged. */
+  const perm = withDerivedPermissions(permissions) as Record<string, boolean>;
 
   /* Permission filtering is unchanged: a top-level item shows only when its
    * key is granted. Grouping happens after it, so a group whose items are all
    * filtered out never renders its header. */
-  const permitted = navigationTree.filter((nav) => nav && perm[nav.key]);
+  /* Sub-items: hide one whose key is a permission the user explicitly lacks
+   * (`false`). Keys that are not permission keys (settings pages, branches…)
+   * stay visible, as before; their routes are still guarded. A collapse left
+   * with no children is dropped. */
+  const pruneSubMenu = (nav: NavigationTree): NavigationTree | null => {
+    if (!nav.subMenu || nav.subMenu.length === 0) return nav;
+    const subMenu = nav.subMenu
+      .filter((sub) => sub && perm[sub.key] !== false)
+      .map(pruneSubMenu)
+      .filter((sub): sub is NavigationTree => sub !== null);
+    if (subMenu.length === 0) return null;
+    return subMenu.length === nav.subMenu.length ? nav : { ...nav, subMenu };
+  };
+
+  const permitted = navigationTree
+    .filter((nav) => nav && perm[nav.key])
+    .map(pruneSubMenu)
+    .filter((nav): nav is NavigationTree => nav !== null);
 
   const isGrouped = permitted.some((nav) => nav.group);
 

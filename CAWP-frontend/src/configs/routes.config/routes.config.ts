@@ -613,6 +613,27 @@ export const protectedRoutes = [
     authority: [],
   },
 
+  /* ── Phase 2: reviewed bulk jobs. `bulk_jobs` is derived (any bulk kind key
+   *    or bulk_jobs_all); each wizard also checks the kind's own `allowed`. ── */
+  {
+    key: "bulk_jobs",
+    path: "/jobs",
+    component: lazy(() => import("@/views/phase2/jobs")),
+    authority: [],
+  },
+  {
+    key: "bulk_jobs",
+    path: "/jobs/new/:kind",
+    component: lazy(() => import("@/views/phase2/bulk/NewJobPage")),
+    authority: [],
+  },
+  {
+    key: "bulk_jobs",
+    path: "/jobs/run/:id",
+    component: lazy(() => import("@/views/phase2/bulk/RunJobPage")),
+    authority: [],
+  },
+
   {
     key: "accessDenied",
     path: "/access-denied",

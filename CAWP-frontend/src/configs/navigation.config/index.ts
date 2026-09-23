@@ -343,6 +343,19 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* Phase 2: reviewed bulk jobs. `bulk_jobs` is a derived key (any bulk kind
+   * key or bulk_jobs_all, mirroring GET /v2/jobs): utils/v2/derivedPermissions. */
+  {
+    key: "bulk_jobs",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/jobs",
+    title: "Bulk jobs",
+    translateKey: "nav.p2.jobs",
+    icon: "bulk_jobs",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   {
     key: "users",
     group: NAV_GROUP_INTELLIGENCE_CONTROL,

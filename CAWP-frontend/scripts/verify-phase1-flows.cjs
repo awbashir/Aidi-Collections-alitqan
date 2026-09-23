@@ -187,6 +187,12 @@ async function flows(h) {
     check('E2E promise: approving the payment fulfils the promise (auto allocation)', !!pay && after && after.state === 'fulfilled' && after.allocated === '120.50', JSON.stringify(after && { state: after.state, allocated: after.allocated }));
     check('E2E promise: the case panel shows it as fulfilled', /Fulfilled|مُوفى/.test(rowText), rowText.replace(/\s+/g, ' ').slice(0, 200));
     await shot(page, '12_e2e_promise_fulfilled_ar');
+    // clean up: reverse the approved 120.50 so repeated runs do not use up the test debt
+    if (pay) {
+      const cur = (await api(ADMIN, 'GET', `/v2/payments/${pay.id}`)).body.data;
+      await api(ADMIN, 'POST', `/v2/payments/${pay.id}/reverse`,
+        { reason: 'verify-phase1 cleanup', expected_revision: cur.revision });
+    }
     await page.context().close();
   }
 

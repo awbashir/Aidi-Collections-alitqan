@@ -26,7 +26,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from core import jobs
-from core.auth import required_roles
+from core.auth import required_any, required_roles
 from core.files import resolve_temp_file
 from core.http import error_response
 from extensions import db
@@ -100,6 +100,7 @@ def _temp_path(file_name):
 
 @bp.route('/clint/SepcifyUsersByExcel', methods=['POST'])
 @jwt_required()
+@required_roles('clints_sepcifyUser')
 def sepcifyUsers():
     data = request.get_json()
     user_name = data['user_name']
@@ -151,6 +152,7 @@ def addUsers():
 
 @bp.route('/clints/update/byexcel', methods=['POST'])
 @jwt_required()
+@required_roles('clints_UpdateByExcel')
 def updateClintByExcel():
     try:
         data = request.get_json()
@@ -176,6 +178,7 @@ def updateClintByExcel():
 
 @bp.route('/clints/attribute/byexcel', methods=['POST'])
 @jwt_required()
+@required_roles('clints_UpdateByExcel')
 def updateClintAttributeByExcel():
     try:
         data = request.get_json() or {}
@@ -210,6 +213,7 @@ def updateClintAttributeByExcel():
 
 @bp.route('/commentsbyexcel', methods=['POST'])
 @jwt_required()
+@required_roles('clints_UpdateByExcel')
 def createCommentByExcel():
     try:
         data = request.get_json()
@@ -238,6 +242,7 @@ def createCommentByExcel():
 
 @bp.route('/clint/archivebyexcel', methods=['PUT'])
 @jwt_required()
+@required_any('clints_UpdateByExcel', 'clints_move_archive')  # clients list: Excel menu (UpdateByExcel) / archive key
 def updateClintToArchiveByExcel():
     data = request.get_json()
     account_number = data['account_number']
@@ -260,6 +265,7 @@ def updateClintToArchiveByExcel():
 
 @bp.route('/clint/unarchivebyexcel', methods=['PUT'])
 @jwt_required()
+@required_any('clints_archive_move', 'clints_archive')  # archive screen (route key clints_archive)
 def updateClintToUnArchiveByExcel():
     data = request.get_json()
     file_name = data['file_name']
@@ -282,6 +288,7 @@ def updateClintToUnArchiveByExcel():
 
 @bp.route('/clint/archive/ids', methods=['PUT'])
 @jwt_required()
+@required_roles('clints_move_archive')  # clients list: archive selected
 def updateClintToArchiveByIds():
     try:
         data = request.get_json()
@@ -301,6 +308,7 @@ def updateClintToArchiveByIds():
 
 @bp.route('/clint/archive/portofolio/<id>', methods=['PUT'])
 @jwt_required()
+@required_roles('clints_move_archive')  # decision 2026-09-24: portfolio-wide archive needs the archive key
 def updateClintToArchiveByPortofolioId(id):
     try:
         data = request.get_json()
@@ -328,6 +336,7 @@ def updateClintToArchiveByPortofolioId(id):
 
 @bp.route('/sepcifyusers/ids', methods=['POST'])
 @jwt_required()
+@required_roles('clints_sepcifyUser')
 def sepcifyusers_ids():
     data = request.get_json()
     ids = data['clint_ids']
@@ -348,6 +357,7 @@ def sepcifyusers_ids():
 
 @bp.route('/clints/bulk-lock', methods=['PUT'])
 @jwt_required()
+@required_any('clints_bulk_lock', 'clints_lock')  # clients list shows bulk lock on clints_lock
 def bulk_lock_clients():
     try:
         data = request.get_json()
@@ -365,6 +375,7 @@ def bulk_lock_clients():
 
 @bp.route('/clints/bulk-unlock', methods=['PUT'])
 @jwt_required()
+@required_any('clints_bulk_lock', 'clints_lock')  # clients list shows bulk unlock on clints_lock
 def bulk_unlock_clients():
     try:
         data = request.get_json()
@@ -404,6 +415,7 @@ def deleteClints():
 
 @bp.route('/send/notification', methods=['POST'])
 @jwt_required()
+@required_roles('clints_sepcifyUser')
 def sendNotification():
     try:
         data = request.get_json()

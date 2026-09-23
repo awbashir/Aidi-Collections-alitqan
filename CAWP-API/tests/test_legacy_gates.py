@@ -65,19 +65,23 @@ def test_user_without_keys_is_refused_everywhere(db):
     assert q1(db, 'SELECT count(*) FROM "Comments" WHERE id=%s', (note,)) == (1,)
 
 
-@pytest.mark.parametrize("key", ["collections_users", "collections_currentUser"])
-def test_either_collections_screen_key_may_approve_and_reject(db, key):
-    user = make_user(db, {key: True})
+def test_only_supervisors_may_approve_and_reject(db):
+    """Decision 2026-09-23: approval is limited to supervisors (`collections_users`).
+    A collector's "my collections" key no longer opens approve/reject."""
+    supervisor = make_user(db, {"collections_users": True})
+    collector = make_user(db, {"collections_currentUser": True})
     case = make_case(db, 1000)
-    ok, rej = make_payment(db, case, 100), make_payment(db, case, 50)
-    r1 = call("PUT", f"/payment/approve/{ok}", user)
-    r2 = call("PUT", f"/payment/reject/{rej}", user, {"approval_comment": "no slip"})
+    ok, rej, mine = make_payment(db, case, 100), make_payment(db, case, 50), make_payment(db, case, 20)
+    assert call("PUT", f"/payment/approve/{mine}", collector)["status"] == 403
+    assert call("PUT", f"/payment/reject/{mine}", collector, {"approval_comment": "x"})["status"] == 403
+    assert q1(db, 'SELECT approval_status FROM "Payments" WHERE id=%s', (mine,)) == (None,)
+    r1 = call("PUT", f"/payment/approve/{ok}", supervisor)
+    r2 = call("PUT", f"/payment/reject/{rej}", supervisor, {"approval_comment": "no slip"})
     assert (r1["status"], r2["status"]) == (200, 200)
     assert q1(db, 'SELECT approval_status FROM "Payments" WHERE id=%s', (ok,)) == (True,)
-    # the collections keys do not open edit (for collections_currentUser) or delete
-    if key == "collections_currentUser":
-        assert call("PUT", f"/payment/{ok}", user, {"amount": 90})["status"] == 403
-    assert call("DELETE", f"/payments/{rej}", user)["status"] == 403
+    # neither collections key opens delete; the collector key does not open edit
+    assert call("PUT", f"/payment/{ok}", collector, {"amount": 90})["status"] == 403
+    assert call("DELETE", f"/payments/{rej}", supervisor)["status"] == 403
 
 
 def test_accounts_payments_may_edit_and_delete(db):
@@ -116,3 +120,13 @@ def test_note_delete_follows_the_timeline_rule(db):
     assert call("DELETE", f"/comments/{others}", author)["status"] == 403     # someone else's
     assert call("DELETE", f"/comments/{old}", deleter)["status"] == 200       # delete-any key
     assert q1(db, 'SELECT count(*) FROM "Comments" WHERE id IN (%s, %s)', (fresh, old)) == (0,)
+
+
+def test_inquiry_endpoint_needs_the_inquiry_key(db):
+    """GET /v2/clints backs only the /client_query screen; it had no check at all."""
+    nobody = make_user(db, {"clints": True})
+    finder = make_user(db, {"client_query": True})
+    path = "/v2/clints?customeFilrerAccountNumberValue=NO-SUCH-ACCOUNT"
+    assert call("GET", path, nobody)["status"] == 403
+    r = call("GET", path, finder)
+    assert r["status"] == 200 and r["body"]["clints"] == []

@@ -18,6 +18,7 @@ MODULES = [
     "api.money",             # Phase 1 A: /v2 payments, reversals, promises
     "api.worklist",          # Phase 1 B: /v2 follow-ups, attention queue
     "api.case_history",      # Phase 1 C: /v2 note/contact history, case corrections
+    "api.bulk",              # Phase 2: /v2 uploads, reviewed bulk jobs, jobs list
 ]
 
 

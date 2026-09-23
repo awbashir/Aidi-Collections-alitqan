@@ -109,7 +109,7 @@ const groupLabels = (page, scope = '.side-nav') =>
     const ar = await groupLabels(page);
     check('sidebar AR: three groups in order', JSON.stringify(ar) === JSON.stringify(['العمليات اليومية', 'التحصيل والفريق', 'الذكاء والتحكم']), JSON.stringify(ar));
     const arItems = await page.$$eval('.side-nav .menu-nav-group', (gs) => gs.map((g) => [...g.querySelectorAll('.menu-item, .menu-collapse-item')].filter((el) => !el.parentElement.closest('.menu-collapse > ul, .menu-collapse > div:not(.menu-collapse-item)')).length));
-    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([6, 9, 8]), JSON.stringify(arItems)); // Phase 1 added attention + follow-ups, promises + approvals, corrections
+    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([6, 9, 9]), JSON.stringify(arItems)); // Phase 1 added attention + follow-ups, promises + approvals, corrections; Phase 2 added Bulk jobs (/jobs)
     const dir = await page.evaluate(() => document.documentElement.dir);
     check('document is RTL in Arabic', dir === 'rtl', dir);
 
@@ -183,7 +183,9 @@ const groupLabels = (page, scope = '.side-nav') =>
 
   /* ---------------- 3. permission-hidden groups ---------------- */
   for (const [name, perms, expected] of [
-    ['collector-like role', { dashbord: true, clints: true, client_query: true, clints_archive: true, report_collectors: true, report_collectors_currentUser_comments: true }, ['العمليات اليومية', 'التحصيل والفريق']],
+    /* Phase 2: client_query is the spreadsheet-inquiry bulk key, so this role also sees
+     * Bulk jobs (/jobs, which mirrors GET /v2/jobs access) under Intelligence & control. */
+    ['collector-like role', { dashbord: true, clints: true, client_query: true, clints_archive: true, report_collectors: true, report_collectors_currentUser_comments: true }, ['العمليات اليومية', 'التحصيل والفريق', 'الذكاء والتحكم']],
     ['home-only role', { dashbord: true }, ['العمليات اليومية']],
     ['admin-only role', { users: true, roles: true }, ['الذكاء والتحكم']],
   ]) {

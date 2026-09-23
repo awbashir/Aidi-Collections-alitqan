@@ -78,7 +78,7 @@ const MoveArchiveButton = ({
 
   return (
     <>
-      <Tooltip title={t("moveArchive")}>
+      <Tooltip title={`${t("moveArchive")} (${t("p2.entry.classic")})`}>
         <span
           className={`cursor-pointer hover:text-azure-600 p-2 `}
           onClick={onConfirmDialogOpen}

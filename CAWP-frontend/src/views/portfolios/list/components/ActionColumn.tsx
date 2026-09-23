@@ -20,6 +20,8 @@ import {
 import ToggleStatusButton from "./ToggleStatusButton";
 import DeleteButton from "./DeleteButton";
 import MoveArchiveButton from "./MoveArchiveButton";
+import { BulkMenu } from "@/views/phase2/bulk/entry";
+import { useAppSelector as useRootSelector } from "@/store";
 
 const ActionColumn = ({
   row,
@@ -32,6 +34,8 @@ const ActionColumn = ({
   const [direction, updateDirection] = useDirection();
   const { textTheme } = useThemeClass();
   const dispatch = useAppDispatch();
+  const { permissions } = useRootSelector((state) => state.auth.user);
+  const canArchive = Boolean((permissions as Record<string, boolean> | undefined)?.clints_move_archive);
   const navigate = useNavigate();
 
   const onEdit = () => {
@@ -67,6 +71,44 @@ const ActionColumn = ({
         </Link>
       </Tooltip>
 
+      {/* Phase 2: reviewed portfolio actions (preview, then explicit
+       * confirmation). The direct legacy archive stays as "classic". */}
+      <BulkMenu
+        compact
+        testId={`p2-portfolio-bulk-${row.id}`}
+        title={t("p2.entry.portfolioMenu")}
+        groups={[
+          {
+            entries: [
+              {
+                kind: "archive",
+                label: t("p2.entry.archivePortfolio"),
+                testId: "p2-entry-archive-portfolio",
+                launch: {
+                  from: { path: "/portfolios", labelKey: "p2.back.portfolios" },
+                  source: "portfolio",
+                  portfolioId: row.id,
+                  portfolioName: row.name,
+                },
+              },
+              {
+                kind: "round_robin",
+                label: t("p2.entry.roundRobinPortfolio"),
+                testId: "p2-entry-rr-portfolio",
+                launch: {
+                  from: { path: "/portfolios", labelKey: "p2.back.portfolios" },
+                  portfolioId: row.id,
+                  portfolioName: row.name,
+                  params: { portfolio_id: row.id },
+                },
+              },
+            ],
+          },
+        ]}
+      />
+
+      {/* Portfolio-wide archive needs clints_move_archive (decision 2026-09-24). */}
+      {canArchive && (
       <MoveArchiveButton
         row={row}
         fetchData={fetchadata}
@@ -77,6 +119,7 @@ const ActionColumn = ({
         confirmDialogMessage={"portfolios.confirmArchive"}
         api={putPortfoliolsToArchive}
       />
+      )}
 
       <DeleteButton
         row={row}

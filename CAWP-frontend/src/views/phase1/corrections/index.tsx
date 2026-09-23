@@ -23,6 +23,7 @@ import { EmptyState, ErrorState, Note, SkeletonRows } from '@/components/v2/Stat
 import { CountTabs, FilterSelect, PageHead, PagerFooter, TableFrame, rowClass } from '@/components/v2/ListParts'
 import CorrectionDetail from '../history/CorrectionDetail'
 import { ChangeSummary, useDelinquencyReasons } from '../history/parts'
+import { BulkLaunchButton } from '@/views/phase2/bulk/entry'
 
 const { THead, TBody, Tr, Th, Td } = Table
 
@@ -119,6 +120,16 @@ const CorrectionsReview = () => {
                 subtitle={t('p1.corr.subtitle')}
                 onRefresh={reloadAll}
                 refreshing={list.loading && !!data}
+                actions={
+                    /* Phase 2: additional-field corrections from a spreadsheet become
+                     * pending requests here (never direct edits). */
+                    <BulkLaunchButton
+                        kind="attribute_corrections"
+                        label={t('p2.entry.attributeCorrections')}
+                        testId="p2-entry-attr"
+                        launch={{ from: { path: '/corrections', labelKey: 'p2.back.corrections' }, source: 'spreadsheet' }}
+                    />
+                }
             />
 
             <div className="mb-4 flex flex-wrap items-end gap-3" data-testid="p1-filters">
