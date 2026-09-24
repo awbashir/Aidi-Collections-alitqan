@@ -26,6 +26,11 @@ Handoff (the API never touches AMI; the calling service is the only AMI owner):
     cancel  POST /v2/calls/<id>/cancel: only while the queue row is still `queued` (the claim
          holds the row lock, so cancel and claim serialize); the attempt becomes `cancelled`
          and the reservation is released (`cancel_unsent`).
+
+    campaigns (P2)  services/calling/campaign_dispatch.py authorizes a campaign call with the SAME
+         `authorize()` (mode='campaign', campaign_id set); the claim below adds one campaign
+         recheck (campaign still running, member still ready with a live lease). Click-to-call
+         behaviour is unchanged.
 """
 from __future__ import annotations
 
@@ -75,20 +80,32 @@ def authorize_call(body: dict) -> str:
                        {k: "unknown" for k in unknown})
     case_id = parse_uuid(body.get("case_id"), "case_id")
     contact_id = parse_uuid(body.get("contact_id"), "contact_id")
-    actor = me()
-    for k in sorted((f"user:{actor}", f"case:{case_id}")):      # serialize concurrent clicks
-        advisory_lock("calling_dispatch", k)
     try:
-        plan = R.evaluate(actor_id=actor, case_id=case_id, contact_id=contact_id)
+        return authorize(me(), case_id, contact_id, transport=R.transport_status)
     except R.RuleRefused as refused:
         raise refused.api_error() from None
-    transport = R.transport_status()
-    if transport is None:
-        raise R.RuleRefused("transport_not_connected").api_error()
+
+
+def authorize(actor, case_id, contact_id, *, transport, mode: str = "click_to_call", campaign_id=None,
+              audit_after: dict | None = None, audit_kw: dict | None = None) -> str:
+    """The ONE dispatch authorization (click-to-call and campaigns, P2): serialize on the
+    collector and the case, run every rule, check the transport, then write the attempt
+    (prepared -> authorized), the reservation (collector, case, extension) and the dispatch
+    queue row the calling service claims, plus the audit row. Nothing commits here.
+
+    `transport` is a callable returning the calling-service status ({"epoch": ...}) or None;
+    it is called after the rules (as POST /v2/calls always did). Raises R.RuleRefused (the
+    caller turns it into its API error) or ApiError 409 calling_reserved on a reservation race."""
+    for k in sorted((f"user:{actor}", f"case:{case_id}")):      # serialize concurrent clicks
+        advisory_lock("calling_dispatch", k)
+    plan = R.evaluate(actor_id=actor, case_id=case_id, contact_id=contact_id)
+    status = transport()
+    if status is None:
+        raise R.RuleRefused("transport_not_connected")
     cfg = settings()
-    attempt_id = A.create_attempt(mode="click_to_call", state="prepared", case_id=case_id, collector_user_id=actor,
+    attempt_id = A.create_attempt(mode=mode, state="prepared", case_id=case_id, collector_user_id=actor,
                                   created_by=actor, contact_id=contact_id, destination=plan.destination,
-                                  extension=plan.extension)
+                                  extension=plan.extension, campaign_id=campaign_id)
     A.reserve(attempt_id)                                         # 409 calling_reserved on a race
     A.transition(attempt_id, "authorized")
     queue_id = sess().execute(text("""
@@ -96,13 +113,13 @@ def authorize_call(body: dict) -> str:
                                          max_call_seconds, created_by, expires_at)
         VALUES (CAST(:a AS uuid), :ep, :ctx, :drv, :ring, :lim, CAST(:by AS uuid),
                 now() + make_interval(secs => :ttl))
-        RETURNING id"""), {"a": attempt_id, "ep": transport["epoch"], "ctx": cfg["context"], "drv": cfg["driver"],
+        RETURNING id"""), {"a": attempt_id, "ep": status["epoch"], "ctx": cfg["context"], "drv": cfg["driver"],
                            "ring": cfg["agent_ring_seconds"], "lim": cfg["max_call_seconds"], "by": actor,
                            "ttl": cfg["dispatch_ttl_seconds"]}).scalar()
     audit.record("call.dispatch.authorize", "call_attempt", attempt_id, case_id=case_id, after={
         "contact_id": contact_id, "extension": plan.extension, "queue_id": str(queue_id),
-        "expected_epoch": transport["epoch"], "checked_at": plan.checked_at, "outstanding": plan.outstanding,
-        "rules": "all passed"})
+        "expected_epoch": status["epoch"], "checked_at": plan.checked_at, "outstanding": plan.outstanding,
+        "rules": "all passed", **(audit_after or {})}, **(audit_kw or {}))
     return attempt_id
 
 
@@ -207,6 +224,13 @@ def claim(session, ctx, worker_id) -> Claim | str | None:
     if plan.destination != a["destination"]:
         _never_sent(session, a, q["id"], "refused", "destination_changed")
         return "refused:destination_changed"
+    if a["mode"] == "campaign":
+        # P2: the campaign is still running and the member still ready with a live lease
+        from services.calling.campaign_dispatch import claim_recheck
+        code = claim_recheck(session, a)
+        if code:
+            _never_sent(session, a, q["id"], "refused", code)
+            return f"refused:{code}"
     token, token_id = A.issue_dispatch_token(
         a["id"], context=q["context"], destination=a["destination"], extension=a["extension"],
         max_call_seconds=q["max_call_seconds"], pbx_epoch_uuid=ctx.identity.epoch_uuid,

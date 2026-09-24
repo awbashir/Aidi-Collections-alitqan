@@ -59,6 +59,8 @@ db/
 | 0051 | `migrations/0051_call_wrapups_blocks.sql` | `call_wrapups` (immutable), `calling_blocks` (do-not-call) | new tables | Yes |
 | 0052 | `migrations/0052_click_to_call.sql` | dispatch queue, reconciliations, `no_customer_contact` release source, evidence projection support | new tables + constraint changes, instant | Yes |
 | 0053 | `migrations/0053_call_wrapup_review.sql` | wrap-up `needs_review` flags and deferred actions (locked/archived cases) | instant | Yes |
+| 0054 | `migrations/0054_campaigns.sql` | `campaigns` (DB-enforced lifecycle), members, readiness leases | new tables | Yes |
+| 0055 | `migrations/0055_campaign_attempts_pool.sql` | campaign attempts and per-case pool state | new tables | Yes |
 | 0057 | `migrations/0057_pbx_cdr_imported.sql` | `pbx_cdr_imported` evidence (append-only; retention may delete) | new table | Yes |
 | 0058 | `migrations/0058_call_events_retention.sql` | `call_events` guard allows only the retention task to delete | instant | Yes |
 

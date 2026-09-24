@@ -21,6 +21,10 @@ Modules:
     cdr_lookup    CDR lookup by attempt id (CSV on the test PBX, MySQL on Issabel)
     live          the live-call panel view (ETag) and my active attempt
     review        supervisor lists: uncertain attempts, resolve, review flags
+  P2 (progressive campaigns, review/phase5-campaigns.md):
+    campaign          campaigns, roster, readiness leases, lifecycle, member/supervisor views
+    campaign_pool     the pool definition (saved clients-list filter), order, exclusions, contact
+    campaign_dispatch one call per ready member through dispatch.authorize(); the service loop
 
 Nothing in this package contacts a PBX by itself. The only process that opens an AMI
 session or listens for FastAGI is the `calling` service (CAWP-API/calling/).

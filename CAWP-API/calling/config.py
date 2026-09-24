@@ -31,6 +31,8 @@ never contacted by default, from development, tests or a mis-set variable.
     CALLING_RECONCILE_SECONDS    reconciliation pass interval (default 10; 0 = off)
     CALLING_CDR_SOURCE           none | csv | mysql  CDR lookup for reconciliation (default none)
     CALLING_CDR_CSV              the test PBX's Master.csv (default /pbx-test-cdr/Master.csv)
+    CALLING_CAMPAIGNS_ENABLED    1 | 0  progressive campaign dispatcher (P2, default 1; needs the dispatcher)
+    CALLING_CAMPAIGN_POLL_MS     campaign dispatcher poll interval (default 500)
   (API side, read by services/calling/dispatch.py: CALLING_CONTEXT, CALLING_DRIVER,
    CALLING_AGENT_RING_SECONDS, CALLING_MAX_CALL_SECONDS, CALLING_DISPATCH_TTL_SECONDS)
 """
@@ -102,6 +104,8 @@ class CallingConfig:
     status_port: int
     dispatch_enabled: bool = True
     reconcile_seconds: int = 10
+    campaigns_enabled: bool = True
+    campaign_poll_ms: int = 500
 
     @property
     def is_test_pbx(self) -> bool:
@@ -142,6 +146,8 @@ def load(env=None) -> CallingConfig:
         status_port=_int(env, "CALLING_STATUS_PORT", 8791, 0, 65535),
         dispatch_enabled=_bool(env, "CALLING_DISPATCH_ENABLED", True),
         reconcile_seconds=_int(env, "CALLING_RECONCILE_SECONDS", 10, 0, 3600),
+        campaigns_enabled=_bool(env, "CALLING_CAMPAIGNS_ENABLED", True),
+        campaign_poll_ms=_int(env, "CALLING_CAMPAIGN_POLL_MS", 500, 100, 10000),
     )
     if (env.get("CALLING_CDR_SOURCE") or "none").strip().lower() not in ("none", "csv", "mysql"):
         raise ConfigError("CALLING_CDR_SOURCE must be none, csv or mysql")

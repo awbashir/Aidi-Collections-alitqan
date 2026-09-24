@@ -474,3 +474,4 @@ The calling service's click-to-call settings are environment variables that must
 * `CALLING_ENABLED=1`, `CALLING_PBX_COMMISSIONED=1`, and the AMI/AGI secrets are set only after the runbook's verification passes;
 * the PBX and database clocks are NTP-synced, because evidence is ordered by PBX time;
 * retention of call events and imported CDR is off by default. See `CALL_EVENTS_RETENTION_DAYS` / `PBX_CDR_IMPORTED_RETENTION_DAYS` (minimum 30).
+* Campaigns (Phase 5 P2) run as a thread in the `calling` service: `CALLING_CAMPAIGNS_ENABLED` (default 1) and `CALLING_CAMPAIGN_POLL_MS` (default 500). Pause, drain and stop never cut a live call.

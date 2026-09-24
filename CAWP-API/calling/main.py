@@ -18,6 +18,11 @@ What it does when CALLING_ENABLED=1 (config: calling/config.py):
   inventory (CoreShowChannels) and a CDR lookup, or leaves them for human review;
 * P1: reports a heartbeat into calling_service_status every 2 s (AMI state, PBX epoch); the
   API dispatches only while a fresh heartbeat shows a connected session.
+* P2: runs progressive campaigns (services/calling/campaign_dispatch.py CampaignDispatcher):
+  one call per ready campaign member, authorized by the same code as POST /v2/calls and sent by
+  the dispatcher above; only while this process has a connected AMI session and a running
+  dispatcher. It keeps no state in memory: a restart neither releases a reservation nor
+  duplicates a call.
 
 With CALLING_ENABLED=0 (the default) it opens no socket at all and stays healthy, so the
 container can be part of the stack without ever touching a PBX.
@@ -101,6 +106,7 @@ class CallingService:
         self.recovered_on_start = None
         self.dispatcher = None
         self.reconciler = None
+        self.campaigns = None
         self._status_failing = False
 
     # ---- lifecycle ------------------------------------------------------------------
@@ -137,6 +143,11 @@ class CallingService:
             self.reconciler = Reconciler(self.app, self.current_ctx, cdr_lookup.from_env(),
                                          interval=self.cfg.reconcile_seconds)
             self.reconciler.start()
+        if self.cfg.dispatch_enabled and self.cfg.campaigns_enabled:
+            from services.calling.campaign_dispatch import CampaignDispatcher
+            self.campaigns = CampaignDispatcher(self.app, self.campaign_transport, self.worker_id,
+                                                poll=self.cfg.campaign_poll_ms / 1000.0)
+            self.campaigns.start()
         self._start_status()
         log.info("calling service started (%s, PBX %s:%s, TLS %s, database %s)", self.worker_id,
                  self.cfg.ami_host, self.cfg.ami_port, "on" if self.cfg.ami_tls else "off", database_label())
@@ -145,6 +156,14 @@ class CallingService:
         """The live AMI session context (None while disconnected)."""
         sup = self.supervisor
         return sup.current if sup is not None else None
+
+    def campaign_transport(self):
+        """{"epoch": ...} while this process can send a call (connected session, dispatcher
+        running), else None: campaign calls are then not authorized at all."""
+        ctx = self.current_ctx()
+        if ctx is None or not ctx.session.ready or self.dispatcher is None or not self.dispatcher.is_alive():
+            return None
+        return {"epoch": ctx.epoch, "epoch_uuid": ctx.identity.epoch_uuid, "worker_id": self.worker_id}
 
     def _on_session_start(self, ctx):
         self.consumer.on_session_start(ctx)
@@ -190,6 +209,8 @@ class CallingService:
         log.info("calling service stopping")
         if self.consumer is not None:
             self.consumer.stopping = True
+        if self.campaigns is not None:
+            self.campaigns.stop()
         if self.dispatcher is not None:
             self.dispatcher.stop()
         if self.reconciler is not None:
@@ -234,6 +255,8 @@ class CallingService:
                            if self.dispatcher else None),
             "reconciler": ({"running": self.reconciler.is_alive(), "last_pass_at": self.reconciler.last_pass_at,
                             **self.reconciler.stats} if self.reconciler else None),
+            "campaigns": ({"running": self.campaigns.is_alive(), "last_tick_at": self.campaigns.last_tick_at,
+                           **self.campaigns.stats} if self.campaigns else None),
         }
 
     def report_status(self, final: bool = False):
@@ -249,7 +272,8 @@ class CallingService:
         connected = bool(ctx is not None and ctx.session.ready and not final)
         detail = {"ami_down_since": self.ami_down_since,
                   "dispatcher": dict(self.dispatcher.stats) if self.dispatcher else None,
-                  "reconciler": dict(self.reconciler.stats) if self.reconciler else None}
+                  "reconciler": dict(self.reconciler.stats) if self.reconciler else None,
+                  "campaigns": dict(self.campaigns.stats) if self.campaigns else None}
         with self.app.app_context():
             try:
                 db.session.execute(text("""
@@ -334,6 +358,9 @@ def healthy_status(data: dict, cfg) -> tuple[bool, str]:
     disp = data.get("dispatcher")
     if getattr(cfg, "dispatch_enabled", False) and disp is not None and not disp.get("running"):
         return False, "click-to-call dispatcher is not running"
+    camp = data.get("campaigns")
+    if camp is not None and not camp.get("running"):
+        return False, "campaign dispatcher is not running"
     return True, "ok"
 
 
