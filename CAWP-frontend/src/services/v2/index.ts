@@ -35,3 +35,17 @@ export {
     P5_ERROR_CODES,
 } from './p5Errors'
 export type { DispatchRule } from './p5Errors'
+export * from './p6Types'
+export { aiApi, draftsApi, qualityApi, downloadQualityReport, loadQualityAudio, AUDIO_CHUNK_BYTES } from './p6Api'
+export type { AudioLoadProgress } from './p6Api'
+export {
+    describeP6Error,
+    aiReasonText,
+    refusalReasons,
+    isAiRefusal,
+    evidenceErrors,
+    evidenceCodeText,
+    categoryLabel,
+    AI_REFUSAL_CODES,
+    P6_ERROR_CODES,
+} from './p6Errors'

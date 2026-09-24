@@ -35,6 +35,9 @@ import {
   Megaphone,
   ShieldAlert,
   SlidersHorizontal,
+  Mic, // Phase 6 Q3: voice training lab
+  BrainCircuit, // Phase 6: AI administration
+  BadgeCheck, // Phase 6: quality workspace
 } from "lucide-react";
 
 
@@ -79,6 +82,11 @@ const navigationIcon: NavigationIcons = {
   campaigns: <Megaphone strokeWidth={2} size={18} />,
   call_review: <ShieldAlert strokeWidth={2} size={18} />,
   calling_admin: <SlidersHorizontal strokeWidth={2} size={18} />,
+  /* Phase 6 Q3 (voice training lab) */
+  voice_lab: <Mic strokeWidth={2} size={18} />,
+  /* Phase 6: AI administration and the quality workspace */
+  ai_admin: <BrainCircuit strokeWidth={2} size={18} />,
+  quality: <BadgeCheck strokeWidth={2} size={18} />,
 };
 
 export default navigationIcon;

@@ -290,7 +290,7 @@ async function hub({ newPage }) {
       // sidebar: the new item leads the reports in Recovery & team
       await page.goto(`${FE}/reports`, { waitUntil: 'networkidle' });
       const counts = await groupItemCounts(page);
-      check('hub: aidi.dev sidebar items per group are [9,13,11] (Phase 3 was [6,12,9]; + Reports hub; Phase 5: + calls, calling workspace, campaigns, call review, calling admin)', JSON.stringify(counts) === '[9,13,11]', JSON.stringify(counts));
+      check('hub: aidi.dev sidebar items per group are [9,13,14] (Phase 3 was [6,12,9]; + Reports hub; Phase 5: + calls, calling workspace, campaigns, call review, calling admin; Phase 6: + voice lab, AI administration, Quality review)', JSON.stringify(counts) === '[9,13,14]', JSON.stringify(counts));
       // the card link opens the viewer
       await page.locator('[data-testid="p4-report-card"][data-report="RPT-12"] [data-testid="p4-report-open"]').click();
       await byTest(page, 'p4-viewer').waitFor({ timeout: 30000 });

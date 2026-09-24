@@ -129,6 +129,13 @@ class Worker:
         except Exception:  # noqa: BLE001 - e.g. migrations 0057/0058 not applied yet
             log.exception("calling retention tick failed")
 
+    def _ai_retention(self):
+        try:
+            from services.ai import retention as ai_retention
+            ai_retention.worker_tick()
+        except Exception:  # noqa: BLE001 - e.g. migrations 0059/0060 not applied yet
+            log.exception("AI retention tick failed")
+
     def _sync_targets(self):
         from extensions import db
         from services import targets
@@ -157,6 +164,7 @@ class Worker:
                         retention.run()
                         next_retention = time.monotonic() + self.settings.retention_interval_seconds
                     self._calling_retention()          # Phase 5: rate-limited inside, never raises
+                    self._ai_retention()               # Phase 6 Q0: AI drafts/transcripts/audio + provider logs
                     if time.monotonic() >= next_target_sync:
                         # Phase 3: a target set in advance reaches the legacy dashboard columns
                         # when its month starts (idempotent; hourly, so within an hour of rollover)

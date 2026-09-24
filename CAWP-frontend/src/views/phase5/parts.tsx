@@ -148,8 +148,8 @@ export const Notice = ({
 )
 
 /** Eyebrow + value in a compact grid. */
-export const Fact = ({ label, children, testId }: { label: React.ReactNode; children: React.ReactNode; testId?: string }) => (
-    <div className="min-w-0" data-testid={testId}>
+export const Fact = ({ label, children, testId, className }: { label: React.ReactNode; children: React.ReactNode; testId?: string; className?: string }) => (
+    <div className={classNames('min-w-0', className)} data-testid={testId}>
         <div className="text-eyebrow mb-0.5">{label}</div>
         <div className="break-words text-[13.5px] text-gray-800 dark:text-night-body">{children}</div>
     </div>

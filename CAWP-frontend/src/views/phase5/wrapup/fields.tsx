@@ -82,6 +82,8 @@ export const NoteFields = ({
     contractId,
     active,
     testId = 'p5-note',
+    textHint,
+    activeOnly,
 }: {
     value: NoteDraft
     onChange: (v: NoteDraft) => void
@@ -89,6 +91,10 @@ export const NoteFields = ({
     contractId: string | null
     active: boolean
     testId?: string
+    /** Phase 6: the hint under the text (default: the wrap-up's "linked to this call"). */
+    textHint?: React.ReactNode
+    /** Phase 6: offer only statuses whose legacy `is_active` is true (AI save-as-note refuses the others). */
+    activeOnly?: boolean
 }) => {
     const { t } = useTranslation()
     const lk = useNoteLookups(active)
@@ -99,9 +105,12 @@ export const NoteFields = ({
     const statusOptions = useMemo(
         () =>
             lk.statuses.filter(
-                (s) => (contractId ? s.contract_id === contractId || s.contract_id === null : true) && s.reachability_id === (value.reach ?? null)
+                (s) =>
+                    (contractId ? s.contract_id === contractId || s.contract_id === null : true) &&
+                    s.reachability_id === (value.reach ?? null) &&
+                    (!activeOnly || s.is_active === true)
             ),
-        [lk.statuses, contractId, value.reach]
+        [lk.statuses, contractId, value.reach, activeOnly]
     )
     useEffect(() => {
         if (value.status && !lk.loading && !statusOptions.some((s) => s.value === value.status)) onChange({ ...value, status: undefined })
@@ -109,7 +118,7 @@ export const NoteFields = ({
     }, [statusOptions])
     return (
         <div data-testid={testId}>
-            <DialogField label={t('p5.wrapup.noteText')} required hint={t('p5.wrapup.noteHint')}>
+            <DialogField label={t('p5.wrapup.noteText')} required hint={textHint ?? t('p5.wrapup.noteHint')}>
                 <Input
                     textArea
                     value={value.text}

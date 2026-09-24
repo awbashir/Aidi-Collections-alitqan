@@ -23,6 +23,9 @@ import { CALL_WRAPPED_EVENT, callDock } from '../live/callDock'
 import { CallTimelineSteps } from '../live/LiveCallPanel'
 import { CaseCell, CallStateBadge, DurationText, Fact, ModeLabel, Notice, OutcomeBadge } from '../parts'
 import { reasonLabel } from '../labels'
+/* Phase 6: AI drafts for this call (ai_assist) and "add call recording to quality review" (quality_review). */
+import AddCallRecording from '@/views/phase6/quality/AddCallRecording'
+import AiDraftDialog from '@/views/phase6/drafts/AiDraftDialog'
 
 const RECORDING_KEYS = ['clints_callsRecords_download', 'clints_callsRecords_play']
 const describe = (e: unknown, t: Translate) => describeP5Error(e, t)
@@ -140,7 +143,16 @@ const PbxEvidenceSection = ({ callId }: { callId: string }) => {
                                         <DurationText seconds={r.billsec} />
                                     </td>
                                     <td className="pe-3">{r.attempt_link ? t(`p5.pbx.link.${r.attempt_link}`, { defaultValue: r.attempt_link }) : '—'}</td>
-                                    <td>{r.recording?.has_recording ? <RecordingControls rec={r.recording} name={callId} /> : '—'}</td>
+                                    <td>
+                                        {r.recording?.has_recording ? (
+                                            <span className="inline-flex flex-wrap items-center gap-1">
+                                                <RecordingControls rec={r.recording} name={callId} />
+                                                <AddCallRecording attemptId={callId} recordingPath={r.recording.file} />
+                                            </span>
+                                        ) : (
+                                            '—'
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -180,6 +192,7 @@ const PbxEvidenceSection = ({ callId }: { callId: string }) => {
                         <div key={i} className="flex items-center gap-2 text-[12.5px]">
                             <Ltr className="truncate text-gray-700">{r.file || t('p5.rec.hidden')}</Ltr>
                             <RecordingControls rec={r} name={callId} />
+                            <AddCallRecording attemptId={callId} recordingPath={r.file} />
                         </div>
                     ))}
                 </div>
@@ -303,6 +316,7 @@ const CallDetailView = ({ callId, onChanged }: { callId: string; onChanged?: () 
     const perms = usePermissions()
     const myId = useAppSelector((s) => s.auth.user.id)
     const q = useV2Query((signal) => callsApi.detail(callId, signal), [callId])
+    const [aiOpen, setAiOpen] = useState(false)
     const reload = q.reload
     useEffect(() => {
         const on = (e: Event) => {
@@ -375,7 +389,15 @@ const CallDetailView = ({ callId, onChanged }: { callId: string; onChanged?: () 
                         {t('p5.live.wrapup')}
                     </Button>
                 )}
+                {perms.ai_assist && call.case && !call.case.missing && (
+                    <Button size="sm" onClick={() => setAiOpen(true)} data-testid="p6-call-ai-drafts">
+                        {t('p6.drafts.callEntry')}
+                    </Button>
+                )}
             </div>
+            {perms.ai_assist && call.case && !call.case.missing && aiOpen && (
+                <AiDraftDialog isOpen={aiOpen} attemptId={call.id} caseId={call.case.id} onClose={() => setAiOpen(false)} onNoteSaved={onChanged} />
+            )}
             {pbx && (
                 <Section title={t('p5.detail.timeline')}>
                     <CallTimelineSteps view={{ timeline: call.timeline, state: call.state, live }} />

@@ -64,6 +64,12 @@ db/
 | 0056 | `migrations/0056_sip_credentials.sql` | short-lived softphone SIP credentials (HA1 only), `pbx_ps_auths` realtime view for PJSIP, `cawp_pbx_realtime` grants | new table + view | Yes |
 | 0057 | `migrations/0057_pbx_cdr_imported.sql` | `pbx_cdr_imported` evidence (append-only; retention may delete) | new table | Yes |
 | 0058 | `migrations/0058_call_events_retention.sql` | `call_events` guard allows only the retention task to delete | instant | Yes |
+| 0059 | `migrations/0059_ai_data_policy.sql` | AI data policy (append-only revisions: provider, allowed categories, masking, retention) | new table | Yes |
+| 0060 | `migrations/0060_ai_provider_calls.sql` | `ai_provider_calls` audit (metadata only, no content; retention deletes) | new table | Yes |
+| 0061 | `migrations/0061_ai_drafts.sql` | `ai_drafts` (draft lifecycle; only the masked-input hash, never the prompt) | new table | Yes |
+| 0062 | `migrations/0062_qc_library_templates.sql` | quality templates (Collections v1 seed), recording library, purge intents | new tables | Yes |
+| 0063 | `migrations/0063_qc_transcripts_reviews_approvals.sql` | transcript versions, review revisions, approvals with immutable snapshots | new tables | Yes |
+| 0064 | `migrations/0064_voice_lab_sessions.sql` | `voice_lab_sessions` log (no audio, transcript, instructions or secret) | new table | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

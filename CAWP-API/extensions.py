@@ -41,7 +41,7 @@ def init_app(app):
     jwt.init_app(app)
     # expose the headers v2 clients read (live-call ETag polling, export file names, replays)
     cors.init_app(app, origins=Config.CORS_ORIGINS,
-                  expose_headers=["ETag", "Content-Disposition", "Idempotent-Replayed"])
+                  expose_headers=["ETag", "Content-Disposition", "Idempotent-Replayed", "Content-Range", "Accept-Ranges"])
     compress.init_app(app)
     socketio.init_app(app, cors_allowed_origins=Config.CORS_ORIGINS)
     return app

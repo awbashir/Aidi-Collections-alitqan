@@ -38,6 +38,9 @@ import {
     promiseValue,
 } from './draft'
 import type { CallbackDraft, NoteDraft, PromiseDraft } from './draft'
+/* Phase 6: "Draft summary / coaching" with AI (ai_assist); the text is only copied on request. */
+import Button from '@/components/ui/Button'
+import AiDraftDialog from '@/views/phase6/drafts/AiDraftDialog'
 
 const describe = (e: unknown, t: Translate) => describeP5Error(e, t)
 
@@ -66,6 +69,7 @@ const WrapupDialog = ({
     const [dncReason, setDncReason] = useState('')
     const [replacement, setReplacement] = useState<string | undefined>(undefined)
     const [candidates, setCandidates] = useState<Option[] | null>(null)
+    const [aiOpen, setAiOpen] = useState(false)
 
     const reset = () => {
         setView(null)
@@ -237,7 +241,23 @@ const WrapupDialog = ({
                             </div>
                         </DialogField>
                     )}
-                    <div className="text-eyebrow mb-2 mt-2">{t('p5.wrapup.noteSection')}</div>
+                    <div className="mb-2 mt-2 flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-eyebrow">{t('p5.wrapup.noteSection')}</span>
+                        {perms.ai_assist && view.case && !view.case.missing && (
+                            <Button size="xs" onClick={() => setAiOpen(true)} data-testid="p6-wrapup-ai-drafts">
+                                {t('p6.drafts.wrapupEntry')}
+                            </Button>
+                        )}
+                    </div>
+                    {perms.ai_assist && view.case && !view.case.missing && aiOpen && (
+                        <AiDraftDialog
+                            isOpen={aiOpen}
+                            attemptId={view.id}
+                            caseId={view.case.id}
+                            onClose={() => setAiOpen(false)}
+                            onUseText={(text) => setNote({ ...note, text })}
+                        />
+                    )}
                     <NoteFields value={note} onChange={setNote} contractId={facts?.contractId || null} active={isOpen} />
                     <div className="text-eyebrow mb-2">{t('p5.wrapup.callbackSection')}</div>
                     <CallbackFields value={callback} onChange={setCallback} />

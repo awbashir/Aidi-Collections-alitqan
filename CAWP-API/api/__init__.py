@@ -27,6 +27,9 @@ MODULES = [
     "api.calling_evidence",  # Phase 5 P4: attempt PBX evidence (CDR, recordings, imported CDR)
     "api.calling_campaigns", # Phase 5 P2: progressive calling campaigns
     "api.calling_sip",       # Phase 5 P3: short-lived SIP credentials for the in-app softphone
+    "api.ai",                # Phase 6 Q0/Q1: AI status, data policy, drafts
+    "api.quality",           # Phase 6 Q2: quality workspace
+    "api.voice_lab",         # Phase 6 Q3: voice training lab sessions
 ]
 
 

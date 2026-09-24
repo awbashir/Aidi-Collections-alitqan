@@ -12,6 +12,8 @@ export type CaseTab =
     | 'requests'
     /* Phase 5 */
     | 'calls'
+    /* Phase 6 */
+    | 'aiDrafts'
 
 export const caseLink = (caseId: string, tab: CaseTab = 'details') =>
     `/clients/details/${tab}?id=${encodeURIComponent(caseId)}`
