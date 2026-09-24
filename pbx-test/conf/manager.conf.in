@@ -1,0 +1,32 @@
+; CAWP test PBX AMI (TEST ONLY). The production equivalent is in docs/issabel-commissioning.md.
+[general]
+enabled = yes
+bindaddr = 0.0.0.0
+port = 5038
+; AMI over TLS with the local self-signed certificate (the calling service uses this port).
+tlsenable = yes
+tlsbindaddr = 0.0.0.0:5039
+tlscertfile = /etc/asterisk/keys/pbx-test.crt
+tlsprivatekey = /etc/asterisk/keys/pbx-test.key
+; Precise PBX time on every event (evidence ordering never uses receipt time).
+timestampevents = yes
+displayconnects = yes
+authtimeout = 5
+authlimit = 10
+webenabled = no
+
+; The dedicated calling account: minimal privileges.
+;   read  = call (channel/bridge/dial events), user (UserEvent CollectionsCall), system (FullyBooted/Shutdown/Reload)
+;   write = originate (Originate to a context/exten only; application originate needs system),
+;           reporting (Getvar of the epoch global, CoreStatus, CoreShowChannels, Status)
+; No command, config, system or call write: no CLI, no reload, no Setvar, no Redirect.
+[@@AMI_USER@@]
+secret = @@AMI_SECRET@@
+deny = 0.0.0.0/0.0.0.0
+permit = 127.0.0.0/255.0.0.0
+permit = 10.0.0.0/255.0.0.0
+permit = 172.16.0.0/255.240.0.0
+permit = 192.168.0.0/255.255.0.0
+read = call,user,system
+write = originate,reporting
+writetimeout = 5000

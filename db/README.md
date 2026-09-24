@@ -53,6 +53,10 @@ db/
 | 0039 | `migrations/0039_report_exports.sql` | `report_exports` (private report export jobs, lease, expiry) | new table | Yes |
 | 0040 | `migrations/0040_report_export_attempts.sql` | `report_export_attempts` | new table | Yes |
 | 0046 | `migrations/0046_contact_phone_key_index.sql` | phone-number lookup index on `"ClintContacts"` for CDR attribution (RPT-23/25) | index build ~3 s | Yes |
+| 0048 | `migrations/0048_calling_extensions_settings.sql` | `user_extensions` (source of truth, mirrored to `users.extension`), calling preferences, calling windows | new tables | Yes |
+| 0049 | `migrations/0049_call_attempts_reservations.sql` | `call_attempts` (lifecycle trigger), `call_reservations` (never auto-released), dispatch tokens | new tables | Yes |
+| 0050 | `migrations/0050_call_evidence.sql` | `pbx_sessions`, `call_events` (append-only), `call_legs`, `call_agi_decisions` | new tables | Yes |
+| 0051 | `migrations/0051_call_wrapups_blocks.sql` | `call_wrapups` (immutable), `calling_blocks` (do-not-call) | new tables | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

@@ -1,0 +1,9 @@
+; CAWP calling globals (docs/issabel-commissioning.md, step 7). Copy to
+; /etc/asterisk/collections-globals.conf, owner root:asterisk, mode 0640, and include it inside
+; [globals] (globals_custom.conf on Issabel). Never commit the real file.
+;
+; The FastAGI authorization hook of the `calling` service, as THIS PBX reaches it:
+COLLECTIONS_AGI_URL=agi://calling.example.internal:4573/collections-authorize
+; Shared key the hook checks (CALLING_AGI_SECRET on the calling host). 16+ characters, only
+; [A-Za-z0-9._-]. Generate: openssl rand -hex 24
+COLLECTIONS_AGI_KEY=REPLACE_WITH_THE_SECRET_FROM_THE_VAULT

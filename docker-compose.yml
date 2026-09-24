@@ -195,7 +195,92 @@ services:
       timeout: 3s
       retries: 40
 
+  # --- Test PBX (profile "pbx-test", Phase 5 P0): a local Asterisk 20 LTS standing in for the
+  # Issabel PBX. The real PBX (10.10.0.220) and any external SIP or phone network are NEVER
+  # contacted: the "customer network" is a loopback inside this container (pbx-test/conf).
+  # Config and design: pbx-test/, docs/issabel-commissioning.md, review/phase5-foundation.md.
+  #   docker compose --profile pbx-test up -d pbx-test
+  #   docker exec cawp-pbx-test asterisk -rx "pjsip show contacts"
+  # Customers by the LAST digit of the E.164 number: 1 answers+echo, 2 busy, 3 no answer,
+  # 4 answers then hangs up after PBX_TEST_SHORT_CALL_SECONDS, 5 congestion, 6 late answer.
+  # Agents: 7001-7005 WebRTC (wss://localhost:8089/ws), 7101-7102 UDP (7101 = bundled pjsua,
+  # auto-answer), 7201 simulated phone that answers, 7202 busy, 7203 never answers.
+  # Recordings (MixMonitor, YYYY/MM/DD/<uniqueid>.wav) and CDR CSV live in the two volumes.
+  pbx-test:
+    profiles: ["pbx-test"]
+    build: ./pbx-test
+    image: cawp-pbx-test:20.11.1
+    container_name: cawp-pbx-test
+    init: true
+    environment:
+      # TEST-ONLY secrets for the local test PBX. Never reuse them anywhere else.
+      PBX_TEST_AMI_USER: cawp-calling
+      PBX_TEST_AMI_SECRET: pbx-test-ami-only
+      PBX_TEST_SIP_PASSWORD: pbx-test-sip-only
+      PBX_TEST_AGI_KEY: pbx-test-agi-only
+      PBX_TEST_AGI_URL: agi://calling:4573/collections-authorize
+      PBX_TEST_SHORT_CALL_SECONDS: "3"
+    ports:
+      - "127.0.0.1:8089:8089"        # HTTPS / WSS for WebRTC agents (self-signed, test only)
+    volumes:
+      - cawp_pbx_test_recordings:/var/spool/asterisk/monitor
+      - cawp_pbx_test_cdr:/var/log/asterisk/cdr-csv
+      - cawp_pbx_test_keys:/etc/asterisk/keys
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "asterisk -rx 'core waitfullybooted' | grep -q 'fully booted'"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 6
+
+  # --- Calling service (Phase 5): the long-lived AMI owner (events -> call evidence rows) and
+  # the FastAGI authorization hook the restricted dialplan asks before dialling a customer.
+  # Same image as the API. OFF by default: with CALLING_ENABLED unset it opens no socket to any
+  # PBX and stays healthy. It refuses any PBX other than the local test PBX until
+  # CALLING_PBX_COMMISSIONED=1 (after docs/issabel-commissioning.md), and refuses the test-only
+  # secrets below for any other PBX. Production values come from the deploy environment.
+  #   Against the test PBX (writes evidence into the database of CALLING_DATABASE_URL, default
+  #   DATABASE_URL from .env.docker; it needs migrations 0048-0051):
+  #   CALLING_ENABLED=1 CALLING_DATABASE_URL=postgresql+psycopg2://postgres:postgres@test-db:5432/cawp_test_call0 \
+  #       docker compose --profile pbx-test up -d calling
+  #   docker exec cawp-calling python -m calling --healthcheck
+  # Drop the `profiles` line at the production cutover (Phase 5 integration).
+  calling:
+    profiles: ["calling", "pbx-test"]
+    build: ./CAWP-API
+    container_name: cawp-calling
+    env_file: ./CAWP-API/.env.docker
+    environment:
+      CALLING_ENABLED: ${CALLING_ENABLED:-0}
+      CALLING_AMI_HOST: ${CALLING_AMI_HOST:-pbx-test}
+      CALLING_AMI_TLS: ${CALLING_AMI_TLS:-1}
+      CALLING_AMI_CA_FILE: ${CALLING_AMI_CA_FILE:-/pbx-test-keys/pbx-test.crt}
+      CALLING_AMI_USERNAME: ${CALLING_AMI_USERNAME:-cawp-calling}
+      CALLING_AMI_SECRET: ${CALLING_AMI_SECRET:-pbx-test-ami-only}      # TEST-ONLY default (pbx-test)
+      CALLING_AGI_SECRET: ${CALLING_AGI_SECRET:-pbx-test-agi-only}      # TEST-ONLY default (pbx-test)
+      CALLING_AGI_ALLOWED_PEERS: ${CALLING_AGI_ALLOWED_PEERS:-pbx-test}
+      CALLING_PBX_COMMISSIONED: ${CALLING_PBX_COMMISSIONED:-0}
+      CALLING_DATABASE_URL: ${CALLING_DATABASE_URL:-}
+      CALLING_HEALTH_FILE: /tmp/cawp-calling.alive
+    command: ["python", "-m", "calling"]
+    stop_signal: SIGTERM
+    stop_grace_period: 20s     # AGI answers finish (5 s max), the AMI session closes cleanly
+    volumes:
+      - ./CAWP-API:/app
+      - cawp_pbx_test_keys:/pbx-test-keys:ro      # the test PBX's self-signed certificate (CA for AMI TLS)
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-m", "calling", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
 volumes:
   cawp_pgdata:
   cawp_uploads:
   cawp_node_modules:
+  cawp_pbx_test_recordings:
+  cawp_pbx_test_cdr:
+  cawp_pbx_test_keys:
