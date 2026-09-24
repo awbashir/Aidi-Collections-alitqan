@@ -5,6 +5,7 @@ import MobileNav from "@/components/template/MobileNav";
 import StackedSideNav from "@/components/template/StackedSideNav";
 import View from "@/views";
 import LanguageSelector from "../template/LanguageSelector";
+import SoftphoneShell from "@/components/softphone/SoftphoneShell";
 import ModeSwitcher from "../template/ThemeConfigurator/ModeSwitcher";
 import Notification from "@/components/template/Notification";
 
@@ -19,6 +20,7 @@ const HeaderActionsStart = () => {
 const HeaderActionsEnd = () => {
   return (
     <>
+      <SoftphoneShell />
       <LanguageSelector />
       <ModeSwitcher />
       <SidePanel />

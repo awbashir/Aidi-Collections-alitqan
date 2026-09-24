@@ -65,7 +65,8 @@ def test_extension_first_originate_fields():
     assert fields == [
         ("Channel", "PJSIP/7201"), ("Context", "collections-human-outbound"), ("Exten", "+966500000001"),
         ("Priority", "1"), ("Async", "true"), ("Timeout", "30000"), ("ChannelId", f"cawp-{aid}"),
-        ("Variable", f"__COLLECTIONS_ATTEMPT={aid}"), ("Variable", "COLLECTIONS_TOKEN=" + "a" * 64)]
+        ("Variable", f"__COLLECTIONS_ATTEMPT={aid}"), ("Variable", "COLLECTIONS_TOKEN=" + "a" * 64),
+        ("Variable", f"PJSIP_HEADER(add,X-CAWP-Attempt)={aid}")]              # softphone auto-answer tag
     assert not any(k in ("Application", "Data", "CallerID") for k, _ in fields)
     for bad in ({"extension": "7201;x"}, {"destination": "0555"}, {"context": "from-internal"},
                 {"token": "x"}, {"attempt_id": "nope"}, {"driver": "Local"}):

@@ -2725,5 +2725,228 @@
       "reload": "Reload",
       "showSection": "Show the daily trend"
     }
+  },
+  "sp": {
+    "title": "Softphone",
+    "chipTitle": "Softphone status (Alt+Shift+P)",
+    "close": "Close the softphone",
+    "extension": "Ext. {{ext}}",
+    "followerNote": "The phone is active in another tab of this browser. This tab shows its status only.",
+    "followerShort": "status only (another tab holds the phone)",
+    "lines": "Calls",
+    "noCalls": "No calls.",
+    "outboundNote": "Calls to customers start from a case contact (click-to-call). The softphone rings first, then the PBX dials the customer.",
+    "shortcuts": "Shortcuts: Alt+Shift+P panel · A answer · E end · M mute · H hold",
+    "status": {
+      "starting": "Starting",
+      "connecting": "Connecting",
+      "registered": "Registered",
+      "offline": "Offline",
+      "failed": "Failed",
+      "no_extension": "No extension",
+      "not_configured": "Not configured",
+      "unsupported": "Unsupported",
+      "stopped": "Off"
+    },
+    "statusHint": {
+      "starting": "Starting the phone.",
+      "connecting": "Connecting to the PBX.",
+      "registered": "",
+      "offline": "The connection to the PBX is down; it reconnects by itself.",
+      "failed": "The PBX refused the registration. Try Reconnect in Diagnostics.",
+      "no_extension": "",
+      "not_configured": "",
+      "unsupported": "",
+      "stopped": ""
+    },
+    "blocked": {
+      "no_extension": {
+        "title": "No extension assigned",
+        "hint": "You have no phone extension, so the softphone cannot register. Ask a calling administrator to assign one to you (Calling administration, Extensions)."
+      },
+      "not_configured": {
+        "title": "Softphone not configured",
+        "hint": "This server has no PBX WebSocket address for the softphone. Ask the administrator."
+      },
+      "stopped": {
+        "title": "Softphone not available",
+        "hint": "Your role does not allow the softphone."
+      },
+      "unsupported_insecure_context": {
+        "title": "HTTPS required",
+        "hint": "The browser only allows the microphone and the phone on a secure (HTTPS) page."
+      },
+      "unsupported_no_webrtc": {
+        "title": "This browser cannot place calls",
+        "hint": "WebRTC or microphone access is not available. Use a current Chrome, Edge or Firefox."
+      }
+    },
+    "tab": {
+      "phone": "Phone",
+      "devices": "Devices",
+      "diagnostics": "Diagnostics"
+    },
+    "line": {
+      "state": {
+        "ringing": "Ringing",
+        "calling": "Calling",
+        "connecting": "Connecting",
+        "active": "In call",
+        "held": "On hold",
+        "ended": "Ended"
+      },
+      "unknown": "Unknown caller",
+      "clickToCall": "Click-to-call",
+      "answer": "Answer",
+      "reject": "Reject",
+      "hangup": "Hang up",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "hold": "Hold",
+      "resume": "Resume",
+      "keypad": "Keypad",
+      "transfer": "Transfer",
+      "switch": "Switch to this call",
+      "transferTo": "Transfer to extension",
+      "transferPlaceholder": "Extension",
+      "transferHint": "Internal extensions only. Never an external number.",
+      "transferState": {
+        "sending": "Transferring to {{target}}…",
+        "accepted": "Transferred to {{target}}.",
+        "failed": "The PBX refused the transfer to {{target}}."
+      },
+      "autoAnswered": "Answered automatically: tagged with your current click-to-call attempt.",
+      "checkingTag": "Checking the attempt tag…",
+      "mutedNote": "Your microphone is muted.",
+      "endedWith": "Call ended ({{cause}})."
+    },
+    "decision": {
+      "auto_answered": "Answered automatically: tagged with your current attempt.",
+      "no_tag": "Not a click-to-call leg: answer or reject.",
+      "disabled_by_preference": "Auto-answer is off in your preferences: answer or reject.",
+      "not_my_active_attempt": "Tagged, but not your current attempt: answer or reject.",
+      "attempt_not_live": "Tagged with an attempt that is no longer live: answer or reject.",
+      "check_failed": "The attempt could not be checked: answer or reject.",
+      "busy_on_another_line": "Tagged with your attempt, but you are on another call: answer to switch."
+    },
+    "attempt": {
+      "title": "Call attempt",
+      "loading": "Loading the call…",
+      "error": "The call could not be loaded.",
+      "case": "Open the case",
+      "bridged": "Customer connected (PBX evidence: both legs bridged).",
+      "customerAnswered": "The customer answered; the bridge is not evidenced yet.",
+      "noCustomerYet": "No customer answer from the PBX yet.",
+      "evidenceNote": "Your answer proves only your leg. The customer's answer comes from PBX events.",
+      "uncertain": "The PBX state of this call is uncertain until it is reconciled.",
+      "wrapupPending": "Wrap-up pending: open the case to wrap up this call.",
+      "state": {
+        "prepared": "Prepared",
+        "authorized": "Authorized",
+        "dispatched": "Sent to the PBX",
+        "agent_ringing": "Ringing you",
+        "agent_answered": "You answered",
+        "customer_dialing": "Dialing the customer",
+        "customer_answered": "Customer answered",
+        "bridged": "Connected",
+        "ended": "Ended",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "uncertain": "Uncertain"
+      }
+    },
+    "dial": {
+      "title": "Call an internal extension",
+      "input": "Extension",
+      "placeholder": "e.g. 7002",
+      "call": "Call",
+      "internalOnly": "Internal extensions only.",
+      "externalRefused": "External numbers cannot be dialled here. Call a customer from a case contact (click-to-call)."
+    },
+    "devices": {
+      "microphone": "Microphone",
+      "speaker": "Speaker",
+      "ringer": "Ringer",
+      "systemDefault": "System default",
+      "unavailable": "Saved device (not found on this computer)",
+      "level": "Microphone level",
+      "startMeter": "Test microphone",
+      "stopMeter": "Stop test",
+      "testTone": "Play test tone",
+      "testRinger": "Test ringer",
+      "noOutputSelection": "This browser cannot choose the speaker or ringer; the system default is used.",
+      "autoAnswer": "Answer my click-to-call legs automatically",
+      "autoAnswerHint": "Only calls tagged with your current attempt. Other calls always ring.",
+      "save": "Save to my profile",
+      "saved": "Saved to your profile (revision {{revision}}).",
+      "saveFailed": "The preferences could not be saved.",
+      "conflict": "Your preferences were changed elsewhere; reloaded. Check and save again.",
+      "micFailed": "The microphone could not be opened.",
+      "followerNote": "Change devices in the tab that holds the phone.",
+      "storedNote": "Devices are stored per user by the server, not in this browser. The softphone never records audio."
+    },
+    "diag": {
+      "https": "Secure page (HTTPS)",
+      "webrtc": "WebRTC support",
+      "mic": "Microphone permission",
+      "websocket": "WebSocket (WSS)",
+      "registration": "SIP registration",
+      "credential": "Credential",
+      "ice": "ICE (media path)",
+      "codecs": "Codecs",
+      "tab": "Phone in this tab",
+      "lastError": "Last error",
+      "yes": "Yes",
+      "no": "No",
+      "none": "None",
+      "unknown": "Unknown",
+      "noCall": "No call",
+      "expired": "Expired",
+      "expiresIn": "Expires in {{time}}",
+      "issued": "{{n}} issued in this session",
+      "candidate": "Candidate: {{type}}",
+      "supported": "Supported: {{list}}",
+      "thisTab": "Yes",
+      "otherTab": "Another tab",
+      "coordination": {
+        "web-locks": "Web Locks",
+        "broadcast-election": "BroadcastChannel election",
+        "solo": "Single tab"
+      },
+      "micState": {
+        "granted": "Allowed",
+        "denied": "Blocked",
+        "prompt": "Not asked yet",
+        "unknown": "Unknown"
+      },
+      "wsState": {
+        "connected": "Connected",
+        "connecting": "Connecting",
+        "disconnected": "Disconnected",
+        "idle": "Not started"
+      },
+      "regState": {
+        "registered": "Registered",
+        "unregistered": "Not registered",
+        "failed": "Failed",
+        "idle": "Not started"
+      },
+      "reconnect": "Reconnect",
+      "echoTest": "Echo test call",
+      "privacy": "The SIP password is kept in memory only and fetched again on every reconnect. It is never stored in the browser."
+    },
+    "error": {
+      "not_internal": "Only internal extensions can be dialled.",
+      "transfer_not_internal": "Transfers go to internal extensions only.",
+      "not_registered": "The phone is not registered.",
+      "too_many_lines": "All lines are busy.",
+      "no_call": "No call.",
+      "no_extension": "No extension assigned.",
+      "softphone_not_configured": "The softphone is not configured.",
+      "network_error": "The server could not be reached.",
+      "too_many_credentials": "Too many credentials were issued; waiting.",
+      "timeout": "Timed out.",
+      "error": "Something went wrong."
+    }
   }
 }

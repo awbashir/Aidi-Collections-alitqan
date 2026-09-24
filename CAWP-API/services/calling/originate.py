@@ -16,6 +16,7 @@ A `Response: Success` to it means *queued* - never ringing, answered or connecte
 """
 from __future__ import annotations
 
+from services.calling import sip_tag
 import re
 
 from services.calling.dialplan import CONTEXT_RE
@@ -49,4 +50,7 @@ def extension_first_fields(*, attempt_id: str, extension: str, destination: str,
         ("ChannelId", f"cawp-{attempt_id}"),
         ("Variable", f"__COLLECTIONS_ATTEMPT={attempt_id}"),
         ("Variable", f"COLLECTIONS_TOKEN={token}"),
+        # X-CAWP-Attempt on the agent leg's INVITE: the in-app softphone auto-answers only a
+        # call whose tag equals the user's live attempt (Phase 5 P3, services/calling/sip_tag.py)
+        *sip_tag.attempt_tag_fields(attempt_id, driver),
     ]

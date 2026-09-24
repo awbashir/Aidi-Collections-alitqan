@@ -26,6 +26,7 @@ MODULES = [
     "api.calling",           # Phase 5: calls, attempts, wrap-up, extensions, campaigns, SIP credentials
     "api.calling_evidence",  # Phase 5 P4: attempt PBX evidence (CDR, recordings, imported CDR)
     "api.calling_campaigns", # Phase 5 P2: progressive calling campaigns
+    "api.calling_sip",       # Phase 5 P3: short-lived SIP credentials for the in-app softphone
 ]
 
 

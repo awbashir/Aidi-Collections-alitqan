@@ -8,6 +8,7 @@ import View from "@/views";
 import ModeSwitcher from "../template/ThemeConfigurator/ModeSwitcher";
 import Notification from "@/components/template/Notification";
 import LanguageSelector from "../template/LanguageSelector";
+import SoftphoneShell from "@/components/softphone/SoftphoneShell";
 
 const HeaderActionsStart = () => {
   return (
@@ -21,6 +22,7 @@ const HeaderActionsStart = () => {
 const HeaderActionsEnd = () => {
   return (
     <>
+      <SoftphoneShell />
       <LanguageSelector />
       <ModeSwitcher />
       <SidePanel />

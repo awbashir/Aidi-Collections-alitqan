@@ -27,6 +27,7 @@
     "framer-motion": "^10.8.5",
     "history": "^5.3.0",
     "i18next": "^22.4.13",
+    "jssip": "3.13.8",
     "lodash": "^4.17.21",
     "lucide-react": "^0.545.0",
     "react": "^18.2.0",

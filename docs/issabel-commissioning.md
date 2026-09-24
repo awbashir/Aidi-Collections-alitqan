@@ -410,3 +410,20 @@ Reservations and attempts in the database stay as they are. They are never delet
 - `pbx-verify.sh` result (attach the output), `calling.verify` result (attach):
 - Acceptance gates 1–15: date, operator, result, and the attempt ids used:
 - `CALLING_PBX_COMMISSIONED=1` set on (date) by:
+
+## 4d. Short-lived SIP credentials for the in-app softphone (Phase 5 P3)
+
+The Issabel equivalent (commissioning, not verified on Issabel)
+
+1. **PJSIP (Asterisk ≥ 13, tested path):**
+   - Use the same two `sorcery.conf` lines, with `extconfig.conf` `ps_auths => odbc,cawp,pbx_ps_auths`. Issabel already runs `res_odbc` / unixODBC for the CDR; add the PostgreSQL ODBC driver (`postgresql-odbc` on CentOS 7) and a `res_odbc.conf` DSN to the application database, with a dedicated read-only role (`cawp_pbx_realtime`, `SELECT` on `pbx_ps_auths` only) over TLS from the PBX IP only (`pg_hba`).
+   - `res_config_pgsql` is an alternative where the Asterisk build has it.
+   - Put a locked fallback `auth` per WebRTC extension in `pjsip.auth_custom_post.conf`.
+   - FreePBX generates `pjsip.auth.conf` from its own database, so the WebRTC test extensions must **not** have a FreePBX-managed secret, or sorcery must list only the realtime and custom sources for them. **This needs checking on the box.**
+2. **chan_sip:** realtime peers (`sippeers => odbc,…` with the `md5secret` column) can serve the same HA1. chan_sip caches realtime peers (`rtcachefriends`), so set `rtcachefriends=no` for these peers, otherwise expiry and rotation are not seen until the cache drops the peer. Plan the PJSIP move.
+3. **Fallback (degraded, only if the realtime link is refused):**
+   - Keep a long-lived random secret per WebRTC extension in the vault and in the FreePBX extension.
+   - The API holds it server-side (for example a `SIP_SECRET_<ext>` secret store) and returns it just in time over TLS with the same response shape.
+   - `expires_at` then becomes a client refresh hint only, and the secret must be rotated by hand when someone leaves. Record this in the commissioning sheet if chosen.
+4. **Host name:** Asterisk puts its host name into the `Contact` of WSS requests. JsSIP **rejects** a host label that starts with a digit (the Docker container id did, section 3). On Issabel, check that `hostname` is a valid DNS name, or set `external_signaling_address` / `local_net` on the WSS transport.
+5. **Runbook:** a new §4d in `docs/issabel-commissioning.md` should carry items 1–4, plus a gate: "a credential superseded or older than the TTL is refused (401)". That file is not mine, so the lead should add it (open item 1).

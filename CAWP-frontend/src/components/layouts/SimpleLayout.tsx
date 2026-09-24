@@ -5,6 +5,7 @@ import HeaderLogo from '@/components/template/HeaderLogo'
 import MobileNav from '@/components/template/MobileNav'
 import HorizontalNav from '@/components/template/HorizontalNav'
 import View from '@/views'
+import SoftphoneShell from '@/components/softphone/SoftphoneShell'
 
 const HeaderActionsStart = () => {
     return (
@@ -18,6 +19,7 @@ const HeaderActionsStart = () => {
 const HeaderActionsEnd = () => {
     return (
         <>
+            <SoftphoneShell />
             <SidePanel />
             <UserDropdown hoverable={false} />
         </>
