@@ -238,8 +238,15 @@ def test_do_not_call_blocks_the_case(cl_client, hdr, team, pgc):
     assert st == 403
     st, b = post(cl_client, hdr(team["supervisor"], key=key()), f"/v2/calling-blocks/{block}/release", {})
     assert st == 422
+    # the admin list shows the active block (calling admin only)
+    assert get(cl_client, hdr(team["c1"]), "/v2/calling-blocks")[0] == 403
+    st, lst = get(cl_client, hdr(team["supervisor"]), "/v2/calling-blocks")
+    assert st == 200 and block in [i["id"] for i in lst["data"]["items"]]
     st, b = post(cl_client, hdr(team["supervisor"], key=key()), f"/v2/calling-blocks/{block}/release",
                  {"reason": "debtor consented again in writing"})
+    st2, lst = get(cl_client, hdr(team["supervisor"]), "/v2/calling-blocks", active="false")
+    assert block in [i["id"] for i in lst["data"]["items"]]
+    assert block not in [i["id"] for i in get(cl_client, hdr(team["supervisor"]), "/v2/calling-blocks")[1]["data"]["items"]]
     assert st == 200 and b["data"]["do_not_call"] is False
     st, b = post(cl_client, hdr(team["supervisor"], key=key()), f"/v2/calling-blocks/{block}/release",
                  {"reason": "again"})

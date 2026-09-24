@@ -220,7 +220,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 | 2 | Reviewed bulk jobs: durable jobs + worker, uploads/mapping/preview/confirm/rechecks, lock/unlock, assign + round-robin, archive/restore, notes, follow-up close-out, spreadsheet inquiry, attribute corrections (via review), jobs screen + wizard, retention | **Done 2026-09-24** (close-out ready, not executed): `docs/phase2-spec.md`, `review/phase2-{framework,assign,archive,notes,inquiry,frontend}.md`; migrations 0016–0019, 0024, 0026–0027 |
 | 3 | Internal requests, targets with history, repayment plans, session revocation, admin gates, protected employee fields | **Done 2026-09-24**: `docs/phase3-spec.md`, `review/phase3-{requests,plans,admin,frontend}.md`; migrations 0028–0038 |
 | 4 | Reports RPT-01…25, private exports (CSV, XLSX, Arabic RTL XLSX), reports hub and generic viewer | **Done 2026-09-24**: `docs/phase4-spec.md`, `review/phase4-{framework,reports-a,reports-b,reports-c,frontend}.md`; migrations 0039–0040, 0046 |
-| 5 | Calling (track B): 5a Issabel commissioning (start now), 5b calling backend, 5c in-app softphone, 5d campaigns, 5e CDR attribution | 5a waiting on PBX access |
+| 5 | Calling (track B): local test PBX + Issabel runbook, manual log and wrap-up, click-to-call, campaigns, in-app softphone, scoped CDR/recordings and CDR import, calling screens | **Done 2026-09-24** (code; real Issabel commissioning is the operator's, per `docs/issabel-commissioning.md`): `docs/phase5-spec.md`, `review/phase5-{foundation,click-to-call,campaigns,evidence,softphone,frontend}.md`; migrations 0048–0058 |
 | 6 | AI and quality review | Needs OpenAI key + retention policy |
 | 7 | Load/security tests, UAT, deployment, cutover | |
 
@@ -317,3 +317,19 @@ Phase 4 open items:
 - `/cdr*` are gated by key but not by case scope. Phase 5 P4 adds scoped recordings and CDR.
 - The CSV exports have no legacy-style "Total" footer row (the totals are in the XLSX summary sheet).
 - Wide case-list sorts spill to disk. A deferred-join optimization is available if needed.
+
+Phase 5 decisions (2026-09-24):
+- **The real Issabel is never contacted from development or tests.** Everything is proven on `pbx-test` (Asterisk 20) and `pbx-webrtc-test`. The calling service is off by default, and it refuses any non-test PBX until `CALLING_PBX_COMMISSIONED=1`. Production configuration is the operator's, following `docs/issabel-commissioning.md` and its check scripts.
+- **Extension-first click-to-call** with a one-shot token checked by an AGI gate. A call is "connected" only on bridge evidence. Lost AMI or an unclear topology gives `uncertain`, resolved by reconciliation or human review. Reservations are never auto-released on restart.
+- **Future callbacks:** an open follow-up due more than 15 minutes from now blocks calling the case until then.
+- **Wrap-ups on locked or archived cases** are recorded and release the reservation. Their case mutations are deferred for supervisor review. A deferred do-not-call or wrong-number outcome blocks calling until reviewed. A *manual* log on a locked or archived case is refused.
+- **Campaigns are progressive only:** one outstanding attempt per collector, through the same dispatch rules as click-to-call. Pause, drain and stop never cut a live call. The pool is bounded by the creator's scope, and cases are offered only to a member whose scope contains them.
+- **Softphone:** JsSIP 3.13.8, ours (no cloudsip.app code). Per-issue SIP passwords (HA1 at rest) are checked by the PBX through a realtime PJSIP view that honours expiry, ownership, deactivation and sign-out. The phone auto-answers only when `X-CAWP-Attempt` matches the user's live attempt. The dialpad accepts internal extensions only. There is no browser recording.
+- **Recordings and `/cdr*` are scoped** to the caller's cases or their own or team calls; SuperAdmin sees everything. A recording is served only when a visible CDR row names its path, and every access is audited.
+- **`user_extensions` is the source of truth** for extensions, mirrored to `users.extension`. Legacy values are adopted by an admin one by one.
+
+Phase 5 open items:
+- **Before production (commissioning):** verify on Issabel the `userfield` logging, the `uniqueid` width, the recording-path format, the PBX clock (NTP), the realtime auth backend (`res_odbc`), the transfer policy, and the carrier's dial prefix (the dialplan dials `+E.164`).
+- **No server-side hang-up:** the minimal AMI account has no `call` write. The PBX enforces the maximum call length.
+- **Campaign pool summaries** at 75k+ cases take about 4.7 s (cached for 15 s). A stored summary would fix it.
+- **Readiness** doesn't follow the softphone's registration yet, and there is no coturn service in compose.

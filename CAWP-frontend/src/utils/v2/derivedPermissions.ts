@@ -10,6 +10,10 @@
  * Phase 3 adds `requests_any`, `plans_any` and `team_any` the same way: each
  * screen's route and nav item open for any key its list endpoint accepts.
  * Phase 4 adds `reports_any` (the reports hub and viewer).
+ * Phase 5 adds `calling_any` (the calling workspace: calls_make | campaigns) and
+ * `campaigns_any` (the campaigns screen: campaigns | campaigns_manage), mirroring the
+ * keys their endpoints accept (`GET /v2/me/calling`, `GET /v2/campaigns`), plus
+ * `call_review` and `calling_admin` (both = calls_manage).
  */
 
 /** Any one of these opens the jobs screen (`bulk_jobs`). */
@@ -33,6 +37,8 @@ export const BULK_JOB_KEYS = [
     'follow_ups_manage',
     // inquiry
     'client_query',
+    // Phase 5: pbx_cdr_import (the reviewed PBX CDR import)
+    'calls_manage',
 ] as const
 
 /** Phase 3: any of these opens the requests screen (mirrors the gate of GET /v2/requests). */
@@ -75,12 +81,23 @@ export const REPORT_KEYS = [
     'reports_calls', // RPT-25
 ] as const
 
+/** Phase 5: the calling workspace (`/calling`): click-to-call or campaign participation. */
+export const CALLING_KEYS = ['calls_make', 'campaigns'] as const
+
+/** Phase 5: the campaigns screen (`/campaigns`), mirroring GET /v2/campaigns. */
+export const CAMPAIGN_KEYS = ['campaigns', 'campaigns_manage'] as const
+
 export const DERIVED_KEYS = {
     bulk_jobs: (p: Record<string, unknown>) => BULK_JOB_KEYS.some((k) => p[k] === true),
     requests_any: (p: Record<string, unknown>) => REQUEST_KEYS.some((k) => p[k] === true),
     plans_any: (p: Record<string, unknown>) => PLAN_KEYS.some((k) => p[k] === true),
     team_any: (p: Record<string, unknown>) => TEAM_KEYS.some((k) => p[k] === true),
     reports_any: (p: Record<string, unknown>) => REPORT_KEYS.some((k) => p[k] === true),
+    calling_any: (p: Record<string, unknown>) => CALLING_KEYS.some((k) => p[k] === true),
+    campaigns_any: (p: Record<string, unknown>) => CAMPAIGN_KEYS.some((k) => p[k] === true),
+    /* Phase 5: two screens of `calls_manage` (a nav item needs a key of its own). */
+    call_review: (p: Record<string, unknown>) => p.calls_manage === true,
+    calling_admin: (p: Record<string, unknown>) => p.calls_manage === true,
 }
 
 /** The permission map plus the derived keys. Never removes or changes a real key. */

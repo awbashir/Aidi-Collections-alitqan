@@ -431,6 +431,39 @@ const AttributeParamsForm = ({ value, onChange }: FormProps) => {
     )
 }
 
+/* Phase 5: the reviewed PBX CDR import. Nothing is attributed until the preview; unmatched
+ * and ambiguous records stay in the preview and the error file, never imported. */
+const PbxCdrParamsForm = ({ value, onChange }: FormProps) => {
+    const { t } = useTranslation()
+    const windowOk = str(value.match_window_seconds) === '' || /^\d{1,4}$/.test(str(value.match_window_seconds))
+    return (
+        <>
+            <ReasonField required value={value.reason} onChange={(reason) => onChange({ ...value, reason })} hint={t('p5.cdr.reasonHint')} />
+            <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-3">
+                <DialogField label={t('p5.cdr.sourceName')} hint={t('p5.cdr.sourceNameHint')}>
+                    <Input size="sm" dir="ltr" value={str(value.source_name)} placeholder="issabel" maxLength={100} onChange={(e) => onChange({ ...value, source_name: e.target.value })} data-testid="p5-cdr-source" />
+                </DialogField>
+                <DialogField label={t('p5.cdr.timezone')} hint={t('p5.cdr.timezoneHint')}>
+                    <Input size="sm" dir="ltr" value={str(value.timezone)} placeholder="Asia/Riyadh" maxLength={60} onChange={(e) => onChange({ ...value, timezone: e.target.value })} data-testid="p5-cdr-timezone" />
+                </DialogField>
+                <DialogField label={t('p5.cdr.window')} hint={t('p5.cdr.windowHint')}>
+                    <Input
+                        size="sm"
+                        dir="ltr"
+                        inputMode="numeric"
+                        value={str(value.match_window_seconds)}
+                        placeholder="300"
+                        onChange={(e) => onChange({ ...value, match_window_seconds: e.target.value.replace(/[^0-9]/g, '').slice(0, 4) })}
+                        data-testid="p5-cdr-window"
+                    />
+                </DialogField>
+            </div>
+            {!windowOk && <Note className="text-danger">{t('p5.cdr.windowInvalid')}</Note>}
+            <Note>{t('p5.cdr.rules')}</Note>
+        </>
+    )
+}
+
 /** Step 4 body for the kind. */
 export const ParamsForm = (props: FormProps) => {
     switch (props.kind) {
@@ -452,6 +485,8 @@ export const ParamsForm = (props: FormProps) => {
             return <CloseoutForm {...props} />
         case 'attribute_corrections':
             return <AttributeParamsForm {...props} />
+        case 'pbx_cdr_import':
+            return <PbxCdrParamsForm {...props} />
         default:
             return null
     }

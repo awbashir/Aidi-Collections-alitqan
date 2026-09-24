@@ -258,6 +258,15 @@ export class SoftphoneEngine {
         if (!diag.secureContext) return this.setStatus('unsupported', 'insecure_context')
         if (!diag.webrtc || !navigator.mediaDevices?.getUserMedia) return this.setStatus('unsupported', 'no_webrtc')
         await this.loadPreferences()
+        // Ask first (GET, no side effect): an unconfigured server or a user without an
+        // extension gets its state without a credential request that could only fail.
+        try {
+            const st = await softphoneApi.credentialStatus()
+            if (!st.configured) return this.setStatus('not_configured', st.reason || 'softphone_not_configured')
+            if (st.reason === 'no_extension') return this.setStatus('no_extension', 'no_extension')
+        } catch {
+            /* status unavailable: fall through to the credential request, which reports the real error */
+        }
         await this.checkMicrophone()
         try {
             await this.refreshCredential(true)

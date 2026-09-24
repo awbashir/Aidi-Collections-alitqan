@@ -58,7 +58,10 @@ DATE_KEYS = ("customeFilterPortfolioCreateAtValue", "customeFilterPortfolioCreat
 GRID_KEYS = ("filterField", "filterOperator", "filterFieldType", "filterValue", "filterValue[]")
 REFUSED_KEYS = ("customeFilterInquiryClintByExcelValue[file_name]", "customeFilterInquiryClintByExcelValue[index]")
 # paging / sorting keys of the list are accepted and ignored (the campaign has its own order)
-IGNORED_KEYS = ("page", "pageSize", "field", "sort", "sort[key]", "sort[order]", "customeFilterDateValue[]")
+IGNORED_KEYS = ("page", "pageSize", "field", "sort", "sort[key]", "sort[order]", "customeFilterDateValue[]",
+                # the list's archive-state filter: a campaign never calls archived cases (the
+                # hard pool reason `case_archived`), so it is accepted and has no further effect
+                "customeFilterArchivingStatusesValue", "customeFilterArchivingStatusesValue[]")
 
 # grid columns: SQL expression and kind (clients mode of services/clients_query.apply_mui_filter)
 GRID_COLUMNS = {

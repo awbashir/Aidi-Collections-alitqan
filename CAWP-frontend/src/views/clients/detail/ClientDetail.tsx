@@ -91,6 +91,9 @@ const CasePlanPanel = lazy(() => import("@/views/phase3/plans/CasePlanPanel"));
 const CaseRequestsPanel = lazy(
   () => import("@/views/phase3/requests/CaseRequestsPanel"),
 );
+/* Phase 5 panels (v2 API): the case's calls and the manual call log. */
+const CaseCallsPanel = lazy(() => import("@/views/phase5/case/CaseCallsPanel"));
+const LogCallDialog = lazy(() => import("@/views/phase5/wrapup/LogCallDialog"));
 
 const { TabNav, TabList } = Tabs;
 
@@ -108,6 +111,8 @@ const Settings = () => {
     p1perm.requests_finance ||
     p1perm.requests_operations
   );
+  /* Phase 5: the case's calls (calls | calls_make); "Log a call" needs `calls`. */
+  const canSeeCalls = !!(p1perm.calls || p1perm.calls_make);
 
   const settingsMenu: Record<
     string,
@@ -150,6 +155,10 @@ const Settings = () => {
     }),
     ...(canSeeRequests && {
       requests: { label: t("p3.case.tabRequests"), path: "requests" },
+    }),
+    /* Phase 5 tab: the case's calls, wrap-ups, do-not-call block. */
+    ...(canSeeCalls && {
+      calls: { label: t("p5.case.tabCalls"), path: "calls" },
     }),
   };
   const [currentTab, setCurrentTab] = useState("details");
@@ -223,6 +232,18 @@ const Settings = () => {
   };
   const caseInfo = (data?.id ? data : null) as CaseInfo | null;
   const [requestOpen, setRequestOpen] = useState(false);
+  const [logCallOpen, setLogCallOpen] = useState(false);
+  /* Phase 5: a wrap-up saved anywhere (the docked panel) on this case wrote a
+   * note: reload what the legacy panels show, like any v2 mutation. */
+  useEffect(() => {
+    const onWrapped = (e: Event) => {
+      const d = (e as CustomEvent<{ caseId: string | null }>).detail;
+      if (d && caseInfo?.id && d.caseId === caseInfo.id) onPhase1Changed();
+    };
+    window.addEventListener("cawp:call-wrapped", onWrapped);
+    return () => window.removeEventListener("cawp:call-wrapped", onWrapped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseInfo?.id]);
   const canSeeCorrections =
     p1perm.case_corrections_request || p1perm.case_corrections_review;
   /* Pending corrections on this case (exact count), shown under the header. */
@@ -308,8 +329,18 @@ const Settings = () => {
               </span>
             )}
           </div>
-          {caseInfo && (p1perm.case_corrections_request || pendingCount > 0) && (
+          {caseInfo &&
+            (p1perm.case_corrections_request || pendingCount > 0 || p1perm.calls) && (
             <div className="mt-3 flex flex-wrap items-center gap-3">
+              {p1perm.calls && (
+                <Button
+                  size="sm"
+                  onClick={() => setLogCallOpen(true)}
+                  data-testid="p5-log-call"
+                >
+                  {t("p5.log.open")}
+                </Button>
+              )}
               {p1perm.case_corrections_request && (
                 <Button
                   size="sm"
@@ -407,6 +438,13 @@ const Settings = () => {
                 onChanged={onPhase1Changed}
               />
             )}
+            {currentTab === "calls" && caseInfo && canSeeCalls && (
+              <CaseCallsPanel
+                key={caseInfo.id}
+                caseData={caseInfo}
+                onChanged={onPhase1Changed}
+              />
+            )}
             {currentTab === "promises" &&
               caseInfo &&
               (p1perm.promises || p1perm.clints_PayemntDates) && (
@@ -418,6 +456,23 @@ const Settings = () => {
               )}
           </Suspense>
         </div>
+        {caseInfo && logCallOpen && (
+          <Suspense fallback={null}>
+            <LogCallDialog
+              isOpen={logCallOpen}
+              onClose={() => setLogCallOpen(false)}
+              caseInfo={{
+                id: caseInfo.id,
+                name: caseInfo.name,
+                accountNumber: caseInfo.accountNumber,
+                identityNumber: caseInfo.identityNumber,
+                contractId: caseInfo.contract?.id || null,
+                isLocked: !!caseInfo.is_locked,
+                isArchived: !!caseInfo.is_archive,
+              }}
+            />
+          </Suspense>
+        )}
         {caseInfo && requestOpen && (
           <Suspense fallback={null}>
             <RequestCorrectionDialog

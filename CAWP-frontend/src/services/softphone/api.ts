@@ -52,7 +52,8 @@ export async function fetchLiveAttempt(
         })
         if (res.status === 304) return null
         const data = (res.data?.data ?? null) as LiveAttempt | null
-        if (data) data.etag = (res.headers?.etag as string | undefined) || undefined
+        // header when CORS exposes it, else the body's own etag (never drop it)
+        if (data) data.etag = (res.headers?.etag as string | undefined) || data.etag || undefined
         return data
     } catch (err) {
         const ax = err as { response?: { status: number; data?: { code?: string; message?: string; error?: unknown } } }

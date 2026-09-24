@@ -203,6 +203,14 @@ def case_blocks(case_id):
     return ok(queries.case_blocks(case_id))
 
 
+@bp.get("/v2/calling-blocks")
+@jwt_required()
+@permission_required(CALLS_MANAGE)
+def list_blocks():
+    page, size, offset = page_args()
+    return ok(queries.list_blocks(request.args, page, size, offset))
+
+
 @bp.post("/v2/calling-blocks/<uuid:block_id>/release")
 @jwt_required()
 @permission_required(CALLS_MANAGE)
@@ -261,7 +269,7 @@ def calling_status():
 
 @bp.get("/v2/calling/users")
 @jwt_required()
-@permission_required(CALLS_MANAGE)
+@permission_required(CALLS_MANAGE, "campaigns_manage")  # also the campaign roster picker
 def user_picker():
     page, size, offset = page_args()
     return ok(queries.user_picker(request.args, page, size, offset))

@@ -55,8 +55,9 @@ import {
 } from "./hooks/useClientsHashState";
 import { HiX } from "react-icons/hi";
 import LockUnlockSelectedButton from "./components/LockUnlockSelectedButton";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { listQueryString } from "@/services/v2";
+import { poolFilterFromQuery } from "@/views/phase5/campaigns/poolFilter";
 import { BulkMenu } from "@/views/phase2/bulk/entry";
 import type { BulkLaunch } from "@/views/phase2/bulk/shared";
 
@@ -76,6 +77,19 @@ const TableOptions = () => {
     (state) => state.clientsList.data.tableData,
   );
   const location = useLocation();
+  const navigate = useNavigate();
+
+  /* Phase 5: "New campaign from this filter" hands the list's current filter
+   * (the same params this list sends, without paging) to the campaign form. */
+  const startCampaign = () => {
+    navigate("/campaigns", {
+      state: {
+        newCampaign: {
+          filter: poolFilterFromQuery(listQueryString("/clints", { ...pramas })),
+        },
+      },
+    });
+  };
 
   /* Phase 2: the reviewed bulk wizard gets the selection and the list's
    * current filter exactly as the list sends it (same params, same axios
@@ -247,6 +261,17 @@ const TableOptions = () => {
           notificationTitle={t("clients.exportTitle")}
           notificationSuccessMessage={t("clients.successExport")}
         />
+
+        {perm.campaigns_manage && (
+          <Button
+            size="sm"
+            variant="default"
+            onClick={startCampaign}
+            data-testid="p5-clients-new-campaign"
+          >
+            {t("p5.campaigns.fromFilter")}
+          </Button>
+        )}
 
         {/* Phase 2: reviewed bulk actions (preview, then explicit confirmation)
          * are the default entry; the direct legacy buttons stay as "classic". */}

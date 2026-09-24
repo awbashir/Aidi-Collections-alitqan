@@ -299,6 +299,11 @@ async function shot(page, name) {
   log(`      screenshot ${name}.png`);
 }
 async function setLang(page, lang) {
+  // wait for the app to finish restoring its persisted state first: a switch made before
+  // rehydration is overwritten by the saved language (a test race, not a product path)
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.locator('.header img[src*="/img/countries/"]').first().waitFor({ timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(400);
   const dir = await page.evaluate(() => document.documentElement.dir);
   if ((lang === 'en' && dir === 'ltr') || (lang === 'ar' && dir === 'rtl')) return;
   await page.locator('.header img[src*="/img/countries/"]').first().click();

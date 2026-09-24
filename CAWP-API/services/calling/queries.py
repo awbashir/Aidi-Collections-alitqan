@@ -260,6 +260,34 @@ def case_blocks(case_id) -> dict:
             "blocked_contacts": int(blocked_contacts or 0), "items": items}
 
 
+def list_blocks(args, page, size, offset) -> dict:
+    """Do-not-call blocks on cases in the caller's scope; `active=true|false` (default: active)."""
+    cond, params = scope_sql("c")
+    where = [cond]
+    active = (args.get("active") or "true").lower()
+    if active == "true":
+        where.append("b.released_at IS NULL")
+    elif active == "false":
+        where.append("b.released_at IS NOT NULL")
+    base = f"""FROM calling_blocks b JOIN clints c ON c.id = b.case_id
+               LEFT JOIN users cu ON cu.id = b.created_by LEFT JOIN users ru ON ru.id = b.released_by
+              WHERE {' AND '.join(where)}"""
+    total = sess().execute(text(f"SELECT count(*) {base}"), params).scalar()
+    rows = sess().execute(text(f"""
+        SELECT b.id, b.case_id, c.name AS case_name, c."accountNumber" AS account, b.kind, b.reason, b.source,
+               b.attempt_id, b.created_by, {USER_NAME_SQL.format(a='cu')} AS cname, b.created_at,
+               b.released_at, b.released_by, {USER_NAME_SQL.format(a='ru')} AS rname, b.release_reason
+          {base} ORDER BY b.created_at DESC, b.id LIMIT :lim OFFSET :off"""),
+        {**params, "lim": size, "off": offset}).mappings().all()
+    items = [{"id": s(r["id"]), "case": {"id": s(r["case_id"]), "name": r["case_name"], "accountNumber": r["account"]},
+              "kind": r["kind"], "reason": r["reason"], "source": r["source"], "attempt_id": s(r["attempt_id"]),
+              "created_by": user_ref(r["created_by"], r["cname"]), "created_at": iso(r["created_at"]),
+              "active": r["released_at"] is None, "released_at": iso(r["released_at"]),
+              "released_by": user_ref(r["released_by"], r["rname"]), "release_reason": r["release_reason"]}
+             for r in rows]
+    return {"items": items, "total": int(total or 0), "page": page, "page_size": size}
+
+
 def service_status() -> dict:
     """What the API can see of the calling service: its latest PBX session (from the DB)."""
     last = sess().execute(text("""

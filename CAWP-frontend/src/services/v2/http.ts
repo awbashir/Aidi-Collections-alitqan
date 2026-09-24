@@ -62,6 +62,14 @@ export class V2Error extends Error {
                 'plan_not_cancellable',
                 'plan_not_allocatable',
                 'plan_already_active',
+                // Phase 5: a call / extension / campaign / review flag moved on since it was loaded
+                'already_dispatching',
+                'wrapup_exists',
+                'owner_changed',
+                'not_uncertain',
+                'flag_already_resolved',
+                'block_already_released',
+                'legacy_extension_changed',
             ].includes(this.code)
         )
     }
@@ -96,7 +104,7 @@ export function newIdempotencyKey(): string {
 type Query = Record<string, string | number | boolean | undefined | null | Array<string | number>>
 
 export type V2RequestOptions = {
-    method?: 'get' | 'post' | 'put'
+    method?: 'get' | 'post' | 'put' | 'patch'
     params?: Query
     data?: unknown
     /** Required on every mutation. One key per user action; reuse it for retries. */
@@ -185,3 +193,7 @@ export const v2Post = <T>(url: string, data: unknown, idempotencyKey: string) =>
 
 export const v2Put = <T>(url: string, data: unknown, idempotencyKey: string) =>
     v2Request<T>(url, { method: 'put', data, idempotencyKey })
+
+/** Phase 5: `PATCH` (campaign edits). Same rules as the other mutations. */
+export const v2Patch = <T>(url: string, data: unknown, idempotencyKey: string) =>
+    v2Request<T>(url, { method: 'patch', data, idempotencyKey })

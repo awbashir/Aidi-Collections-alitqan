@@ -14,6 +14,9 @@ import useDirection from '@/utils/hooks/useDirection'
 import useLocale from '@/utils/hooks/useLocale'
 import { useSessionRefresh } from '@/utils/v2/useSessionRefresh'
 
+/* Phase 5: the docked live-call panel + wrap-up (renders nothing without calls / calls_make). */
+const LiveCallDock = lazy(() => import('@/views/phase5/live/LiveCallDock'))
+
 const layouts = {
     [LAYOUT_TYPE_CLASSIC]: lazy(() => import('./ClassicLayout')),
     [LAYOUT_TYPE_MODERN]: lazy(() => import('./ModernLayout')),
@@ -51,6 +54,11 @@ const Layout = () => {
             }
         >
             <AppLayout />
+            {authenticated && (
+                <Suspense fallback={null}>
+                    <LiveCallDock />
+                </Suspense>
+            )}
         </Suspense>
     )
 }
