@@ -80,6 +80,12 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     PermissionKey("calls_manage", _CONTROL, "Calling administration", "إدارة الاتصال"),
     PermissionKey("campaigns", _DAILY, "Calling campaigns", "حملات الاتصال"),
     PermissionKey("campaigns_manage", _DAILY, "Run and pause campaigns", "تشغيل وإيقاف الحملات"),
+    # Phase 6: AI assistance and quality review
+    PermissionKey("ai_assist", _CONTROL, "AI drafts (review before saving)", "مسودات الذكاء الاصطناعي (مراجعة قبل الحفظ)"),
+    PermissionKey("ai_admin", _CONTROL, "AI status and data policy", "حالة الذكاء الاصطناعي وسياسة البيانات"),
+    PermissionKey("quality_review", _CONTROL, "Quality review", "مراجعة الجودة"),
+    PermissionKey("quality_approve", _CONTROL, "Approve quality reviews", "اعتماد مراجعات الجودة"),
+    PermissionKey("voice_lab", _CONTROL, "Voice training lab", "مختبر التدريب الصوتي"),
 )
 
 
