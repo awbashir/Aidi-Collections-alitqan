@@ -9,6 +9,7 @@
  *
  * Phase 3 adds `requests_any`, `plans_any` and `team_any` the same way: each
  * screen's route and nav item open for any key its list endpoint accepts.
+ * Phase 4 adds `reports_any` (the reports hub and viewer).
  */
 
 /** Any one of these opens the jobs screen (`bulk_jobs`). */
@@ -43,11 +44,43 @@ export const PLAN_KEYS = ['plans', 'plans_manage'] as const
 /** Phase 3: any of these opens the team screen (mirrors GET /v2/targets/achievement). */
 export const TEAM_KEYS = ['dashbord_admin', 'dashbord_user'] as const
 
+/**
+ * Phase 4: any report's key opens the reports hub (`reports_any`), mirroring
+ * `GET /v2/reports`, which lists every report whose any-of keys the caller
+ * holds (screen-key rule). Keys of RPT-01…25 on the live registry (2026-09-24);
+ * the hub itself shows exactly what the API returns, and every report page
+ * re-checks its own key through `GET /v2/reports/<id>`.
+ */
+export const REPORT_KEYS = [
+    'users', // RPT-01
+    'clints', // RPT-02
+    'clints_archive', // RPT-03
+    'report_users_comments', // RPT-04
+    'report_collectors_currentUser_comments', // RPT-05
+    'collections_users', // RPT-06
+    'collections_currentUser', // RPT-07
+    'accounts_payments', // RPT-08
+    'report_users_paymentDates', // RPT-09
+    'report_collectors_currentUser_paymentDates', // RPT-10, RPT-11
+    'reports_performance', // RPT-11, RPT-24
+    'report_portfolios', // RPT-12
+    'portfolios', // RPT-12
+    'report_clintes_active', // RPT-13
+    'report_clintes_inactive', // RPT-14
+    'report_quality_neglect', // RPT-15
+    'report_collectors_currentUser_nextCalls', // RPT-16
+    'dashbord_user', // RPT-17, 18, 19
+    'dashbord_admin', // RPT-19 … 23
+    'clints_callsRecords', // RPT-25
+    'reports_calls', // RPT-25
+] as const
+
 export const DERIVED_KEYS = {
     bulk_jobs: (p: Record<string, unknown>) => BULK_JOB_KEYS.some((k) => p[k] === true),
     requests_any: (p: Record<string, unknown>) => REQUEST_KEYS.some((k) => p[k] === true),
     plans_any: (p: Record<string, unknown>) => PLAN_KEYS.some((k) => p[k] === true),
     team_any: (p: Record<string, unknown>) => TEAM_KEYS.some((k) => p[k] === true),
+    reports_any: (p: Record<string, unknown>) => REPORT_KEYS.some((k) => p[k] === true),
 }
 
 /** The permission map plus the derived keys. Never removes or changes a real key. */

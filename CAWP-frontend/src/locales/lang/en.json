@@ -166,6 +166,9 @@
       "plans": "Repayment plans",
       "team": "Team targets",
       "requests": "Requests"
+    },
+    "p4": {
+      "reports": "Reports hub"
     }
   },
   "auth": {
@@ -2483,6 +2486,244 @@
       "collectorsSumNote": "Collectors' targets is the legacy aggregate: the sum of the targets of the contract's collectors, where a contract amount target is counted once for every collector without an own target. The contract target column is the contract's own target.",
       "contractsEmpty": "No contracts for this filter",
       "inactive": "Inactive"
+    }
+  },
+  "p4": {
+    "hub": {
+      "title": "Reports",
+      "subtitle": "{{n}} reports you can open, by family. Exact totals, stable paging and private exports.",
+      "tabReports": "Reports",
+      "tabExports": "My exports",
+      "search": "Search reports (name, description, RPT-…)",
+      "shown": "{{n}} of {{total}} shown",
+      "open": "Open report",
+      "formats": "Export formats",
+      "noneTitle": "No reports for your role",
+      "noneHint": "Reports follow the permissions of their screens. Ask an administrator if you need one.",
+      "noMatchTitle": "No report matches",
+      "noMatchHint": "Nothing matches “{{q}}”.",
+      "clearSearch": "Clear the search"
+    },
+    "family": {
+      "users": "Users",
+      "cases": "Cases",
+      "notes": "Notes",
+      "collections": "Collections",
+      "promises": "Promises to pay",
+      "portfolios": "Portfolios",
+      "callbacks": "Callbacks",
+      "performance": "Performance and targets",
+      "calls": "Calls"
+    },
+    "classic": {
+      "label": "Classic screen:",
+      "prefix": "Classic:",
+      "sectionTitle": "Classic report screens",
+      "sectionHint": "The legacy report screens stay available as they were.",
+      "users": "Users",
+      "clients": "Clients",
+      "archive": "Clients archive",
+      "usersComments": "Users' notes report",
+      "myComments": "My notes (collector report)",
+      "usersCollections": "Users' collections",
+      "myCollections": "My collections",
+      "accountingPayments": "Accounting · payments",
+      "usersPromises": "Users' payment dates",
+      "myPromises": "My payment dates",
+      "portfolioReport": "Portfolio report",
+      "portfolios": "Portfolios",
+      "activeClients": "Active clients report",
+      "inactiveClients": "Inactive clients report",
+      "neglect": "Neglect report",
+      "nextCalls": "My next calls",
+      "dashboard": "Dashboard",
+      "team": "Team targets"
+    },
+    "viewer": {
+      "rules": "Fixed rules of this report",
+      "footNote": "Totals cover the full filtered result, read in the same snapshot as the page. Money is exact as recorded; times are Asia/Riyadh."
+    },
+    "filter": {
+      "title": "Filters",
+      "active": "{{n}} changed",
+      "reset": "Reset to defaults",
+      "required": "Required",
+      "requiredLegend": "Required",
+      "any": "Any",
+      "all": "All",
+      "from": "From",
+      "to": "To",
+      "fromHour": "From hour",
+      "toHour": "To hour",
+      "min": "Min",
+      "max": "Max",
+      "textPlaceholder": "Contains… (Enter to apply)",
+      "maxDays": "At most {{n}} days",
+      "serverDefault": {
+        "today": "Default: today",
+        "month": "Default: this month to date",
+        "current_month": "Default: this month",
+        "other": ""
+      }
+    },
+    "semantics": {
+      "inclusive_civil_dates": "Inclusive dates (Riyadh)",
+      "riyadh_day_bounds": "Whole days, Riyadh time",
+      "riyadh_day_bounds_and_inclusive_civil_dates": "Whole days, Riyadh time (payments by civil date)",
+      "literal_contains_case_insensitive": "Contains (literal, any case)",
+      "inclusive_exact_sar": "Exact SAR, bounds included",
+      "inclusive_riyadh_hours": "Whole hours, Riyadh time, both included"
+    },
+    "fieldErr": {
+      "invalid": "Not a valid value",
+      "required": "Required",
+      "reversed_range": "The end is before the start",
+      "range_too_long": "The range is too long (at most {{max_days}} days)",
+      "too_long": "Too long (at most {{max_len}} characters)",
+      "too_many": "Too many selected",
+      "unknown_value": "Unknown value",
+      "negative": "Cannot be negative",
+      "too_precise": "At most 2 decimals",
+      "too_large": "Too large",
+      "unknown_parameter": "Not a filter of this report",
+      "other": "Invalid ({{code}})"
+    },
+    "err": {
+      "validation_failed": "Some filters are not valid.",
+      "validation_failed_fields": "Some filters are not valid: {{fields}}",
+      "report_not_found": "This report does not exist.",
+      "unknown_option_field": "This report has no such selector.",
+      "export_not_found": "This export does not exist or is not yours.",
+      "export_not_ready": "The export is not finished yet ({{status}}).",
+      "export_failed": "The export failed. {{reason}} Request a new one.",
+      "export_expired": "The export has expired. Request a new one.",
+      "export_purged": "The export file is no longer available. Request a new one.",
+      "cdr_unavailable": "The PBX call records are unavailable right now. Try again later.",
+      "cdr_window_too_large": "Too many calls in this window. Choose fewer days."
+    },
+    "totals": {
+      "title": "Totals (full result)",
+      "hint": "Exact, over every row of the filter, not just this page",
+      "unknown": "Unknown",
+      "unknownTitle": "Not known from the data (never shown as 0)"
+    },
+    "sar": "SAR",
+    "table": {
+      "title": "Rows",
+      "sortBy": "Sort by",
+      "sortTitle": "Sort (click again to reverse)",
+      "pageSize": "Rows per page",
+      "snapshot": "Data as of",
+      "rowCount": "{{n}} rows in total",
+      "emptyTitle": "No rows for these filters",
+      "emptyHint": "Change or reset the filters above. The totals still describe this empty result.",
+      "showEmpty": "Show {{n}} empty columns",
+      "hideEmpty": "Hide empty columns",
+      "protectedCol": "Protected employee field"
+    },
+    "cell": {
+      "hidden": "Hidden",
+      "hiddenTitle": "Protected employee field: hidden for your permissions"
+    },
+    "bool": {
+      "yes": "Yes",
+      "no": "No"
+    },
+    "ids": {
+      "search": "Search…",
+      "none": "No matching values",
+      "more": "Load more",
+      "count": "{{shown}} of {{total}}",
+      "clear": "Clear",
+      "remove": "Remove",
+      "inactive": "inactive",
+      "summary": "{{first}} +{{n}}",
+      "unresolved": "Not in your list ({{id}}…)",
+      "narrowedBy": "Narrowed by: {{list}}"
+    },
+    "export": {
+      "title": "Export",
+      "snapshotNote": "Exports use a fresh snapshot; they may differ from the preview if data changed.",
+      "noArabic": "This report has no Arabic XLSX (its legacy screen did not export one).",
+      "requestedAt": "Requested",
+      "rows": "{{n}} rows",
+      "matchesPreview": "(same as the preview)",
+      "differs": "The file has {{file}} rows; the preview showed {{preview}}. The data changed in between.",
+      "expires": "expires",
+      "cutoff": "Data as of",
+      "download": "Download",
+      "rowsWritten": "{{n}} of {{of}} rows",
+      "rowsWrittenOnly": "{{n}} rows written",
+      "retryingNote": "Retrying (attempt {{n}} of {{max}})."
+    },
+    "format": {
+      "csv": "CSV",
+      "xlsx": "XLSX",
+      "xlsx_ar": "Arabic XLSX (RTL)"
+    },
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "retrying": "Retrying",
+      "succeeded": "Ready",
+      "failed": "Failed",
+      "expired": "Expired"
+    },
+    "exportError": {
+      "permission_denied": "You no longer have the permission for this report.",
+      "too_many_rows": "Too many rows for one export. Narrow the filters.",
+      "artifact_too_large": "The file would be too large. Narrow the filters.",
+      "unknown_report": "The report no longer exists.",
+      "invalid_definition": "The saved filters are no longer valid.",
+      "row_count_mismatch": "The row count did not match; nothing was published.",
+      "internal_error": "An internal error stopped the export.",
+      "max_attempts_exceeded": "The export failed after every retry.",
+      "cdr_unavailable": "The PBX call records were unavailable.",
+      "lease_lost": "The worker lost the job; it was retried.",
+      "other": "Failed ({{code}}). {{message}}"
+    },
+    "exports": {
+      "title": "My exports",
+      "subtitle": "Private to you; files expire after 7 days.",
+      "statusFilter": "Status",
+      "total": "{{n}} exports",
+      "emptyTitle": "No exports yet",
+      "emptyHint": "Open a report and choose CSV, XLSX or Arabic XLSX.",
+      "openWithFilters": "Open the report with these filters",
+      "col": {
+        "requested": "Requested",
+        "report": "Report",
+        "format": "Format",
+        "status": "Status",
+        "rows": "Rows",
+        "file": "File",
+        "expires": "Expires",
+        "actions": "Actions"
+      }
+    },
+    "rec": {
+      "download": "Download the recording",
+      "play": "Play the recording",
+      "stop": "Stop",
+      "failed": "Recording unavailable",
+      "noKey": "No access",
+      "noKeyTitle": "A recording exists; listening needs the recording download or play permission."
+    },
+    "chart": {
+      "titleDays": "{{m}} by day",
+      "titleHours": "{{m}} by hour (Riyadh)",
+      "sub": "Total {{total}} · from {{rows}} rows · axis rounded, exact values on hover and below",
+      "zeroDays": "a day without rows is 0",
+      "gaps": "{{n}} unknown (gaps)",
+      "peak": "highest {{x}}: {{v}}",
+      "noValue": "Unknown",
+      "showValues": "Show exact values",
+      "hideValues": "Hide values",
+      "chooseSection": "The chart shows the daily trend section.",
+      "tooMany": "{{n}} rows: too many to chart (at most {{max}}). The table has every value.",
+      "mismatch": "The data changed while the chart was loading, so it is not drawn.",
+      "reload": "Reload",
+      "showSection": "Show the daily trend"
     }
   }
 }

@@ -49,6 +49,10 @@ db/
 | 0035 | `migrations/0035_targets_baseline.sql` | one `imported_baseline` target row per user and contract | instant | Yes |
 | 0036 | `migrations/0036_user_sessions.sql` | unmapped `users.sessions_valid_after`, revoke trigger, `revoked_tokens` | brief exclusive lock on `users` (~4 ms) | Yes |
 | 0037 | `migrations/0037_promise_guard_payment_lock.sql` | promise allocation guard locks the payment row `FOR SHARE` | instant | Yes |
+| 0038 | `migrations/0038_repayment_plans_auto_complete.sql` | stored `completed` plan status, auto-complete/reopen triggers, flag for voided evidence | instant (23 ms) | Yes |
+| 0039 | `migrations/0039_report_exports.sql` | `report_exports` (private report export jobs, lease, expiry) | new table | Yes |
+| 0040 | `migrations/0040_report_export_attempts.sql` | `report_export_attempts` | new table | Yes |
+| 0046 | `migrations/0046_contact_phone_key_index.sql` | phone-number lookup index on `"ClintContacts"` for CDR attribution (RPT-23/25) | index build ~3 s | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

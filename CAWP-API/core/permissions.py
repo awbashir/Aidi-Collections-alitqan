@@ -71,6 +71,9 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     # Phase 3: sessions
     PermissionKey("users_sessions", _CONTROL, "Sign users out everywhere", "إنهاء جلسات المستخدمين"),
     PermissionKey("users_login_history", _CONTROL, "View login history", "عرض سجل الدخول"),
+    # Phase 4: reports without a legacy screen
+    PermissionKey("reports_performance", _RECOVERY, "Performance reports", "تقارير الأداء"),
+    PermissionKey("reports_calls", _RECOVERY, "Call reports", "تقارير المكالمات"),
 )
 
 

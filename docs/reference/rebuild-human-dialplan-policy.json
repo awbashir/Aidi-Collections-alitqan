@@ -1,0 +1,8 @@
+{
+  "context": "collections-human-outbound",
+  "driver": "PJSIP",
+  "trunk": "synthetic-trunk",
+  "max_call_seconds": 600,
+  "ring_seconds": 30,
+  "calling_windows": []
+}
