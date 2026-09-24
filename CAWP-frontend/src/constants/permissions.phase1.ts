@@ -1,6 +1,8 @@
 /**
  * Mirror of the NEW permission keys registered in CAWP-API/core/permissions.py
- * (`NEW_PERMISSIONS`). Keep this list in the same order and with the same
+ * (`NEW_PERMISSIONS`): Phase 1, plus Phase 2's `bulk_jobs_all` and the Phase 3
+ * keys (requests*, plans*, users_sessions, users_login_history). The file keeps
+ * its Phase 1 name so existing imports stay valid. Keep this list in the same order and with the same
  * labels as the backend registry; the legacy keys stay in the permissions
  * checkbox tree (views/permissions/form/Fields.tsx).
  */
@@ -40,6 +42,19 @@ export const PHASE1_PERMISSIONS: Phase1Permission[] = [
     { key: 'clints_history', group: 'daily_operations', label_en: 'View case history', label_ar: 'عرض سجل العميل', admin_default: true },
     { key: 'case_corrections_request', group: 'intelligence_control', label_en: 'Request case corrections', label_ar: 'طلب تصحيح بيانات العميل', admin_default: true },
     { key: 'case_corrections_review', group: 'intelligence_control', label_en: 'Review case corrections', label_ar: 'مراجعة تصحيحات بيانات العميل', admin_default: true },
+    // Phase 2: reviewed bulk jobs (each kind reuses its legacy key; this one sees everyone's runs)
+    { key: 'bulk_jobs_all', group: 'intelligence_control', label_en: 'See all bulk job runs', label_ar: 'عرض جميع العمليات الجماعية', admin_default: true },
+    // Phase 3: internal requests
+    { key: 'requests', group: 'recovery_team', label_en: 'Internal requests', label_ar: 'الطلبات الداخلية', admin_default: true },
+    { key: 'requests_legal', group: 'recovery_team', label_en: 'Review legal requests', label_ar: 'مراجعة الطلبات القانونية', admin_default: true },
+    { key: 'requests_finance', group: 'recovery_team', label_en: 'Review finance requests', label_ar: 'مراجعة الطلبات المالية', admin_default: true },
+    { key: 'requests_operations', group: 'recovery_team', label_en: 'Review operations requests', label_ar: 'مراجعة طلبات العمليات', admin_default: true },
+    // Phase 3: repayment plans
+    { key: 'plans', group: 'recovery_team', label_en: 'Repayment plans', label_ar: 'خطط السداد', admin_default: true },
+    { key: 'plans_manage', group: 'recovery_team', label_en: 'Create and cancel repayment plans', label_ar: 'إنشاء وإلغاء خطط السداد', admin_default: true },
+    // Phase 3: sessions
+    { key: 'users_sessions', group: 'intelligence_control', label_en: 'Sign users out everywhere', label_ar: 'إنهاء جلسات المستخدمين', admin_default: true },
+    { key: 'users_login_history', group: 'intelligence_control', label_en: 'View login history', label_ar: 'عرض سجل الدخول', admin_default: true },
 ]
 
 export const PHASE1_PERMISSION_KEYS: ReadonlySet<string> = new Set(PHASE1_PERMISSIONS.map((p) => p.key))

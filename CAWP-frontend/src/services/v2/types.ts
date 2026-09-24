@@ -34,15 +34,22 @@ export type WorkCase = {
 export type AttentionReason =
     | 'late_follow_up'
     | 'missed_promise'
+    /* Phase 3: an active repayment plan with an overdue, not fully allocated installment */
+    | 'missed_installment'
     | 'pending_approval'
     | 'unassigned'
+    /* Phase 3: an open / in-review request in a department the caller reviews (reviewers only) */
+    | 'open_request'
     | 'unscheduled'
 
+/** In the API's priority order (services/worklist_attention.REASONS). */
 export const ATTENTION_REASONS: AttentionReason[] = [
     'late_follow_up',
     'missed_promise',
+    'missed_installment',
     'pending_approval',
     'unassigned',
+    'open_request',
     'unscheduled',
 ]
 
@@ -62,6 +69,16 @@ export type AttentionItem = {
         pending_approval?: { count: number; oldest_created_at: Iso; amount: Money }
         unassigned?: Record<string, never>
         unscheduled?: { last_comment_at: Iso | null }
+        /* Phase 3 */
+        missed_installment?: { plan_id: string; count: number; oldest_due_date: CivilDate; unpaid_amount: Money }
+        open_request?: {
+            count: number
+            open: number
+            in_review: number
+            departments: Array<'legal' | 'finance' | 'operations'>
+            oldest_created_at: Iso
+            request_ids: string[]
+        }
     }
     open_follow_up: { id: string; due_at: Iso; bucket: FollowUpBucket; revision: number } | null
 }

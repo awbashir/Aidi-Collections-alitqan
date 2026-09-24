@@ -4,6 +4,7 @@ import { TOKEN_TYPE, REQUEST_HEADER_AUTH_KEY } from "@/constants/api.constant";
 import { PERSIST_STORE_NAME } from "@/constants/app.constant";
 import deepParseJson from "@/utils/deepParseJson";
 import store, { signOutSuccess } from "../store";
+import { recordSignOutReason, signOutReasonFrom } from "@/utils/v2/sessionEnd";
 
 const unauthorizedCode = [401];
 
@@ -44,6 +45,12 @@ BaseService.interceptors.response.use(
     const { response } = error;
 
     if (response && unauthorizedCode.includes(response.status)) {
+      /* Phase 3: a revoked (ended by an administrator) or expired session is
+       * explained on the sign-in page. Only while signed in: a failed login
+       * also answers 401 and is not a session end. */
+      if (store.getState().auth.session.signedIn) {
+        recordSignOutReason(signOutReasonFrom(response.data));
+      }
       store.dispatch(signOutSuccess());
     }
 

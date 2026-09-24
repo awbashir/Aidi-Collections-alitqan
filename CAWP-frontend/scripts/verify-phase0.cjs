@@ -51,6 +51,14 @@ async function login(page, { permissions } = {}) {
       if (body?.user?.role) body.user.role.permission = permissions;
       await route.fulfill({ response: res, json: body });
     });
+    /* Phase 3: the app re-reads the permissions from GET /v2/me after sign-in (and on
+     * focus), so the fake role must be served there too or the real one replaces it. */
+    await page.route('**/v2/me', async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      if (body?.data) body.data.permissions = permissions;
+      await route.fulfill({ response: res, json: body });
+    });
   }
   await page.goto(FE + '/sign-in', { waitUntil: 'networkidle' });
   await page.fill('input[name="username"]', USER);
@@ -109,7 +117,7 @@ const groupLabels = (page, scope = '.side-nav') =>
     const ar = await groupLabels(page);
     check('sidebar AR: three groups in order', JSON.stringify(ar) === JSON.stringify(['العمليات اليومية', 'التحصيل والفريق', 'الذكاء والتحكم']), JSON.stringify(ar));
     const arItems = await page.$$eval('.side-nav .menu-nav-group', (gs) => gs.map((g) => [...g.querySelectorAll('.menu-item, .menu-collapse-item')].filter((el) => !el.parentElement.closest('.menu-collapse > ul, .menu-collapse > div:not(.menu-collapse-item)')).length));
-    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([6, 9, 9]), JSON.stringify(arItems)); // Phase 1 added attention + follow-ups, promises + approvals, corrections; Phase 2 added Bulk jobs (/jobs)
+    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([6, 12, 9]), JSON.stringify(arItems)); // Phase 1 added attention + follow-ups, promises + approvals, corrections; Phase 2 added Bulk jobs (/jobs); Phase 3 added plans, team, requests
     const dir = await page.evaluate(() => document.documentElement.dir);
     check('document is RTL in Arabic', dir === 'rtl', dir);
 

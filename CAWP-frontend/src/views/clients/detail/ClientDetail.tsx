@@ -86,6 +86,11 @@ const CaseCorrectionsPanel = lazy(
 const RequestCorrectionDialog = lazy(
   () => import("@/views/phase1/history/RequestCorrectionDialog"),
 );
+/* Phase 3 panels (v2 API). Each checks its own permission as well. */
+const CasePlanPanel = lazy(() => import("@/views/phase3/plans/CasePlanPanel"));
+const CaseRequestsPanel = lazy(
+  () => import("@/views/phase3/requests/CaseRequestsPanel"),
+);
 
 const { TabNav, TabList } = Tabs;
 
@@ -96,6 +101,13 @@ const Settings = () => {
   const { permissions } = useAppSelector((state) => state.auth.user);
   /* Phase 1 reads its keys through a typed view of the same map. */
   const p1perm = (permissions ?? {}) as Record<string, boolean>;
+  const canSeePlans = !!(p1perm.plans || p1perm.plans_manage);
+  const canSeeRequests = !!(
+    p1perm.requests ||
+    p1perm.requests_legal ||
+    p1perm.requests_finance ||
+    p1perm.requests_operations
+  );
 
   const settingsMenu: Record<
     string,
@@ -130,6 +142,14 @@ const Settings = () => {
     }),
     ...((p1perm.case_corrections_request || p1perm.case_corrections_review) && {
       corrections: { label: t("p1.case.tabCorrections"), path: "corrections" },
+    }),
+    /* Phase 3 tabs: the repayment plan (plans | plans_manage) and internal
+     * requests (requests | requests_<department>). */
+    ...(canSeePlans && {
+      plan: { label: t("p3.case.tabPlan"), path: "plan" },
+    }),
+    ...(canSeeRequests && {
+      requests: { label: t("p3.case.tabRequests"), path: "requests" },
     }),
   };
   const [currentTab, setCurrentTab] = useState("details");
@@ -368,6 +388,20 @@ const Settings = () => {
               )}
             {currentTab === "corrections" && caseInfo && canSeeCorrections && (
               <CaseCorrectionsPanel
+                key={caseInfo.id}
+                caseData={caseInfo}
+                onChanged={onPhase1Changed}
+              />
+            )}
+            {currentTab === "plan" && caseInfo && canSeePlans && (
+              <CasePlanPanel
+                key={caseInfo.id}
+                caseData={caseInfo}
+                onChanged={onPhase1Changed}
+              />
+            )}
+            {currentTab === "requests" && caseInfo && canSeeRequests && (
+              <CaseRequestsPanel
                 key={caseInfo.id}
                 caseData={caseInfo}
                 onChanged={onPhase1Changed}

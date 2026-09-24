@@ -181,8 +181,9 @@ class User(db.Model):
     SECRET_COLUMNS = frozenset({"password"})
 
     def as_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns
-                if c.name not in self.SECRET_COLUMNS}
+        from core.user_privacy import redact   # protected employee fields (Phase 3)
+        return redact({c.name: getattr(self, c.name) for c in self.__table__.columns
+                       if c.name not in self.SECRET_COLUMNS})
     
     
     

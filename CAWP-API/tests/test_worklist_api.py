@@ -482,8 +482,8 @@ def _att(wl_client, h, **params):
 def test_attention_reasons_counts_and_order(wl_client, headers, team, queue):
     by_id = {v: k for k, v in queue.items()}
     data = _att(wl_client, headers(W.super), contract_id=team["contract"])
-    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 3,
-                              "unassigned": 1, "unscheduled": 3}
+    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "missed_installment": 0, "pending_approval": 3,
+                              "unassigned": 1, "open_request": 0, "unscheduled": 3}
     assert data["total"] == 8                     # 6 in tier 1 + 2 unscheduled-only
     got = [(by_id[i["case"]["id"]], i["reasons"]) for i in data["items"]]
     assert got == [
@@ -542,8 +542,8 @@ def test_attention_paging_crosses_tiers(wl_client, headers, team, queue):
 def test_attention_scope(wl_client, headers, team, queue, pgw):
     flt = {"contract_id": team["contract"]}
     c1 = _att(wl_client, headers(team["c1"]), **flt)
-    assert c1["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 3,
-                            "unassigned": 0, "unscheduled": 3}              # a collector never sees unassigned
+    assert c1["counts"] == {"late_follow_up": 2, "missed_promise": 2, "missed_installment": 0, "pending_approval": 3,
+                            "unassigned": 0, "open_request": 0, "unscheduled": 3}              # a collector never sees unassigned
     assert c1["total"] == 7
     c2 = _att(wl_client, headers(team["c2"]), **flt)
     assert c2["total"] == 0 and set(c2["counts"].values()) == {0}
@@ -566,8 +566,8 @@ def test_attention_reason_transitions(wl_client, headers, team, queue, pgw):
     run(pgw, 'UPDATE "Payments" SET approval_status = true WHERE clint_id = %s', queue["pending"])
     run(pgw, "UPDATE clints SET user_id = %s WHERE id = %s", team["c1"], queue["unassigned"])
     data = _att(wl_client, headers(W.super), **flt)
-    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "pending_approval": 2,
-                              "unassigned": 0, "unscheduled": 3}       # pending, unsched_never, unassigned
+    assert data["counts"] == {"late_follow_up": 2, "missed_promise": 2, "missed_installment": 0, "pending_approval": 2,
+                              "unassigned": 0, "open_request": 0, "unscheduled": 3}       # pending, unsched_never, unassigned
     assert data["total"] == 4 + 3                 # multi, late, promise, archived + 3 unscheduled
 
 

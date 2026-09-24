@@ -103,7 +103,10 @@ def reschedule_follow_up(follow_up_id):
 def attention():
     page, size = wc.paging(request.args)
     flt = wc.CaseFilter.from_args(_scope(), request.args)
+    from core.auth import has_permission
+    from services import requests_attention
     data = worklist_attention.attention(db.session, flt, reason=request.args.get("reason") or None,
-                                        page=page, page_size=size)
+                                        page=page, page_size=size,
+                                        departments=requests_attention.reviewer_departments(has_permission))
     db.session.rollback()
     return ok(data)

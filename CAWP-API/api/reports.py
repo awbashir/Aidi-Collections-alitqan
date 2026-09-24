@@ -41,6 +41,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy import func, select, true
 from sqlalchemy.orm import aliased
 
+from core.auth import required_roles
 from core.http import error_response
 from extensions import db
 from models import (Branch, Clints, CollectionMethods, CollectionTypes, CommentReachability,
@@ -958,6 +959,7 @@ def get_contracts():
 
 @bp.route("/supervisors", methods=["GET"])
 @jwt_required()
+@required_roles('supervisors')  # only the /supervisor list reads it (Phase 3 gate)
 def get_supervisors():
     """P8: was `1 + S x (1 user + 1 contracts q + C gets + 1 users q + U gets)`.
     Now 5 queries total, regardless of how many supervisors exist."""
@@ -1030,6 +1032,7 @@ def get_comment_status():
 
 @bp.route("/uesrs/export", methods=["GET"])
 @jwt_required()
+@required_roles('users')  # export button on /users (Phase 3 gate)
 def export_users():
     """P7: `get_supervisor()` (1 + 2N queries) plus `get_countClints*`/`get_totalAmount*`
     per user. Replaced by the batched maps `/uesrs` (app.py:992) already uses."""

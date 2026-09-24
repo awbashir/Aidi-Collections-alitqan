@@ -56,6 +56,12 @@ export class V2Error extends Error {
                 'correction_not_pending',
                 // Phase 2: the bulk job moved on (confirmed/cancelled elsewhere) since it was loaded
                 'job_not_ready',
+                // Phase 3: the request / plan moved on since it was loaded
+                'invalid_transition',
+                'request_cancelled',
+                'plan_not_cancellable',
+                'plan_not_allocatable',
+                'plan_already_active',
             ].includes(this.code)
         )
     }

@@ -11,6 +11,8 @@ import reducer, { getCustomer, useAppDispatch, useAppSelector } from "./store";
 import { injectReducer } from "@/store";
 import isEmpty from "lodash/isEmpty";
 import useQuery from "@/utils/hooks/useQuery";
+// Phase 3: sign out everywhere + v2 activate/deactivate with a reason
+import UserSessionsCard from "@/views/phase3/sessions/UserSessionsCard";
 
 injectReducer("crmCustomerDetails", reducer);
 
@@ -43,8 +45,10 @@ const CustomerDetail = () => {
       <Loading loading={loading}>
         {!isEmpty(data) && (
           <div className="flex flex-col xl:flex-row gap-4">
-            <div>
+            <div className="flex flex-col gap-4">
               <CustomerProfile data={data} />
+              {/* Phase 3: replaces the legacy activate/deactivate button of the profile card */}
+              <UserSessionsCard user={{ ...data, id: String(data.id) }} onChanged={fetchData} />
             </div>
             <div className="w-full">
               <AdaptableCard>

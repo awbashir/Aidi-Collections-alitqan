@@ -12,6 +12,7 @@ import {
 import useAuth from '@/utils/hooks/useAuth'
 import useDirection from '@/utils/hooks/useDirection'
 import useLocale from '@/utils/hooks/useLocale'
+import { useSessionRefresh } from '@/utils/v2/useSessionRefresh'
 
 const layouts = {
     [LAYOUT_TYPE_CLASSIC]: lazy(() => import('./ClassicLayout')),
@@ -30,6 +31,9 @@ const Layout = () => {
     useDirection()
 
     useLocale()
+
+    /* Phase 3: re-read the permissions from GET /v2/me on focus and every 5 min. */
+    useSessionRefresh(!!authenticated)
 
     const AppLayout = useMemo(() => {
         if (authenticated) {

@@ -107,6 +107,19 @@ const navigationConfig: NavigationTree[] = [
   },
 
   /* ── Recovery & team: money in, and the reports on it. ── */
+  /* Phase 3: repayment plans lead the group (§1: plans, promises, reports,
+   * team, requests). `plans_any` = plans | plans_manage (derived). */
+  {
+    key: "plans_any",
+    group: NAV_GROUP_RECOVERY_TEAM,
+    path: "/plans",
+    title: "Repayment plans",
+    translateKey: "nav.p3.plans",
+    icon: "plans",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* Phase 1: promise lifecycle and the v2 approval desk. The legacy
    * Accounting and Collections screens stay as they are. */
   {
@@ -328,6 +341,31 @@ const navigationConfig: NavigationTree[] = [
         subMenu: [],
       },
     ],
+  },
+
+  /* Phase 3: target vs actual (`team_any` = dashbord_admin | dashbord_user) and
+   * internal requests (`requests_any` = requests | requests_<dept>), both derived. */
+  {
+    key: "team_any",
+    group: NAV_GROUP_RECOVERY_TEAM,
+    path: "/team",
+    title: "Team",
+    translateKey: "nav.p3.team",
+    icon: "team",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  {
+    key: "requests_any",
+    group: NAV_GROUP_RECOVERY_TEAM,
+    path: "/requests",
+    title: "Requests",
+    translateKey: "nav.p3.requests",
+    icon: "requests",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
   },
 
   /* ── Intelligence & control: settings and administration. ── */

@@ -218,7 +218,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 | 0 | Foundation: SQL migration runner (`CAWP-API/manage_db.py`, `db/migrations/`), `audit_events`, `idempotency_keys`, `revision` columns + triggers, `core/{audit,idempotency,revisions,riyadh,permissions,api_response}.py`, pytest on a small test DB, root CI, secret defaults removed, sidebar groups, URL-hash list state (clients list) | **Done 2026-09-23**: `review/phase0-backend.md`, `review/phase0-frontend.md` |
 | 1 | Core workflow: attention queue, first-class follow-ups, promise lifecycle + evidence ledger, payment reversal + exact-balance approval, reviewed corrections, contact/note history | **Done 2026-09-23**: `docs/phase1-spec.md`, `review/phase1-{money,worklist,history,frontend}.md`; migrations 0007–0015 |
 | 2 | Reviewed bulk jobs: durable jobs + worker, uploads/mapping/preview/confirm/rechecks, lock/unlock, assign + round-robin, archive/restore, notes, follow-up close-out, spreadsheet inquiry, attribute corrections (via review), jobs screen + wizard, retention | **Done 2026-09-24** (close-out ready, not executed): `docs/phase2-spec.md`, `review/phase2-{framework,assign,archive,notes,inquiry,frontend}.md`; migrations 0016–0019, 0024, 0026–0027 |
-| 3 | Internal requests, targets, repayment plans, session revocation on grant change | |
+| 3 | Internal requests, targets with history, repayment plans, session revocation, admin gates, protected employee fields | **Done 2026-09-24**: `docs/phase3-spec.md`, `review/phase3-{requests,plans,admin,frontend}.md`; migrations 0028–0038 |
 | 4 | Reports RPT-01…25, formula-safe exports, Arabic XLSX | |
 | 5 | Calling (track B): 5a Issabel commissioning (start now), 5b calling backend, 5c in-app softphone, 5d campaigns, 5e CDR attribution | 5a waiting on PBX access |
 | 6 | AI and quality review | Needs OpenAI key + retention policy |
@@ -289,3 +289,17 @@ Phase 2 open items:
 - **Collector eligibility for assignment:** `collections_currentUser`, which gives 139 in `aidi.dev`'s scope.
 - **Data:** placeholder mobiles (`0500000000`, 943 cases) and identity numbers with surrounding spaces (265).
 - **Later:** a reviewed portfolio import (new cases). The legacy `addClintsByExcel` stays as it is.
+
+Phase 3 decisions (2026-09-24):
+- **Protected employee fields:** `identityNumber`, `mobile`, `email` and the target fields are `null` on user records unless the viewer holds `users_details` or `users_edit` (targets also `users_edit_target`) or it is the viewer's own record (`core/user_privacy.py`). No current role loses anything visible.
+- **Request reviewers who are supervisors** are limited to their own department(s), plus the requests they raised. Supervisors without a department key keep team visibility. Collectors see only the requests they raised.
+- **Fully paid repayment plans close automatically** (0038). A reversal reopens the plan, or flags it when a newer plan is active.
+- **The screen-key rule** also applies to: the admin routes, case documents (`clints_documents` plus case scope), `/dashbord/Allcollector/v2` (`dashbord_admin`), and login history (`users_login_history` or `users_details`).
+- **Sessions:** disabling a user, a role change, a password change, or "sign out everywhere" ends the user's sessions server-side. The UI refreshes permissions from `/v2/me`.
+- **Collectors see `/team`** with their own figures only (their `dashbord_user` card).
+- **Settings, roles and branches delete buttons are hidden:** there is no DELETE route in the API, and the buttons called the portfolios route.
+
+Phase 3 open items:
+- **Flagged plans:** a completed plan flagged because its evidence was voided after a newer plan started. It doesn't appear in the attention queue.
+- **Data leak:** `GET /uesrs` still embeds each role's full permission JSON.
+- **Approvals during completion:** an approval that arrives while a plan is completed isn't allocated to it if the plan reopens later. Manual allocation covers this.

@@ -60,12 +60,27 @@ def model_cols(entity, prefix):
             for key, name in col_pairs(entity)]
 
 
+_IS_USER = {}
+
+
+def _is_user(entity):
+    hit = _IS_USER.get(entity)
+    if hit is None:
+        hit = _IS_USER[entity] = getattr(sa_inspect(entity).mapper.class_, "__tablename__", None) == "users"
+    return hit
+
+
 def take(row, entity, prefix):
-    """Rebuild `entity.as_dict()` for `row`; None when the outer join found nothing."""
+    """Rebuild `entity.as_dict()` for `row`; None when the outer join found nothing.
+    User rows (or aliases) get the same protected-field redaction as `User.as_dict()`."""
     if getattr(row, "%s__id" % prefix, None) is None:
         return None
-    return {name: getattr(row, "%s__%s" % (prefix, name))
-            for _, name in col_pairs(entity)}
+    d = {name: getattr(row, "%s__%s" % (prefix, name))
+         for _, name in col_pairs(entity)}
+    if _is_user(entity):
+        from core.user_privacy import redact
+        redact(d)
+    return d
 
 
 def with_name(d, strip=False):

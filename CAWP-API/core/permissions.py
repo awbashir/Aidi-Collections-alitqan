@@ -60,6 +60,17 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     PermissionKey("case_corrections_review", _CONTROL, "Review case corrections", "مراجعة تصحيحات بيانات العميل"),
     # Phase 2: reviewed bulk jobs (each kind reuses its legacy key; this one sees everyone's runs)
     PermissionKey("bulk_jobs_all", _CONTROL, "See all bulk job runs", "عرض جميع العمليات الجماعية"),
+    # Phase 3: internal requests
+    PermissionKey("requests", _RECOVERY, "Internal requests", "الطلبات الداخلية"),
+    PermissionKey("requests_legal", _RECOVERY, "Review legal requests", "مراجعة الطلبات القانونية"),
+    PermissionKey("requests_finance", _RECOVERY, "Review finance requests", "مراجعة الطلبات المالية"),
+    PermissionKey("requests_operations", _RECOVERY, "Review operations requests", "مراجعة طلبات العمليات"),
+    # Phase 3: repayment plans
+    PermissionKey("plans", _RECOVERY, "Repayment plans", "خطط السداد"),
+    PermissionKey("plans_manage", _RECOVERY, "Create and cancel repayment plans", "إنشاء وإلغاء خطط السداد"),
+    # Phase 3: sessions
+    PermissionKey("users_sessions", _CONTROL, "Sign users out everywhere", "إنهاء جلسات المستخدمين"),
+    PermissionKey("users_login_history", _CONTROL, "View login history", "عرض سجل الدخول"),
 )
 
 
