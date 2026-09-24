@@ -219,7 +219,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 | 1 | Core workflow: attention queue, first-class follow-ups, promise lifecycle + evidence ledger, payment reversal + exact-balance approval, reviewed corrections, contact/note history | **Done 2026-09-23**: `docs/phase1-spec.md`, `review/phase1-{money,worklist,history,frontend}.md`; migrations 0007–0015 |
 | 2 | Reviewed bulk jobs: durable jobs + worker, uploads/mapping/preview/confirm/rechecks, lock/unlock, assign + round-robin, archive/restore, notes, follow-up close-out, spreadsheet inquiry, attribute corrections (via review), jobs screen + wizard, retention | **Done 2026-09-24** (close-out ready, not executed): `docs/phase2-spec.md`, `review/phase2-{framework,assign,archive,notes,inquiry,frontend}.md`; migrations 0016–0019, 0024, 0026–0027 |
 | 3 | Internal requests, targets with history, repayment plans, session revocation, admin gates, protected employee fields | **Done 2026-09-24**: `docs/phase3-spec.md`, `review/phase3-{requests,plans,admin,frontend}.md`; migrations 0028–0038 |
-| 4 | Reports RPT-01…25, formula-safe exports, Arabic XLSX | |
+| 4 | Reports RPT-01…25, private exports (CSV, XLSX, Arabic RTL XLSX), reports hub and generic viewer | **Done 2026-09-24**: `docs/phase4-spec.md`, `review/phase4-{framework,reports-a,reports-b,reports-c,frontend}.md`; migrations 0039–0040, 0046 |
 | 5 | Calling (track B): 5a Issabel commissioning (start now), 5b calling backend, 5c in-app softphone, 5d campaigns, 5e CDR attribution | 5a waiting on PBX access |
 | 6 | AI and quality review | Needs OpenAI key + retention policy |
 | 7 | Load/security tests, UAT, deployment, cutover | |
@@ -303,3 +303,17 @@ Phase 3 open items:
 - **Flagged plans:** a completed plan flagged because its evidence was voided after a newer plan started. It doesn't appear in the attention queue.
 - **Data leak:** `GET /uesrs` still embeds each role's full permission JSON.
 - **Approvals during completion:** an approval that arrives while a plan is completed isn't allocated to it if the plan reopens later. Manual allocation covers this.
+
+Phase 4 decisions (2026-09-24):
+- **Recorder rule:** "my …" reports (RPT-05, RPT-07, RPT-10, RPT-17) include the caller's own recorded rows whatever the case's current owner or scope. Team and global reports use the current case scope. Supervisors therefore see less in RPT-03/RPT-04 than on the legacy screens, which stay available as "classic".
+- **Report keys:** each report uses its legacy screen key. The exceptions are `reports_performance` (RPT-24, and RPT-11 alongside the collectors' `report_collectors_currentUser_paymentDates`) and `reports_calls` (RPT-23 calls mode, RPT-25).
+- **Recordings:** access keeps the separate keys; `/cdr` and `/cdr_by_date` now need `clients_callsRecords`, and `/cdr/recording` needs the recording keys.
+- **Targets on performance reports:** the effective target and achievement stay visible, as on the legacy KPI card. The personal target settings stay protected.
+- **Unknown totals:** a nullable total stays unknown and is never written as 0.
+- **Local development never contacts the real PBX.** `.env.docker` points CDR at `cawp-cdr-test-db` (profile `cdr-test`), and recordings SSH points away from 10.10.0.220.
+
+Phase 4 open items:
+- A published export file is not re-filtered by scope at download time. The download does recheck the permission and the creator.
+- `/cdr*` are gated by key but not by case scope. Phase 5 P4 adds scoped recordings and CDR.
+- The CSV exports have no legacy-style "Total" footer row (the totals are in the XLSX summary sheet).
+- Wide case-list sorts spill to disk. A deferred-join optimization is available if needed.

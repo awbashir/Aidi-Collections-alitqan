@@ -195,6 +195,19 @@ const navigationConfig: NavigationTree[] = [
       },
     ],
   },
+  /* Phase 4: the reports hub (`reports_any` = any report key, derived). It
+   * leads the reports; the legacy report screens below stay as "classic". */
+  {
+    key: "reports_any",
+    group: NAV_GROUP_RECOVERY_TEAM,
+    path: "/reports",
+    title: "Reports hub",
+    translateKey: "nav.p4.reports",
+    icon: "reports_hub",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   {
     key: "reports",
     group: NAV_GROUP_RECOVERY_TEAM,

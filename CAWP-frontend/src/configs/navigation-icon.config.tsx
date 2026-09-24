@@ -29,6 +29,7 @@ import {
   CalendarRange,
   Target,
   Inbox,
+  FileChartColumn,
 } from "lucide-react";
 
 
@@ -65,6 +66,8 @@ const navigationIcon: NavigationIcons = {
   plans: <CalendarRange strokeWidth={2} size={18} />,
   team: <Target strokeWidth={2} size={18} />,
   requests: <Inbox strokeWidth={2} size={18} />,
+  /* Phase 4 */
+  reports_hub: <FileChartColumn strokeWidth={2} size={18} />,
 };
 
 export default navigationIcon;

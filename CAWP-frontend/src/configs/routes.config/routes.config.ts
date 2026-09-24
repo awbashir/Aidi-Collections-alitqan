@@ -655,6 +655,22 @@ export const protectedRoutes = [
     authority: [],
   },
 
+  /* ── Phase 4: the reports hub and the generic report viewer. `reports_any`
+   *    is derived (any report's key, mirroring GET /v2/reports); every report
+   *    call re-checks that report's own key. The legacy report screens stay. ── */
+  {
+    key: "reports_any",
+    path: "/reports",
+    component: lazy(() => import("@/views/phase4/hub")),
+    authority: [],
+  },
+  {
+    key: "reports_any",
+    path: "/reports/:id",
+    component: lazy(() => import("@/views/phase4/viewer")),
+    authority: [],
+  },
+
   {
     key: "accessDenied",
     path: "/access-denied",
