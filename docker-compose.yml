@@ -75,7 +75,7 @@ services:
 
   # Reviewed bulk jobs (Phase 2): validation, execution and retention run here, not in the API.
   # Same image, env and upload volume as `api` (uploads and CSV artifacts live under
-  # UPLOAD_DIR/private/bulk). Needs migrations 0016+ (`python manage_db.py up`).
+  # UPLOAD_DIR/private/bulk) and report exports (Phase 4). Needs `python manage_db.py up`.
   # Scale out with `--scale worker=2` (claims use FOR UPDATE SKIP LOCKED; drop container_name first).
   worker:
     build: ./CAWP-API
@@ -160,6 +160,40 @@ services:
     depends_on:
       test-db:
         condition: service_healthy
+
+  # --- CDR test fixture (profile "cdr-test"): a local MySQL 8 standing in for the Issabel CDR
+  # database. The real PBX (10.10.0.220) is never contacted from tests or local development.
+  # Schemas asteriskcdrdb.cdr + call_center.{calls,call_recording,agent} and synthetic rows
+  # linked to the ZZ-TEST cases and to the pytest fixture: db/cdr-test/init/*.sql (loaded on
+  # every start: the data directory is a tmpfs). Read-only user crm / cdr-test-only.
+  #   docker compose --profile cdr-test up -d cdr-test-db
+  # Tests (the stream R-C call reports reach it through the CDR_TEST_* variables):
+  #   docker compose --profile test run --rm -e TEST_DB_PREFIX=cawp_test_repc \
+  #       -e CDR_TEST_HOST=cdr-test-db api-test tests/test_reports_v2_c.py tests/test_reports_v2_c_cdr.py
+  # Local dev: point cawp-api at it with CDR_HOST=cdr-test-db CDR_USER=crm
+  #   CDR_PASSWORD=cdr-test-only CDR_DB=asteriskcdrdb CDR_ENABLED=1 in CAWP-API/.env.docker
+  #   (then `docker compose up -d api worker`); from the host it listens on 127.0.0.1:3317.
+  cdr-test-db:
+    profiles: ["cdr-test"]
+    image: mysql:8.0
+    container_name: cawp-cdr-test-db
+    environment:
+      MYSQL_ROOT_PASSWORD: cdr-test-root   # throwaway local fixture only
+      TZ: Asia/Riyadh                      # the PBX writes calldate in its local wall clock
+    command: ["--skip-name-resolve", "--character-set-server=utf8mb4"]
+    ports:
+      - "127.0.0.1:3317:3306"
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ./db/cdr-test/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # TCP ping: the entrypoint's init server runs with --skip-networking, so this only
+      # succeeds once the init SQL has been loaded and the real server listens
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pcdr-test-root", "--silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
 
 volumes:
   cawp_pgdata:

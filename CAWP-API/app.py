@@ -1315,6 +1315,7 @@ from issable.db_connection import Issable_db
 
 @app.route('/cdr', methods=['GET']) 
 @jwt_required()
+@required_roles('clints_callsRecords')  # case page calls tab (CallsRecordClientTable)
 def getcdr():
     try:
       db_1 = Issable_db()
@@ -1327,6 +1328,7 @@ def getcdr():
 
 @app.route('/cdr_by_date', methods=['GET'])
 @jwt_required()
+@required_roles('clints_callsRecords')
 def getcdr_by_date():
     try:
         db_1 = Issable_db()
@@ -1357,6 +1359,7 @@ def getcdr_by_date():
 
 @app.route('/cdr/recording', methods=['GET'])
 @jwt_required()
+@required_any('clints_callsRecords_download', 'clints_callsRecords_play')  # separate recording keys
 def download_recording():
     # Get the recording path from query parameters
     recording_path = request.args.get('recordingPath')

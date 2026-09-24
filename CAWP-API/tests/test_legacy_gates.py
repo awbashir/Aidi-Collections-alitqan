@@ -162,3 +162,17 @@ def test_all_collectors_dashboard_needs_the_admin_dashboard_key(db):
     admin = make_user(db, {"dashbord_admin": True})
     assert call("GET", "/dashbord/Allcollector/v2", user)["status"] == 403
     assert call("GET", "/dashbord/Allcollector/v2", admin)["status"] == 200
+
+
+def test_call_records_and_recordings_need_their_keys(db):
+    """/cdr and /cdr_by_date back the case page's calls tab (clints_callsRecords); the
+    recording download/play buttons have their own keys. All three only needed a login."""
+    nobody = make_user(db, {"clints": True})
+    calls = make_user(db, {"clints_callsRecords": True})
+    player = make_user(db, {"clints_callsRecords_play": True})
+    assert call("GET", "/cdr?mobile_numbers=0500000000", nobody)["status"] == 403
+    assert call("GET", "/cdr_by_date?start_date=2026-01-01&end_date=2026-01-02", nobody)["status"] == 403
+    assert call("GET", "/cdr/recording?recordingPath=x.wav", nobody)["status"] == 403
+    assert call("GET", "/cdr/recording?recordingPath=x.wav", calls)["status"] == 403      # metadata key only
+    assert call("GET", "/cdr?mobile_numbers=0500000000", calls)["status"] != 403
+    assert call("GET", "/cdr/recording?recordingPath=x.wav", player)["status"] != 403

@@ -5,11 +5,13 @@
    needs the file (queued / validating / ready / confirmed / running / retrying) uses it. The
    `bulk_uploads` row stays; the sample rows kept for the mapping screen are removed with the file.
 3. Artifact files past `expires_at` are deleted and `purged_at` is set; the row stays.
-4. Expired `idempotency_keys` are purged (`core.idempotency.purge_expired`).
-5. Stray temp files of interrupted uploads (older than a day) are removed.
+4. Report export files (Phase 4, `report_exports`) past `expires_at` are deleted; the row
+   stays with `purged_at` set and status `expired`. Skipped while migration 0039 is not applied.
+5. Expired `idempotency_keys` are purged (`core.idempotency.purge_expired`).
+6. Stray temp files of interrupted uploads and exports (older than a day) are removed.
 
-Rows of `bulk_jobs` / `bulk_job_rows` / `bulk_job_attempts` and `audit_events` are never deleted.
-Every purge writes an `audit_events` row (source `bulk_retention`).
+Rows of `bulk_jobs` / `bulk_job_rows` / `bulk_job_attempts` / `report_exports` and
+`audit_events` are never deleted. Every purge writes an `audit_events` row (source `bulk_retention`).
 """
 from __future__ import annotations
 
@@ -38,7 +40,7 @@ _AUDIT = text("""
 def run(session=None) -> dict:
     from extensions import db
     session = session or db.session
-    report = {"expired_previews": 0, "purged_uploads": 0, "purged_artifacts": 0,
+    report = {"expired_previews": 0, "purged_uploads": 0, "purged_artifacts": 0, "purged_report_exports": 0,
               "purged_idempotency_keys": 0, "removed_tmp_files": 0, "skipped": False}
     got = session.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": ADVISORY_KEY}).scalar()
     if not got:
@@ -86,9 +88,27 @@ def run(session=None) -> dict:
     if arts:
         session.execute(text("UPDATE bulk_job_artifacts SET purged_at = now() WHERE id = ANY(CAST(:ids AS uuid[]))"),
                         {"ids": [a[0] for a in arts]})
+    exports = []
+    if session.execute(text("SELECT to_regclass('public.report_exports') IS NOT NULL")).scalar():
+        exports = session.execute(text("""
+            SELECT e.id::text, e.stored_path, e.report_id FROM report_exports e
+             WHERE e.status = 'succeeded' AND e.purged_at IS NULL AND e.expires_at <= now()
+             ORDER BY e.expires_at LIMIT :lim
+             FOR UPDATE SKIP LOCKED
+        """), {"lim": LIMIT}).all()
+    for eid, path, report_id in exports:
+        storage.delete(path)
+        events.append({"action": "report_export.purge", "entity_type": "report_export", "entity_id": eid,
+                       "after": {"report": report_id, "purged": True}, "reason": "retention: report export expired"})
+    if exports:
+        session.execute(text("""
+            UPDATE report_exports SET status = 'expired', purged_at = now(), updated_at = now()
+             WHERE id = ANY(CAST(:ids AS uuid[]))
+        """), {"ids": [e[0] for e in exports]})
     if events:
         session.execute(_AUDIT, {"events": dumps(events)})
     report["purged_uploads"], report["purged_artifacts"] = len(uploads), len(arts)
+    report["purged_report_exports"] = len(exports)
     session.commit()
 
     try:
