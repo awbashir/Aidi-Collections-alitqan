@@ -14,6 +14,7 @@
  * `campaigns_any` (the campaigns screen: campaigns | campaigns_manage), mirroring the
  * keys their endpoints accept (`GET /v2/me/calling`, `GET /v2/campaigns`), plus
  * `call_review` and `calling_admin` (both = calls_manage).
+ * Phase 6 adds `quality_any` (the quality workspace: quality_review | quality_approve).
  */
 
 /** Any one of these opens the jobs screen (`bulk_jobs`). */
@@ -87,6 +88,13 @@ export const CALLING_KEYS = ['calls_make', 'campaigns'] as const
 /** Phase 5: the campaigns screen (`/campaigns`), mirroring GET /v2/campaigns. */
 export const CAMPAIGN_KEYS = ['campaigns', 'campaigns_manage'] as const
 
+/**
+ * Phase 6: the quality workspace (`/quality`) opens for `quality_review` (library, reviews,
+ * reports) and for `quality_approve` (an approver must see what they approve), mirroring the
+ * read gate of GET /v2/quality/*; mutations and approval re-check their own key in the API.
+ */
+export const QUALITY_KEYS = ['quality_review', 'quality_approve'] as const
+
 export const DERIVED_KEYS = {
     bulk_jobs: (p: Record<string, unknown>) => BULK_JOB_KEYS.some((k) => p[k] === true),
     requests_any: (p: Record<string, unknown>) => REQUEST_KEYS.some((k) => p[k] === true),
@@ -98,6 +106,8 @@ export const DERIVED_KEYS = {
     /* Phase 5: two screens of `calls_manage` (a nav item needs a key of its own). */
     call_review: (p: Record<string, unknown>) => p.calls_manage === true,
     calling_admin: (p: Record<string, unknown>) => p.calls_manage === true,
+    /* Phase 6: the quality workspace (quality_review | quality_approve). */
+    quality_any: (p: Record<string, unknown>) => QUALITY_KEYS.some((k) => p[k] === true),
 }
 
 /** The permission map plus the derived keys. Never removes or changes a real key. */

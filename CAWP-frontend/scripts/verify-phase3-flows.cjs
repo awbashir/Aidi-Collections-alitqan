@@ -65,8 +65,8 @@ async function screens({ newPage }) {
     check(`screens ${lang}: nav has /plans, /team and /requests`, ['/plans', '/team', '/requests'].every((h) => hrefs.includes(h)), hrefs.filter((h) => /plans|team|requests/.test(h)).join(','));
     const counts = await groupItemCounts(page);
     /* Phase 4 added the Reports hub to Recovery & team: [6,12,9] -> [6,13,9].
-     * Phase 5 added calls, calling workspace, campaigns and call review, calling admin: -> [9,13,11]. */
-    check(`screens ${lang}: sidebar item count per group [9,13,11]`, JSON.stringify(counts) === JSON.stringify([9, 13, 11]), JSON.stringify(counts));
+     * Phase 5 added calls, calling workspace, campaigns and call review, calling admin: -> [9,13,11]. Phase 6 added voice lab, AI administration, Quality review: -> [9,13,14]. */
+    check(`screens ${lang}: sidebar item count per group [9,13,14]`, JSON.stringify(counts) === JSON.stringify([9, 13, 14]), JSON.stringify(counts));
     const order = await page.$$eval('.side-nav .menu-nav-group', (gs) => [...gs[1].querySelectorAll('a[href]')].map((a) => a.getAttribute('href')));
     check(`screens ${lang}: plans leads Recovery & team; team and requests close it`, order[0] === '/plans' && order.indexOf('/team') > 0 && order.indexOf('/requests') > order.indexOf('/team'), order.join(','));
     for (const [name, url, root] of [

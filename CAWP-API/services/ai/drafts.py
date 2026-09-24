@@ -403,8 +403,10 @@ def _note_fields(body: dict, contract_id) -> dict:
     st = _s().execute(text("""
         SELECT s.id, s.contract_id::text AS contract_id, s."CommentReachability_id"::text AS reach, s.is_active
           FROM "CommentStatuses" s WHERE s.id = CAST(:id AS uuid)"""), {"id": status_id}).mappings().first()
-    if st is None or st["is_active"] is False:
-        raise ApiError(422, VALIDATION_FAILED, "unknown or inactive comment status", {"comment_status_id": "unknown"})
+    # `is_active` is ignored, as in the legacy note form, the Phase 5 wrap-up and Phase 2 bulk
+    # notes (most statuses in daily use are flagged inactive; decision 2026-09-24)
+    if st is None:
+        raise ApiError(422, VALIDATION_FAILED, "unknown comment status", {"comment_status_id": "unknown"})
     if st["contract_id"] is not None and st["contract_id"] != contract_id:
         raise ApiError(422, VALIDATION_FAILED, "the note status belongs to another contract",
                        {"comment_status_id": "status_not_for_contract"})

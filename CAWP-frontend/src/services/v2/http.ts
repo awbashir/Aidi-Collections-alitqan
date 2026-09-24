@@ -70,6 +70,11 @@ export class V2Error extends Error {
                 'flag_already_resolved',
                 'block_already_released',
                 'legacy_extension_changed',
+                // Phase 6: a draft / quality recording moved on since it was loaded
+                'draft_saved',
+                'draft_discarded',
+                'already_approved',
+                'processing_superseded',
             ].includes(this.code)
         )
     }

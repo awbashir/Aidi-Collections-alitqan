@@ -710,6 +710,20 @@ export const protectedRoutes = [
     authority: [],
   },
 
+  /* ── Phase 6: AI administration (`ai_admin`) and the quality workspace
+   *    (`quality_any` = quality_review | quality_approve, derived). ── */
+  {
+    key: "ai_admin",
+    path: "/ai-admin",
+    component: lazy(() => import("@/views/phase6/aiAdmin")),
+    authority: [],
+  },
+  {
+    key: "quality_any",
+    path: "/quality",
+    component: lazy(() => import("@/views/phase6/quality")),
+    authority: [],
+  },
   /* ── Phase 6 Q3: voice training lab (fictional training; key `voice_lab`). ── */
   {
     key: "voice_lab",

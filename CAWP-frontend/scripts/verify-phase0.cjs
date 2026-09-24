@@ -117,7 +117,7 @@ const groupLabels = (page, scope = '.side-nav') =>
     const ar = await groupLabels(page);
     check('sidebar AR: three groups in order', JSON.stringify(ar) === JSON.stringify(['العمليات اليومية', 'التحصيل والفريق', 'الذكاء والتحكم']), JSON.stringify(ar));
     const arItems = await page.$$eval('.side-nav .menu-nav-group', (gs) => gs.map((g) => [...g.querySelectorAll('.menu-item, .menu-collapse-item')].filter((el) => !el.parentElement.closest('.menu-collapse > ul, .menu-collapse > div:not(.menu-collapse-item)')).length));
-    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([9, 13, 11]), JSON.stringify(arItems)); // Phase 1 added attention + follow-ups, promises + approvals, corrections; Phase 2 added Bulk jobs (/jobs); Phase 3 added plans, team, requests; Phase 4 added the Reports hub (/reports); Phase 5 added calls, calling workspace, campaigns (Daily operations) and call review, calling admin (Intelligence & control)
+    check('sidebar AR: item count per group', JSON.stringify(arItems) === JSON.stringify([9, 13, 14]), JSON.stringify(arItems)); // Phase 6 added the voice lab, AI administration and Quality review (Intelligence & control): [9, 13, 11] -> [9, 13, 14]; Phase 1 added attention + follow-ups, promises + approvals, corrections; Phase 2 added Bulk jobs (/jobs); Phase 3 added plans, team, requests; Phase 4 added the Reports hub (/reports); Phase 5 added calls, calling workspace, campaigns (Daily operations) and call review, calling admin (Intelligence & control)
     const dir = await page.evaluate(() => document.documentElement.dir);
     check('document is RTL in Arabic', dir === 'rtl', dir);
 

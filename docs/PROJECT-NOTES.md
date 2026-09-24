@@ -221,7 +221,7 @@ Test with isolated test extensions and the real trunk: register, two-way audio, 
 | 3 | Internal requests, targets with history, repayment plans, session revocation, admin gates, protected employee fields | **Done 2026-09-24**: `docs/phase3-spec.md`, `review/phase3-{requests,plans,admin,frontend}.md`; migrations 0028–0038 |
 | 4 | Reports RPT-01…25, private exports (CSV, XLSX, Arabic RTL XLSX), reports hub and generic viewer | **Done 2026-09-24**: `docs/phase4-spec.md`, `review/phase4-{framework,reports-a,reports-b,reports-c,frontend}.md`; migrations 0039–0040, 0046 |
 | 5 | Calling (track B): local test PBX + Issabel runbook, manual log and wrap-up, click-to-call, campaigns, in-app softphone, scoped CDR/recordings and CDR import, calling screens | **Done 2026-09-24** (code; real Issabel commissioning is the operator's, per `docs/issabel-commissioning.md`): `docs/phase5-spec.md`, `review/phase5-{foundation,click-to-call,campaigns,evidence,softphone,frontend}.md`; migrations 0048–0058 |
-| 6 | AI and quality review | Needs OpenAI key + retention policy |
+| 6 | AI assistance and quality review | **Done 2026-09-24** (code; live provider use needs a key + an approved AI data policy): `docs/phase6-spec.md`, `review/phase6-{foundation,drafts,quality,voicelab,frontend}.md`; migrations 0059–0064 |
 | 7 | Load/security tests, UAT, deployment, cutover | |
 
 Conventions set by Phase 0: schema changes only via `db/migrations/NNNN_*.sql` + `manage_db.py up`. New routes use `core/api_response.py` (real HTTP codes); legacy routes keep 201-on-error. New mutating routes use `@idempotent()` and revision checks, and write `audit_events`. New permission keys go in `core/permissions.py`. New list screens use `useHashState`. Revision columns are deliberately not mapped in `models.py`.
@@ -333,3 +333,24 @@ Phase 5 open items:
 - **No server-side hang-up:** the minimal AMI account has no `call` write. The PBX enforces the maximum call length.
 - **Campaign pool summaries** at 75k+ cases take about 4.7 s (cached for 15 s). A stored summary would fix it.
 - **Readiness** doesn't follow the softphone's registration yet, and there is no coturn service in compose.
+
+Phase 6 decisions (2026-09-24):
+- **Provider:** OpenAI behind a provider interface, with no default models ("not configured" until the key and models are set). Structured outputs use `store: false`. Retries only on 429/5xx, and interrupted work is never replayed.
+- **No provider call happens without an approved AI data policy.** The policy is revisioned and audited, with categories, masking and retention. Calls are refused per missing category (`ai_policy_category_denied`), and refusals are audited too. A suspended policy stops calls but keeps its retention.
+- **Masking:** customer identifiers are always masked unless the policy allows otherwise (names, identity numbers, phones, accounts, IBANs, and dates-with-hours are not IDs). Employee names are masked unless declared and allowed.
+- **Quotas:** a daily per-user (50) and global (1000) cap on provider calls, per Riyadh day, for every capability.
+- **Drafts are only drafts.** The single follow-up is an explicit "save as note". Coaching on another collector's call needs `calls_manage` or `quality_review`.
+- **Quality:**
+  - the evidence rule (a verbatim quotation or a human audio timestamp);
+  - "human listening only" criteria for delivery;
+  - AI drafts can never be approved directly, and approval is a human act with an immutable snapshot;
+  - the approver may approve a review they saved themselves (single-QA-reviewer setups);
+  - "add call recording" needs a recording key, the case in scope, and explicit confirmation;
+  - QC audio lives in `QUALITY_STORAGE_DIR`, which must be backed up.
+- **Voice lab:** fictional personas only, with server-built instructions. A short-lived secret is minted per session, with a 5-minute limit, one open session per user and rate limits. The log holds no audio, transcript or secret.
+
+Phase 6 open items:
+- **Live check with a real key:** structured outputs on the chosen model, Arabic diarization, the verbatim-quote pass rate, the Realtime mint and SDP exchange, and voice availability.
+- **Voice-lab session length:** a user who tampers with their own browser could hold a Realtime session past 5 minutes. The secret expiry only stops new connections; quotas and rate limits still cap use.
+- **AI review drafts** in quality are not purged under the drafts retention period, and template editing is not built.
+- **Masking cannot detect unknown personal names** in free text.

@@ -94,6 +94,8 @@ const CaseRequestsPanel = lazy(
 /* Phase 5 panels (v2 API): the case's calls and the manual call log. */
 const CaseCallsPanel = lazy(() => import("@/views/phase5/case/CaseCallsPanel"));
 const LogCallDialog = lazy(() => import("@/views/phase5/wrapup/LogCallDialog"));
+/* Phase 6 panel (v2 API): AI drafts (ai_assist); a draft is saved only as a note, on request. */
+const AiDraftsPanel = lazy(() => import("@/views/phase6/drafts/AiDraftsPanel"));
 
 const { TabNav, TabList } = Tabs;
 
@@ -159,6 +161,10 @@ const Settings = () => {
     /* Phase 5 tab: the case's calls, wrap-ups, do-not-call block. */
     ...(canSeeCalls && {
       calls: { label: t("p5.case.tabCalls"), path: "calls" },
+    }),
+    /* Phase 6 tab: AI drafts (generate, review, save as note or discard). */
+    ...(p1perm.ai_assist && {
+      aiDrafts: { label: t("p6.drafts.tab"), path: "aiDrafts" },
     }),
   };
   const [currentTab, setCurrentTab] = useState("details");
@@ -440,6 +446,13 @@ const Settings = () => {
             )}
             {currentTab === "calls" && caseInfo && canSeeCalls && (
               <CaseCallsPanel
+                key={caseInfo.id}
+                caseData={caseInfo}
+                onChanged={onPhase1Changed}
+              />
+            )}
+            {currentTab === "aiDrafts" && caseInfo && p1perm.ai_assist && (
+              <AiDraftsPanel
                 key={caseInfo.id}
                 caseData={caseInfo}
                 onChanged={onPhase1Changed}

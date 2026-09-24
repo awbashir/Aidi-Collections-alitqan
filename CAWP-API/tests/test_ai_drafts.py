@@ -615,3 +615,19 @@ def test_dates_are_riyadh_and_unambiguous_for_the_masker():
     m = masking.Masker(set(masking.CLASSES))
     line = "Call 2026-09-20T12:00 (click-to-call, outbound): ended; duration 180 s"
     assert m.mask(line) == line
+
+
+def test_save_as_note_accepts_a_status_flagged_inactive(dclient, hdr, pgc, echo, monkeypatch):
+    """Like the legacy note form, wrap-up and bulk notes: `is_active` on a status is ignored."""
+    ready(monkeypatch, pgc)
+    q1(pgc, 'UPDATE "CommentStatuses" SET is_active = false WHERE id = %s RETURNING id', D.status)
+    try:
+        echo.answers.append(answer("call_summary"))
+        status, res, _ = generate(dclient, hdr, kind="call_summary", attempt_id=D.call)
+        assert status == 201
+        d = res["data"]
+        r = dclient.post(f"/v2/ai/drafts/{d['id']}/save-as-note", json=save_body(d, comment_reachability_id=D.reach),
+                         headers=hdr(D.sara, key()))
+        assert r.status_code == 201, r.get_json()
+    finally:
+        q1(pgc, 'UPDATE "CommentStatuses" SET is_active = true WHERE id = %s RETURNING id', D.status)

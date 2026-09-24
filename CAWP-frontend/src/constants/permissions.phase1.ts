@@ -2,8 +2,9 @@
  * Mirror of the NEW permission keys registered in CAWP-API/core/permissions.py
  * (`NEW_PERMISSIONS`): Phase 1, plus Phase 2's `bulk_jobs_all`, the Phase 3
  * keys (requests*, plans*, users_sessions, users_login_history), the Phase 4
- * report keys (reports_performance, reports_calls) and the Phase 5 calling keys
- * (calls, calls_make, calls_manage, campaigns, campaigns_manage). The file keeps
+ * report keys (reports_performance, reports_calls), the Phase 5 calling keys
+ * (calls, calls_make, calls_manage, campaigns, campaigns_manage) and the Phase 6 AI and
+ * quality keys (ai_assist, ai_admin, quality_review, quality_approve, voice_lab). The file keeps
  * its Phase 1 name so existing imports stay valid. Keep this list in the same order and with the same
  * labels as the backend registry; the legacy keys stay in the permissions
  * checkbox tree (views/permissions/form/Fields.tsx).
@@ -66,6 +67,12 @@ export const PHASE1_PERMISSIONS: Phase1Permission[] = [
     { key: 'calls_manage', group: 'intelligence_control', label_en: 'Calling administration', label_ar: 'إدارة الاتصال', admin_default: true },
     { key: 'campaigns', group: 'daily_operations', label_en: 'Calling campaigns', label_ar: 'حملات الاتصال', admin_default: true },
     { key: 'campaigns_manage', group: 'daily_operations', label_en: 'Run and pause campaigns', label_ar: 'تشغيل وإيقاف الحملات', admin_default: true },
+    // Phase 6: AI assistance and quality review
+    { key: 'ai_assist', group: 'intelligence_control', label_en: 'AI drafts (review before saving)', label_ar: 'مسودات الذكاء الاصطناعي (مراجعة قبل الحفظ)', admin_default: true },
+    { key: 'ai_admin', group: 'intelligence_control', label_en: 'AI status and data policy', label_ar: 'حالة الذكاء الاصطناعي وسياسة البيانات', admin_default: true },
+    { key: 'quality_review', group: 'intelligence_control', label_en: 'Quality review', label_ar: 'مراجعة الجودة', admin_default: true },
+    { key: 'quality_approve', group: 'intelligence_control', label_en: 'Approve quality reviews', label_ar: 'اعتماد مراجعات الجودة', admin_default: true },
+    { key: 'voice_lab', group: 'intelligence_control', label_en: 'Voice training lab', label_ar: 'مختبر التدريب الصوتي', admin_default: true },
 ]
 
 export const PHASE1_PERMISSION_KEYS: ReadonlySet<string> = new Set(PHASE1_PERMISSIONS.map((p) => p.key))

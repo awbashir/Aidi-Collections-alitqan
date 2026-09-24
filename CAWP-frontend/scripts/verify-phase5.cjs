@@ -384,7 +384,7 @@ async function run(browser) {
       await page.goto(FE + '/home', { waitUntil: 'networkidle' });
       await settle(page, 800);
       const counts = await sidebarCounts(page);
-      check(`screens ${lang}: aidi.dev sidebar items per group [9,13,11] (Phase 4 was [6,13,9]; + calls, calling, campaigns; + call review, calling admin)`, JSON.stringify(counts) === '[9,13,11]', JSON.stringify(counts));
+      check(`screens ${lang}: aidi.dev sidebar items per group [9,13,14] (Phase 4 was [6,13,9]; + calls, calling, campaigns; + call review, calling admin; Phase 6: + voice lab, AI administration, Quality review)`, JSON.stringify(counts) === '[9,13,14]', JSON.stringify(counts));
       const labels = await page.$$eval('.side-nav .menu-item', (els) => els.map((e) => e.textContent.trim()));
       const expect = lang === 'ar' ? ['المكالمات', 'مساحة الاتصال', 'الحملات', 'مراجعة المكالمات', 'إدارة الاتصال'] : ['Calls', 'Calling workspace', 'Campaigns', 'Call review', 'Calling admin'];
       check(`screens ${lang}: the five nav items are present`, expect.every((l) => labels.includes(l)), expect.filter((l) => !labels.includes(l)).join(', '));
@@ -455,7 +455,8 @@ async function run(browser) {
     }
     const text = await page.locator('body').innerText();
     check('perms: the permissions screen shows the five calling keys (ar labels)', labels.every((l) => text.includes(l)), labels.filter((l) => !text.includes(l)).join(', ') + (body ? '' : ''));
-    check('perms: the workflow section is titled "Phases 1–5"', text.includes('المراحل 1–5'));
+    /* Phase 6 extended the section to the AI and quality keys: "Phases 1–6" (was 1–5) */
+    check('perms: the workflow section is titled "Phases 1–6" (Phase 6 extended it)', text.includes('المراحل 1–6'));
     await shot(page, '14_permissions_calling_keys_ar');
     await page.context().close();
   }

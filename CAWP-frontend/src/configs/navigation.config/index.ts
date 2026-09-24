@@ -468,6 +468,31 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* ── Phase 6: AI administration (readiness, data policy, provider-call audit; key
+   *    `ai_admin`) and the quality workspace (`quality_any` = quality_review |
+   *    quality_approve, derived: utils/v2/derivedPermissions). ── */
+  {
+    key: "ai_admin",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/ai-admin",
+    title: "AI administration",
+    translateKey: "nav.p6.aiAdmin",
+    icon: "ai_admin",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  {
+    key: "quality_any",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/quality",
+    title: "Quality review",
+    translateKey: "nav.p6.quality",
+    icon: "quality",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* ── Phase 6 Q3: voice training lab (fictional training, key `voice_lab`). ── */
   {
     key: "voice_lab",
