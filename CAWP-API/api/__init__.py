@@ -22,6 +22,7 @@ MODULES = [
     "api.requests_v2",       # Phase 3 A: internal requests
     "api.plans",             # Phase 3 B: repayment plans
     "api.admin_v2",          # Phase 3 C: targets, sessions, /v2/me
+    "api.reports_v2",        # Phase 4: /v2/reports, report options, report exports
 ]
 
 
