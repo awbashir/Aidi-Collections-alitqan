@@ -356,6 +356,65 @@ PBX side: `docs/issabel-commissioning.md`.
 then `CALLING_ENABLED=1 CALLING_DATABASE_URL=… docker compose --profile pbx-test up -d calling`.
 See the header of `tests/test_calling_live_pbx.py`.
 
+## 5e. AI configuration (Phase 6 Q0): `/v2/ai/*`, the AI data policy and AI retention
+
+AI is **off until three things are true**: the server has a provider key, a model is set for the
+capability, and an `ai_admin` has recorded an approved AI data policy. Until then every provider
+action answers `503 ai_not_configured` / `503 model_not_set` or `409 ai_policy_required` /
+`409 ai_policy_category_denied`, and nothing is generated, simulated or stored. Design, endpoints
+and examples: `review/phase6-foundation.md`.
+
+**Order:**
+1. Apply migrations `0059` (`ai_data_policies`) and `0060` (`ai_provider_calls`) (section 3b; new
+   tables only, instant). The permission keys `ai_assist`, `ai_admin`, `quality_review`,
+   `quality_approve` and `voice_lab` are merged into every role by `up` (ADMIN/SuperAdmin get them on).
+2. Put the key and the models in the **server** environment of the API and the worker (vault /
+   compose `env_file`, never the frontend, never a committed file), then restart both.
+3. An `ai_admin` checks `GET /v2/ai/status`, records the policy with `PUT /v2/ai/policy` (provider,
+   allowed data categories, masking, retention periods, a reason, `confirmed: true`), then runs
+   `POST /v2/ai/check` once. The check sends a fixed sentence (no data) and proves the key, the
+   model and the policy end to end; it is audited like any provider call.
+4. To stop AI without removing the key: record a new policy revision with `state: "suspended"`.
+   Retention keeps running with the suspended revision's periods.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OPENAI_API_KEY` | none | the provider key. Missing = `ai_not_configured`. Never logged, returned or stored; `ai_admin` sees only `key_configured` |
+| `AI_MODEL_TEXT` | none | model for structured drafts (Responses API, strict JSON schema, `store: false`) |
+| `AI_MODEL_TRANSCRIBE` | none | transcription model; a name containing `diarize` (e.g. `gpt-4o-transcribe-diarize`) gives anonymous speaker segments, any other model gives text only |
+| `AI_MODEL_REALTIME` | none | model for voice-lab Realtime client secrets |
+| `AI_PROVIDER` | `openai` | the only implementation |
+| `OPENAI_ORG_ID` / `OPENAI_PROJECT_ID` | none | optional `OpenAI-Organization` / `OpenAI-Project` headers |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | override (a proxy, tests). https only; plain http is accepted for a loopback host only; credentials in the URL are refused |
+| `AI_TIMEOUT_TEXT_SECONDS` / `_TRANSCRIBE_` / `_REALTIME_` | `60` / `180` / `15` | socket timeout per HTTP attempt |
+| `AI_MAX_RETRIES` | `2` | retries of a 429/5xx answer inside one call (0–5); timeouts, connection errors and other 4xx are never retried |
+| `AI_RETRY_BASE_SECONDS` / `AI_RETRY_MAX_WAIT_SECONDS` | `0.5` / `8` | exponential backoff; `Retry-After` is honoured up to the cap |
+| `AI_MAX_INPUT_CHARS` | `200000` | larger structured inputs are refused (`413 ai_input_too_large`) |
+| `AI_TRANSCRIBE_MAX_BYTES` | `26214400` | larger audio is refused (`413 ai_audio_too_large`) |
+| `AI_CALL_STALE_SECONDS` | `1800` | a provider call still `started` after this is marked `interrupted` |
+| `AI_RETENTION_INTERVAL_SECONDS` / `_BATCH` / `_MAX_BATCHES` | `3600` / `1000` / `20` | the AI retention task in the worker |
+
+There is deliberately **no default model**: a default would claim a model is available to the
+account. Choose models the deployment's OpenAI account can use and that meet the data-processing
+agreement; nothing in this repository has been verified against the live API (no key was available).
+
+* **Egress:** the API and worker need outbound HTTPS to `api.openai.com` (or the proxy in
+  `OPENAI_BASE_URL`). Redirects are not followed, so the key is never resent elsewhere.
+* **Audit:** every provider action, refused ones included, is a row in `ai_provider_calls`
+  (purpose, capability, model, policy revision, data categories, masking count, token counts,
+  latency, attempts, outcome, actor, entity). No prompt, transcript, audio, output or secret is
+  stored anywhere. `GET /v2/ai/provider-calls` (`ai_admin`) lists them.
+* **Restarts:** provider work is never replayed. A call left `started` by a crash becomes
+  `interrupted` (audited `ai_retention.interrupted`); the user retries explicitly.
+* **Retention:** the worker runs `services.ai.retention` hourly (once:
+  `docker compose run --rm worker python -m services.ai.retention`). With no policy recorded it
+  purges nothing. Otherwise it applies the policy's `drafts`, `transcripts` and `audio` periods
+  through the hooks Q1/Q2 register, and deletes `ai_provider_calls` rows older than
+  `provider_logs` days (minimum 30). Every purge batch writes an `ai_retention.purge` audit event.
+  The periods are a compliance decision recorded in the policy, not a code default.
+* **Rollback:** unset `OPENAI_API_KEY` (or suspend the policy); the tables can stay. Dropping them
+  loses the policy history and the call audit, so do not.
+
 ## 6. Smoke-check the release
 
 ```bash
