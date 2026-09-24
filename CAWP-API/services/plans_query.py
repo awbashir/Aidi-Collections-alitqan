@@ -1,10 +1,12 @@
 """Phase 3 stream B: repayment plan reads (list, detail, case plans) and serialization.
 
-States come from the database views (db/migrations/0033):
+States come from the database views (db/migrations/0033, 0038):
   * installment: v_plan_installment_state  upcoming | due | overdue | partially_paid | paid | cancelled
   * plan:        v_plan_state              active | completed | broken | cancelled
-"broken" (overdue installments >= the threshold, default 2) is reported only; nothing is
-changed automatically. The threshold is `cawp_plan_broken_threshold()`; the API sets it per
+`completed` is a stored status (0038): a fully allocated plan closes automatically, and it
+reopens when it loses evidence, or is flagged (`completed_with_voided_evidence`) when a newer
+active plan exists. "broken" (an active plan with overdue installments >= the threshold,
+default 2) is derived and reported only; nothing is changed automatically. The threshold is `cawp_plan_broken_threshold()`; the API sets it per
 transaction from the PLAN_BROKEN_THRESHOLD environment variable when that is 1..9999.
 
 Every read is limited to the caller's case scope (services.clients_scope via
@@ -41,7 +43,7 @@ _PLAN_COLS = """
        s.upcoming_count, s.due_count, s.overdue_count, s.partially_paid_count, s.paid_count,
        s.cancelled_count, s.overdue_amount, s.oldest_overdue_date, s.next_due_date, s.completed_at,
        p.split_mode, p.installment_amount, p.outstanding_at_creation, p.note, p.created_by, p.created_at,
-       p.revision, p.cancelled_at, p.cancelled_by, p.cancel_reason,
+       p.revision, p.cancelled_at, p.cancelled_by, p.cancel_reason, p.evidence_voided_at,
        concat_ws(' ', cu.frist_name, cu.last_name) AS creator_name,
        concat_ws(' ', xu.frist_name, xu.last_name) AS canceller_name,
        c.name AS case_name, c."accountNumber" AS account_number, c."identityNumber" AS identity_number,
@@ -104,6 +106,8 @@ def serialize_plan(r, threshold: int, with_case: bool = True) -> dict:
         "created_at": iso(r["created_at"]),
         "revision": r["revision"],
         "completed_at": iso(r["completed_at"]),
+        "completed_with_voided_evidence": r["evidence_voided_at"] is not None,
+        "evidence_voided_at": iso(r["evidence_voided_at"]),
         "cancellation": ({
             "at": iso(r["cancelled_at"]),
             "by": person(r["cancelled_by"], r["canceller_name"]),
@@ -268,6 +272,12 @@ def list_plans(scope, args) -> dict:
             raise ApiError(422, "validation_failed", "frequency must be weekly or monthly", {"frequency": "invalid"})
         where.append("p.frequency = :frequency")
         params["frequency"] = frequency
+    ev = args.get("evidence_voided")
+    if ev not in (None, ""):
+        if ev not in ("true", "false"):
+            raise ApiError(422, "validation_failed", "evidence_voided must be true or false",
+                           {"evidence_voided": "invalid"})
+        where.append("p.evidence_voided_at IS " + ("NOT NULL" if ev == "true" else "NULL"))
     add_civil_range(args, "created_from", "created_to", "p.created_at", where, params)
     nd_from, nd_to = date_arg(args, "next_due_from"), date_arg(args, "next_due_to")
     if nd_from and nd_to and nd_to < nd_from:

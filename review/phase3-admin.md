@@ -15,9 +15,10 @@ Branch `phase-3-requests-plans-targets`. Nothing is committed and nothing is app
 | `CAWP-API/api/admin_v2.py` | the v2 endpoints (§4) |
 | `CAWP-API/app.py` | JWT blocklist loader + new `additional_claims_loader`, `/logout` body, one import line, decorator lines on 33 admin routes (§6) |
 | `CAWP-API/api/reports.py` | **decorator-only** gates on `GET /uesrs/export` and `GET /supervisors` + one import line (these two admin routes live there, not in `app.py`; flagged for the lead) |
-| `CAWP-API/tests/test_admin_{support,targets,sessions,me,gates}.py`, `tests/fixtures/seed_admin.sql` | 38 tests (§8) |
+| `CAWP-API/core/user_privacy.py`; `models.py` (`User.as_dict`, 2 lines, approved by the lead); `services/reports_query.py` (`take`); `api/dashboard.py` (2 cache keys) | protected employee fields (§7) |
+| `CAWP-API/tests/test_admin_{support,targets,sessions,me,gates,privacy}.py`, `tests/fixtures/seed_admin.sql` | 44 tests (§8) |
 
-Not touched: `models.py` (the new column stays unmapped), `core/permissions.py` (`users_sessions` was registered by the lead), `core/auth.py`, `conftest.py`, `seed.sql`, frontend, other streams' files.
+Not touched otherwise: `models.py` beyond `User.as_dict` (the new column stays unmapped), `core/permissions.py` (`users_sessions` was registered by the lead), `core/auth.py`, `conftest.py`, `seed.sql`, frontend, other streams' files.
 
 ## 2. The legacy target definition (from the code)
 
@@ -316,33 +317,67 @@ Route keys gate the screens: `AuthorityGuard.tsx:18-23` renders a route only if 
 - The DeleteButtons on the six settings lists, the roles list and the branches list call **`DELETE /portfolios/<their own row id>`** (`SettingsService:373`, `PermissionsService:305`, `BranchesService:53`). The server gate `portfolios_delete` plus the id mismatch keeps this harmless, but the buttons are broken.
 - `ContractsTable.tsx:66-68` links to `/users/details?id=<contractId>`.
 
-## 7. Protected employee fields: who sees identity number, mobile and targets today
+## 7. Protected employee fields (implemented 2026-09-24, decision approved by the user)
 
-A legacy user dict is `User.as_dict()`: every mapped column except the password. That includes `identityNumber`, `mobile`, `email`, `target_*`, `extension` and `contract_id`.
+The rule is in `core/user_privacy.py`. Six fields are protected on every serialized user record. The keys stay and the values become `null`, so no response shape changes.
 
-| Response | Who can call it | Exposes |
+| Fields | Visible when the viewer holds |
+|---|---|
+| `identityNumber`, `mobile`, `email` | `users_details` or `users_edit` |
+| `target_amount`, `target_percent`, `target_is_percentage` | `users_details`, `users_edit` or `users_edit_target` |
+
+Other rules:
+- **The viewer's own record is never redacted.** This covers `/login`, `/refresh`, `/v2/me` and `/dashbord/collector/v2`.
+- **No verified JWT means no redaction.** This covers `POST /login`, the worker, the CLI and migrations.
+- **Why `users_edit` must see the values.** The edit form (`/users/edit`, route key `users_edit`) loads `GET /users/<id>` and Formik posts the whole object back, hidden blocks included (`UserForm.tsx:176-184`). Blank values would be written back on save, and `mobile`/`email` are NOT NULL. This is tested: GET then PUT keeps the values.
+- **Viewer lookup.** The viewer's identity and keys are worked out once per request (`flask.g`) with `core.auth.has_permission`.
+
+**Where it applies:**
+- `User.as_dict()` in `models.py`, a two-line change the lead approved. This covers every legacy path that uses it:
+  - `/uesrs`, including the embedded supervisor owners;
+  - `/users/<id>` and the `/uesrs` POST/PUT responses;
+  - `/clints/<id>` (the case owner);
+  - `/sepcifyusers/clint/<id>` (assignee and assigner);
+  - `/supervisor/<id>` and `/supervisors`;
+  - `/uesrs/export`;
+  - `/dashbord/commentsReport/v2` and `/dashboard`.
+- `services/reports_query.take()` for the `User` entity or any alias of it. This covers the recorder and approver on:
+  - `/comments*`, including `/comments/clint/<id>`;
+  - `/payments*`, including `/payments/clint/<id>`;
+  - `/payment_date*`;
+  - the `/dashboard` comments.
+- **Grep of other paths.** Nothing else serializes these user columns:
+  - the v2 services and other streams select names and ids only;
+  - `services/clients_query._user_block` returns id, name and branch;
+  - `/dashbord/Allcollector/v2` selects its columns explicitly (next paragraph).
+- **Caches.** Two dashboards cache payloads that embed user dicts, so their Redis keys now include `user_privacy.cache_key()`: `/dashbord/commentsReport/v2` (a global key before this change) and `/dashboard`.
+  - The key part is `pf` for full viewers and for requests with no JWT (one shared entry).
+  - It is `p<ident><tgt>:<viewer>` otherwise, because the viewer's own row differs.
+
+**Dashboards are unaffected, and here is why:**
+- `/dashbord/Allcollector/v2`, the all-collectors KPI card for `dashbord_admin` (`AllCollectorsKPI.tsx:84-86`, `:204-210`), builds its users from **explicitly selected** columns (`api/dashboard.py:420-431`), not from `as_dict` or `take`. Every collector's target is still returned. This is tested.
+- `/dashbord/collector/v2`, the own KPI card for `dashbord_user` (`KPICollector.tsx:90-97`), reads `data.user`. That is the caller's own record, so it is not redacted. This is tested.
+- `/dashbord/commentsReport/v2` reads only `users[id, frist_name, last_name, contract_id, extension]`, per the `api/dashboard.py` docstring (verified against `CommentsReportDaily.tsx`/`CallsReportDaily.tsx`). Its targets and identity values go null for non-holders without effect.
+- `/dashboard` (v1) has no screen.
+- **Note:** `/dashbord/Allcollector/v2` has no server gate, so any signed-in user can still read every collector's targets there. Gating it with `dashbord_admin` would match the screen, but it is a legacy dashboard route and was not in this change.
+
+**Frontend screens that now show blanks to users without the keys.** Only the users-admin screens display another employee's protected fields:
+
+| Screen | Needs | Shows blanks when |
 |---|---|---|
-| `GET /uesrs` | **every signed-in user** (header bell) | all users: identity, mobile, email, targets, **and each role's full `permission` JSON** |
-| `GET /clints/<id>` (case detail) | anyone who can open the case | the case owner's full dict |
-| `/comments*`, `/payments*`, `/payment_date*` incl. `/comments/clint/<id>`, `/payments/clint/<id>`, `/payment_date/clint/<id>` (`api/reports.py`, `take(row, User…)`) | case tabs and reports | the recorder's and the approver's full dicts |
-| `/sepcifyusers/clint/<id>` | case assignment history | assignee and assigner full dicts |
-| `/dashbord/commentsReport/v2`, `/dashboard` (`api/dashboard.py:508/632`) | ungated server-side | all active collectors / all users, full dicts |
-| `/dashbord/Allcollector/v2` | ungated server-side (UI: `dashbord_admin`) | names + **targets** of all active collectors |
-| `/supervisors`, `/supervisor/<id>` | `supervisors` (now) | supervisor and supervised users, full dicts |
-| `/users/<id>`, `/uesrs/export` | now `users_details`\|`users_edit`, `users` | full dicts |
-| `POST/PUT /uesrs` responses | the editor | the edited user |
-| `/login`, `/refresh`, `/v2/me`, `/dashbord/collector/v2` | self | own record (fine) |
-| client lists (`services/clients_query._user_block`) | — | id / name / branch only (already safe) |
+| `/users` list: email and identity columns (`UsersTable.tsx:275-313`); export (`exportUsers.tsx:31-36`: email, identity, mobile) | route key `users` | the viewer has `users` but neither `users_details` nor `users_edit` |
+| `/users/details` (`CustomerProfile.tsx:210-214`) | route key `users_details` | never |
+| `/users/edit` form | route key `users_edit` | never |
 
-**Proposal** (needs the lead and a frontend check; no response shape was changed):
-1. Add one projection helper `public_user(d)`: id, frist_name, last_name, name, user_name, role_id, branch_id, contract_id, is_active, extension. Use it for every *embedded* user block (case owner, recorder, approver, assignment history, supervisors lists, dashboards). The keys stay, and the protected ones become `null` unless the caller holds:
-   - `users_details` or `users_edit_general` for `identityNumber`, `mobile`, `email`;
-   - `users_edit_target`, `users_details` or `dashbord_admin` for `target_*`.
-2. `GET /uesrs`: same nulling for callers without `users`, and `role` reduced to `{id, name}` for callers without `roles`. The header bell needs only names.
-3. `/dashbord/Allcollector/v2` → `dashbord_admin`; `/dashbord/commentsReport/v2` and `/dashboard` get the `public_user` projection.
-4. First run `tools/api_snapshot.py` for the ADMIN view to confirm unchanged bytes for full-key holders.
+No other screen displays these fields for other employees. The case, notes, payments, assignment and supervisor screens use names only, and the header bell uses names only.
 
-## 8. Tests (38, `TEST_DB_PREFIX=cawp_test_admin`)
+On `cawp-db` today, every role with `users` also has `users_details` (ADMIN, عمليات, مدير مشاريع, مدير تحصيل, معالجة). **No current user sees a blank anywhere.**
+
+**Still exposed, outside the approved scope:**
+- `GET /uesrs` still embeds each role's full `permission` JSON for any signed-in user.
+- The `/dashbord/Allcollector/v2` targets (above).
+
+## 8. Tests (44, `TEST_DB_PREFIX=cawp_test_admin`)
 
 **`test_admin_targets.py`** (16):
 - capture on UPDATE/INSERT, no-op and non-target updates ignored;
@@ -387,7 +422,27 @@ A legacy user dict is `User.as_dict()`: every mapped column except the password.
 - 9 shared lookup lists stay open;
 - form blocks: the full hidden-field payload passes, and each block refuses a change without its key.
 
-**Full suite:** `docker compose --profile test run --rm -e TEST_DB_PREFIX=cawp_test_admin api-test -q tests` → **554 passed, 0 failed, 0 errors** (with streams A and B's files present).
+**`test_admin_privacy.py`** (6), through the real `app.py`:
+- **A viewer without the keys** (SuperAdmin case scope, `clints`/`clints_details`/`dashbord_admin`) gets nulls, with every key present and the other fields intact, in each of these:
+  - `/uesrs`
+  - the case owner in `/clints/<id>`
+  - the note author in `/comments/clint/<id>`
+  - the payment recorder in `/payments/clint/<id>`
+  - the assignee and assigner in `/sepcifyusers/clint/<id>`
+
+  The protected identity number appears nowhere in those bodies, and the viewer's own row is intact.
+- **Key holders:**
+  - `users_details` and `users_edit` holders see every value;
+  - a `users_edit_target` holder sees targets only;
+  - `/users/<id>` is full for `users_details` and `users_edit`;
+  - an edit-form GET→PUT round trip keeps the values.
+- **Own record:** full in the login response, `/v2/me`, `/refresh` and `/dashbord/collector/v2`.
+- **Dashboards:** `/dashbord/Allcollector/v2` still returns every collector's target.
+- **Unit tests:** no JWT means no redaction; own record; `cache_key()`.
+
+**Full suite:** `docker compose --profile test run --rm -e TEST_DB_PREFIX=cawp_test_admin api-test -q tests` → **573 passed, 0 failed, 0 errors** (with streams A and B's files present, 2026-09-24 03:02).
+
+One earlier run hit transient failures in `test_plans_*` while stream B was writing migration 0038. Those tests pass alone and in the rerun.
 
 Two conflicts reported by stream A are fixed:
 - the fixture user names clashed with `seed_bulk_assign.sql`. Stream C now uses `c3.*`, `adm.<hex>`, `cccccccc-…` ids and `AACC-`/`AID` accounts.
@@ -412,7 +467,7 @@ Two conflicts reported by stream A are fixed:
 3. **`api/reports.py` edited** (decorators + import only) for `/uesrs/export` and `/supervisors`, because those admin routes live there.
 4. **The native login history has no key of its own in legacy.** §2.6 asks for one: it is shown on `/users/details` with no button gate, so it is gated by `users_details` today. Proposal: register `users_login_history` (admin default true) and gate with `users_login_history | users_details` during the transition.
 5. **Permission maps are per process** (`core.lookups`, 60 s). A role grant change is immediate only in the process that wrote it. `/v2/me` refreshes the map of the process that answers it. A Redis-versioned map would make it immediate everywhere; that is `core/auth.py`, not stream C.
-6. **Protected fields:** §7, approve the projection plan before any response change.
+6. **Protected fields:** done (§7). The two exposures outside the approved scope are listed at the end of §7: the role permission JSON in `/uesrs`, and the ungated `/dashbord/Allcollector/v2`.
 7. **Target-vs-actual base history.** Percent targets use today's unarchived debt even for past months (legacy keeps nothing else). If RPT-19/22 need the historical base, snapshot it monthly (e.g. a `target_bases` table filled by the rollover job).
 8. **Frontend:**
    - `/v2/me` polling, focus refresh and sign-out on 401;

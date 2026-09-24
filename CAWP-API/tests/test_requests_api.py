@@ -303,11 +303,11 @@ def test_wrong_department_reviewer(rq_client, hdr, team, pgr):
     # the operations reviewer has the case in scope, but not the department
     st, b = act(rq_client, hdr, team["operations"], rid, "take", 0)
     assert st == 404
-    # a legal reviewer who also holds `requests` and supervises the contract sees it (supervisor
-    # through scope), but still cannot take a finance request
+    # a legal reviewer who also holds `requests` and supervises the contract does not see it
+    # either: the supervisor rule never widens a reviewer beyond their departments
     legal_base = new_supervisor(pgr, RQ.legal_base_role, contracts=[team["contract"]])
     st, b = act(rq_client, hdr, legal_base, rid, "take", 0)
-    assert (st, b["code"], b["error"]) == (403, "forbidden", {"required_any": ["requests_finance"]})
+    assert (st, b["code"]) == (404, "not_found")
     # the supervisor sees it (team) but reviews no department
     st, b = act(rq_client, hdr, team["supervisor"], rid, "resolve", 0, reason="x")
     assert st == 403
@@ -467,12 +467,69 @@ def test_visibility_per_key_and_scope(rq_client, hdr, team, pgr):
     v = _ids(rq_client, hdr(team["finance"]))[1]["viewer"]
     assert v == {"user_id": team["finance"], "scope": "supervisor", "can_create": False,
                  "reviewer_departments": ["finance"]}
-    # a reviewer who also holds `requests` and has a supervisor scope sees every request in that
-    # scope (the supervisor rule), whatever the department
+    # decision 2026-09-24: a reviewer who also holds `requests` and has a supervisor scope is
+    # still limited to their department(s) plus the requests they raised themselves
     legal_base = new_supervisor(pgr, RQ.legal_base_role, contracts=[team["contract"]])
-    assert _ids(rq_client, hdr(legal_base))[0] == {r_legal1, r_fin1, r_ops2, r_legal2, r_lone, r_on_lone}
+    assert _ids(rq_client, hdr(legal_base))[0] == {r_legal1, r_legal2, r_lone, r_on_lone}
     v = _ids(rq_client, hdr(legal_base))[1]["viewer"]
     assert v["can_create"] is True and v["reviewer_departments"] == ["legal"]
+    r_own_fin = create(rq_client, hdr, legal_base, team["case2"], department="finance")["id"]
+    assert _ids(rq_client, hdr(legal_base))[0] == {r_legal1, r_legal2, r_lone, r_on_lone, r_own_fin}
+
+
+def test_reviewer_supervisor_limited_to_own_departments(rq_client, hdr, team, pgr):
+    """Decision 2026-09-24: a supervisor of the team who holds a department key sees only their
+    department(s) plus their own requests - in the list, the counts, the case section, the
+    detail (404) and the actions. A supervisor without a department key keeps team-through-scope."""
+    c1, c2 = team["c1"], team["c2"]
+    r_legal1 = create(rq_client, hdr, c1, team["case1"], department="legal")["id"]
+    r_fin1 = create(rq_client, hdr, c1, team["case1"], department="finance")["id"]
+    r_ops2 = create(rq_client, hdr, c2, team["case2"], department="operations")["id"]
+    lead = new_supervisor(pgr, RQ.legal_base_role, users=[c1, c2], name="LeadLegal")   # team + legal key
+    r_own_ops = create(rq_client, hdr, lead, team["case2"], department="operations")["id"]
+    ids, data = _ids(rq_client, hdr(lead))
+    assert ids == {r_legal1, r_own_ops}
+    assert data["counts"] == {"open": 2, "in_review": 0, "resolved": 0, "cancelled": 0}
+    assert data["department_counts"] == {"legal": 1, "finance": 0, "operations": 1}
+    st, b = get(rq_client, hdr(lead), f"/v2/cases/{team['case1']}/requests")
+    assert st == 200 and {i["id"] for i in b["data"]["items"]} == {r_legal1} and b["data"]["total"] == 1
+    for rid in (r_fin1, r_ops2):
+        assert get(rq_client, hdr(lead), f"/v2/requests/{rid}")[0] == 404
+        assert post(rq_client, hdr(lead, key=key()), f"/v2/requests/{rid}/comments", {"body": "x"})[0] == 404
+    d = get(rq_client, hdr(lead), f"/v2/requests/{r_legal1}")[1]["data"]
+    assert d["actions"] == {"comment": True, "take": True, "resolve": False, "reopen": False, "cancel": False}
+    d = get(rq_client, hdr(lead), f"/v2/requests/{r_own_ops}")[1]["data"]
+    assert d["actions"] == {"comment": True, "take": False, "resolve": False, "reopen": False, "cancel": True}
+    # two department keys: both departments, still not the third
+    run(pgr, "UPDATE roles SET permission = permission::jsonb || '{\"requests_finance\": true}' WHERE id = %s",
+        RQ.legal_base_role)
+    from test_requests_helpers import invalidate_caches
+    invalidate_caches()
+    try:
+        assert _ids(rq_client, hdr(lead))[0] == {r_legal1, r_fin1, r_own_ops}
+    finally:
+        run(pgr, "UPDATE roles SET permission = permission::jsonb || '{\"requests_finance\": false}' "
+                 "WHERE id = %s", RQ.legal_base_role)
+        invalidate_caches()
+    # the same team supervisor without any department key keeps team-through-scope
+    assert _ids(rq_client, hdr(team["supervisor"]))[0] == {r_legal1, r_fin1, r_ops2, r_own_ops}
+
+
+def test_collector_sees_only_requests_they_raised(rq_client, hdr, team, pgr):
+    """Decision 2026-09-24: a collector sees only the requests they raised, not requests others
+    raised on the collector's own cases."""
+    c1 = team["c1"]
+    mine = create(rq_client, hdr, c1, team["case1"], department="legal")["id"]
+    by_supervisor = create(rq_client, hdr, team["supervisor"], team["case1"], department="finance")["id"]
+    by_super = create(rq_client, hdr, RQ.super, team["case1"], department="operations")["id"]
+    ids, data = _ids(rq_client, hdr(c1))
+    assert ids == {mine} and data["total"] == 1 and data["counts"]["open"] == 1
+    st, b = get(rq_client, hdr(c1), f"/v2/cases/{team['case1']}/requests")
+    assert st == 200 and {i["id"] for i in b["data"]["items"]} == {mine}
+    for rid in (by_supervisor, by_super):
+        assert get(rq_client, hdr(c1), f"/v2/requests/{rid}")[0] == 404
+        assert post(rq_client, hdr(c1, key=key()), f"/v2/requests/{rid}/comments", {"body": "x"})[0] == 404
+    assert _ids(rq_client, hdr(team["supervisor"]))[0] >= {mine, by_supervisor, by_super}
 
 
 def test_requester_keeps_seeing_after_reassignment(rq_client, hdr, team, pgr):

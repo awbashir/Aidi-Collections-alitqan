@@ -20,6 +20,9 @@ import {
 import ToggleStatusButton from "./ToggleStatusButton";
 import DeleteButton from "./DeleteButton";
 
+/* No DELETE route exists for this entity in CAWP-API (checked 2026-09-24). */
+const DELETE_ROUTE_EXISTS = false;
+
 const ActionColumn = ({
   row,
   fetchadata,
@@ -66,16 +69,22 @@ const ActionColumn = ({
         </Link>
       </Tooltip>
 
-      <DeleteButton
-        row={row}
-        fetchData={fetchadata}
-        notificationTitle={"portfolios.delete"}
-        notificationFailedMessage={"portfolios.deleteFail"}
-        notificationSuccessMessage={"portfolios.deleteSuccess"}
-        confirmDialogTitle={"portfolios.delete"}
-        confirmDialogMessage={"portfolios.confirmDelete"}
-        api={deletePortfolios}
-      />
+      {/* Phase 3 (review/phase3-admin.md §6): this button called
+       * DELETE /portfolios/<this row's id>, not a delete of the row itself. The
+       * API has no delete route for comment statuses, so the button is hidden until one
+       * exists (kept in code, not removed). */}
+      {DELETE_ROUTE_EXISTS && (
+        <DeleteButton
+          row={row}
+          fetchData={fetchadata}
+          notificationTitle={"portfolios.delete"}
+          notificationFailedMessage={"portfolios.deleteFail"}
+          notificationSuccessMessage={"portfolios.deleteSuccess"}
+          confirmDialogTitle={"portfolios.delete"}
+          confirmDialogMessage={"portfolios.confirmDelete"}
+          api={deletePortfolios}
+        />
+      )}
 
       {/* 
       <Tooltip title={t("clients.view")}>

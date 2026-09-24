@@ -4,6 +4,7 @@
  * Labels come from the API's state value; nothing is computed on the client.
  */
 import { useTranslation } from 'react-i18next'
+import { reasonLabel } from '@/utils/v2/labels'
 import StatusPill from '@/components/shared/StatusPill'
 import type { StatusTone } from '@/components/shared/StatusPill'
 import type {
@@ -18,8 +19,10 @@ import type {
 const REASON_TONE: Record<AttentionReason, StatusTone> = {
     late_follow_up: 'danger',
     missed_promise: 'danger',
+    missed_installment: 'danger',
     pending_approval: 'warning',
     unassigned: 'info',
+    open_request: 'info',
     unscheduled: 'neutral',
 }
 
@@ -64,7 +67,7 @@ export const ReasonBadge = ({ reason, size }: { reason: AttentionReason; size?: 
     const { t } = useTranslation()
     return (
         <StatusPill tone={REASON_TONE[reason] || 'neutral'} size={size}>
-            <span data-reason={reason}>{t(`p1.reason.${reason}`)}</span>
+            <span data-reason={reason}>{reasonLabel(t, reason)}</span>
         </StatusPill>
     )
 }

@@ -26,6 +26,9 @@ import {
   ClipboardCheck,
   FilePenLine,
   ListChecks,
+  CalendarRange,
+  Target,
+  Inbox,
 } from "lucide-react";
 
 
@@ -58,6 +61,10 @@ const navigationIcon: NavigationIcons = {
   corrections: <FilePenLine strokeWidth={2} size={18} />,
   /* Phase 2 */
   bulk_jobs: <ListChecks strokeWidth={2} size={18} />,
+  /* Phase 3 */
+  plans: <CalendarRange strokeWidth={2} size={18} />,
+  team: <Target strokeWidth={2} size={18} />,
+  requests: <Inbox strokeWidth={2} size={18} />,
 };
 
 export default navigationIcon;

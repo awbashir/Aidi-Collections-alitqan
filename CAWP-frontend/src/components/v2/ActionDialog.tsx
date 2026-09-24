@@ -157,6 +157,7 @@ export const ReasonDialog = ({
     extra,
     extraValid = true,
     testId,
+    describeError,
 }: {
     isOpen: boolean
     title: ReactNode
@@ -170,6 +171,8 @@ export const ReasonDialog = ({
     extra?: ReactNode
     extraValid?: boolean
     testId?: string
+    /** Message builder for errors (default `describeV2Error`); Phase 3 passes `describeP3Error`. */
+    describeError?: (error: unknown, t: Translate) => string
 }) => {
     const { t } = useTranslation()
     const [reason, setReason] = useState('')
@@ -183,6 +186,7 @@ export const ReasonDialog = ({
             canSubmit={trimmed.length > 0 && extraValid}
             testId={testId}
             onReload={onReload}
+            describeError={describeError}
             onClose={() => {
                 setReason('')
                 onClose()

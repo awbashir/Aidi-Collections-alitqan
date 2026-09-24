@@ -1,9 +1,16 @@
 # Phase 3, stream A: internal requests
 
 Date: 2026-09-24. Branch `phase-3-requests-plans-targets`, not committed. Scope: "Stream A" in
-`docs/phase3-spec.md` and PROJECT-NOTES §2.6. The migrations were **not** applied to `cawp-db`,
-and no container was restarted. Every measurement on `cawp-db` ran inside a transaction that was
-rolled back; afterwards `to_regclass('requests')` is NULL and `schema_migrations` still ends at 0027.
+`docs/phase3-spec.md` and PROJECT-NOTES §2.6. This stream applied no migrations to `cawp-db` and
+restarted no container. Every measurement on `cawp-db` ran inside a transaction that was rolled
+back. The lead later applied 0028–0037 at 2026-09-23 23:11 UTC; afterwards `requests` held its
+5 real rows, so the rolled-back runs left nothing behind. The migration files have not changed
+since they were applied, so their checksums still match.
+
+**Visibility decision (2026-09-24, applied in §3.5):**
+* a user holding any department key is limited to their own department(s) plus the requests they
+  raised, even when they are also a supervisor;
+* collectors see only the requests they raised.
 
 ## 1. Files
 
@@ -12,7 +19,7 @@ rolled back; afterwards `to_regclass('requests')` is NULL and `schema_migrations
 | Migrations | `db/migrations/0028_requests.sql` (table, lifecycle guard, revision), `0029_request_events.sql` (append-only trail and attachments), `0030_request_indexes.sql` (all transactional, re-runnable) |
 | API | `CAWP-API/api/requests_v2.py` (`bp`, already listed in `api/__init__.py`; 9 routes) |
 | Services | `services/requests_common.py` (tables, `Viewer`, the visibility rule, parsing, case block), `services/requests_service.py` (list, detail, create, comment, transitions), `services/requests_attention.py` (the `open_request` reason; **reported, not wired in**), `services/requests_perf.py` (measurement harness; never commits) |
-| Tests | `tests/test_requests_helpers.py` (fixtures only), `tests/test_requests_db.py` (9), `tests/test_requests_api.py` (51), `tests/fixtures/seed_requests.sql` |
+| Tests | `tests/test_requests_helpers.py` (fixtures only), `tests/test_requests_db.py` (9), `tests/test_requests_api.py` (53), `tests/fixtures/seed_requests.sql` |
 
 Nothing else was touched: not `app.py`, `models.py`, `core/*`, `conftest.py`, `seed.sql`,
 `services/worklist_*`, other streams' files or the frontend. No new permission keys; the lead's
@@ -157,14 +164,21 @@ legitimate. The case block shows `is_archived` and `is_locked`.
 
 ### 3.5 Visibility (`requests_common.visibility`)
 
+Decided on 2026-09-24:
+
 | Caller | Sees |
 |---|---|
-| holds `requests` | the requests they raised, on any case, even after the case was reassigned away |
-| holds `requests_<dept>` | that department's requests on cases in their case scope (`clients_scope`: SuperAdmin all, supervisor = supervised users' cases + supervised contracts' portfolios, otherwise their own cases) |
-| holds `requests` and has a supervisor scope | every request on a case in their scope, plus requests raised by a supervised user |
-| SuperAdmin with `requests` | everything, including requests whose case was hard-deleted |
+| **Reviewer**: holds any `requests_<dept>` key, whatever else they hold | the requests they raised, plus their department(s)' requests on cases in their case scope (`clients_scope`: SuperAdmin all; supervisor = supervised users' cases + supervised contracts' portfolios; otherwise their own cases). The supervisor "team through scope" rule does **not** widen this to other departments. |
+| **Supervisor** without a department key (`requests` + a `supervisors` row) | the requests they raised, every request on a case in their scope, and requests raised by a supervised user |
+| **SuperAdmin** with `requests` and no department key | everything, including requests whose case was hard-deleted. A SuperAdmin holding all three department keys also sees everything. |
+| **Collector**: `requests`, no department key, no supervisor row | **only the requests they raised**, on any case, even after the case was reassigned away. Requests that others raised on the collector's own cases are not visible. |
 
-Anything else is a 404: detail, actions and the case section alike. The supervisor's portfolios
+The same rule drives:
+* the list and both count families;
+* the case section (`GET /v2/cases/<id>/requests`);
+* the detail and every action (404 when not visible).
+
+Actions then check their own rules (§3.4). The supervisor's portfolios
 are resolved into an id list first (the Phase 1 lesson: `IN (SELECT …)` made the planner
 hash-join a scan of `clints`).
 
@@ -307,9 +321,19 @@ document is still listed with `is_deleted: true` and `download_url: null`.
 ## 5. Tests
 
 `docker compose --profile test run --rm -e TEST_DB_PREFIX=cawp_test_req api-test`:
-* **Stream A: 60 passed** (32 test functions; 9 DB-level, 51 HTTP-level with parametrisations),
-  in about 5 s.
-* **Whole suite.**
+* **Stream A: 62 passed** (34 test functions; 9 DB-level, 53 HTTP-level with parametrisations),
+  in about 6 s.
+* **Whole suite, after the visibility decision:**
+  * **without streams B and C's test files: 444 passed, 0 failed**, including
+    `test_migrations.py`;
+  * **with them**: runs gave 554 passed / 4 failed and 562 passed / 2 failed, while those streams
+    were still editing. All the failures were in their files:
+    * `test_migrations.py`: re-running 0033 by hand fails ("cannot drop columns from view")
+      because 0038 redefines the same view;
+    * `test_plans_api.py::test_a_completed_plan_must_be_cancelled_before_a_new_one`;
+    * `test_plans_db.py::test_plan_capacity_is_enforced_on_both_sides_by_the_database`.
+  * None of them touch requests.
+* **Whole suite, before the decision (for the record):**
   * An earlier run, before stream C's tests landed, gave **468 passed, 0 failed**, including
     `test_migrations.py`. My files are transactional and re-runnable. That run included the
     other streams' current migrations 0031–0036.
@@ -345,11 +369,25 @@ Coverage:
 * **Reasons required.** Resolve, reopen and cancel × missing / empty / blank give 422, and
   nothing is written.
 * **Permissions.** No key: 403 everywhere. Create needs `requests`. Take and resolve need a
-  department key. A reviewer of the wrong department gets 404 (not visible); a supervisor or
-  base+legal reviewer gets 403. `own_request` is refused.
-* **Visibility.** Covered per key and scope: requester, each department reviewer, supervisor
-  (team and contract), SuperAdmin, a reviewer with collector scope, and a base+reviewer
-  supervisor. The requester keeps visibility after reassignment. A hard-deleted case stays
+  department key. A reviewer of the wrong department gets 404 (not visible), including a
+  base+legal supervisor of that contract. A supervisor without a department key gets 403.
+  `own_request` is refused.
+* **Visibility** (`test_visibility_per_key_and_scope`). Covered per key and scope: requester,
+  each department reviewer, supervisor (team and contract), SuperAdmin, and a reviewer with
+  collector scope. A base+legal supervisor of the contract sees only legal requests plus a
+  finance request they raised themselves.
+* **`test_reviewer_supervisor_limited_to_own_departments`** (decision 1). A team supervisor with
+  a department key:
+  * list: own + their department only;
+  * both count families;
+  * case section;
+  * detail and comments on other departments' requests: 404;
+  * actions;
+  * with two department keys: both departments, not the third;
+  * the same team supervisor without a department key keeps team-through-scope.
+* **`test_collector_sees_only_requests_they_raised`** (decision 2). Requests that the supervisor
+  and SuperAdmin raised on the collector's own case are invisible to the collector in the list,
+  counts, case section, detail and comments (404). The requester keeps visibility after reassignment. A hard-deleted case stays
   visible to the requester and SuperAdmin only.
 * **Revision conflict.** A stale write gets 409; `If-Match` works; a missing revision is 422.
 * **Concurrency.** A second take blocks on the row lock, then gets 409. It never overwrites.
@@ -402,6 +440,28 @@ serialisation), median of 5.
 | hanan.i (supervisor, 3 contracts), all keys | 84,860 | 117 | 0.5 | 257 | 2.0 | 0.22 | 1.1 | **120** | 112 |
 
 ¹ Cold cache on the first statement of the run; warm it is 119–122 ms.
+
+**Re-measured at 200k after the visibility decision** (e2e list, ms). The DB had just been
+integrated and other sessions were active, so the numbers are 10–30 % noisier:
+
+| viewer | before | after | why |
+|---|---|---|---|
+| SuperAdmin | 29 | 28 | |
+| aidi.dev, `requests` | 122 | 142 | |
+| aidi.dev, legal only | 70 | 82 | |
+| aidi.dev, all keys | 124 | 129 | |
+| s.almalki, legal only | 77 | 77 | |
+| sara.m, legal only | 78 | 79 | |
+| Tamara, `requests` | 22 | 25 | |
+| Tamara, legal only | 67 | 106 | now also sees the 75k synthetic requests she raised herself |
+| hanan.i, all keys | 120 | 125 | |
+
+The plans are unchanged: `requested_by = me` is one more OR branch on the same
+`clints_pkey`-probing count.
+* A reviewer now pays the own-requests branch too. That is only noticeable when one user has
+  raised tens of thousands of requests, which the synthetic data does and reality won't.
+* Attention counts, all departments at 200k: 145–230 ms under load (118 ms quiet before);
+  single department 26–33 ms.
 
 **20k requests (e2e list):**
 * SuperAdmin: 8 ms;
@@ -486,17 +546,13 @@ SELECT r.case_id, :prio AS prio, min(r.created_at) AS since
 
 ## 8. Open items
 
-1. **A reviewer with `requests` and a supervisor scope sees every department in that scope.**
-   The spec's supervisor rule ("supervisors see their team's requests through scope") applies
-   to them. Reviewer staff get case scope through a `supervisors` row (like `aidi.reviewer`), so:
-   * give a department-only reviewer role the department key without `requests`. They can still
-     comment, but cannot raise requests;
-   * or, if reviewers must also raise requests and still see only their department, narrow the
-     supervisor rule to "requests raised by supervised users". That is a product decision.
-   * Tested both ways (`test_visibility_per_key_and_scope`).
-2. **Collectors see only the requests they raised**, not requests others raised on their cases.
-   That follows the spec. If case owners should see every request on their cases, add
-   `case owner = me` to the visibility rule (one line in `visibility()`).
+1. **Decided 2026-09-24 and implemented:** reviewers who are also supervisors are limited to
+   their department(s) plus the requests they raised. A reviewer role may hold `requests` too,
+   so they can raise requests.
+   * Consequence: a supervisor who also reviews a department no longer sees the team's
+     requests of other departments. Grant department keys only to people whose team view should
+     narrow.
+2. **Decided 2026-09-24 and pinned by a test:** collectors see only the requests they raised.
 3. **Keys on the real roles.** ADMIN and SuperAdmin get all four keys when `manage_db.py up`
    merges them (`admin_default`). The lead must grant `requests` to collector and supervisor
    roles and the department keys to the reviewer roles; no role holds them today.
@@ -512,7 +568,9 @@ SELECT r.case_id, :prio AS prio, min(r.created_at) AS since
 7. **Date filter is on `created_at` only.** A `related_date` range filter can be added if the
    screens need it.
 8. **Integration steps.**
-   * `manage_db.py up` applies 0028–0030 (instant, new tables only).
+   * `manage_db.py up` applies 0028–0030 (instant, new tables only). Done by the lead on
+     2026-09-23 23:11 UTC.
+   * The visibility change touches only `services/requests_common.py`; no migration changed.
    * `cawp-api` needs a restart to register the blueprint; the module is already listed in
      `api/__init__.py`.
    * Then wire §7 into the attention queue.

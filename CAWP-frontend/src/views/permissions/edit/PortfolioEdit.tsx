@@ -25,6 +25,7 @@ import {
   findDroppedKeys,
   toCheckedKeys,
 } from "../form/permissionSave";
+import { requestPermissionRefresh } from "@/utils/v2/useSessionRefresh";
 
 injectReducer("roleEdit", reducer);
 
@@ -73,6 +74,8 @@ const PortfolioEdit = () => {
     const success = await updateDetails({ ...values, permission: sent })
       .then(async (response) => {
         if (response.id) {
+          /* Phase 3: if this is the signed-in user's own role, the nav follows at once. */
+          requestPermissionRefresh();
           ToastNotification(
             t("permission.successEdit"),
             t("permission.edit"),

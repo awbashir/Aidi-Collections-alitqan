@@ -153,3 +153,12 @@ def test_documents_need_the_tab_key_and_the_case_scope(db):
         r = call(method, path, reader)
         assert r["status"] == 201 and r["body"]["status"] is False, (path, r)   # "not found", as legacy
     assert q1(db, "SELECT is_deleted FROM clint_documents WHERE id = %s", (doc,)) == (False,)
+
+
+def test_all_collectors_dashboard_needs_the_admin_dashboard_key(db):
+    """/dashbord/Allcollector/v2 returned every collector's targets to any login; the home
+    dashboard only loads it for dashbord_admin."""
+    user = make_user(db, {"dashbord_user": True})
+    admin = make_user(db, {"dashbord_admin": True})
+    assert call("GET", "/dashbord/Allcollector/v2", user)["status"] == 403
+    assert call("GET", "/dashbord/Allcollector/v2", admin)["status"] == 200

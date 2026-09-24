@@ -6,6 +6,9 @@
  * answers anyone holding a bulk kind key or `bulk_jobs_all`
  * (`core/bulk/service.any_bulk_permission`). The kind keys below mirror the
  * live `GET /v2/bulk/kinds` registry (2026-09-23); the API still decides.
+ *
+ * Phase 3 adds `requests_any`, `plans_any` and `team_any` the same way: each
+ * screen's route and nav item open for any key its list endpoint accepts.
  */
 
 /** Any one of these opens the jobs screen (`bulk_jobs`). */
@@ -31,8 +34,20 @@ export const BULK_JOB_KEYS = [
     'client_query',
 ] as const
 
+/** Phase 3: any of these opens the requests screen (mirrors the gate of GET /v2/requests). */
+export const REQUEST_KEYS = ['requests', 'requests_legal', 'requests_finance', 'requests_operations'] as const
+
+/** Phase 3: any of these opens the plans screen (mirrors GET /v2/plans). */
+export const PLAN_KEYS = ['plans', 'plans_manage'] as const
+
+/** Phase 3: any of these opens the team screen (mirrors GET /v2/targets/achievement). */
+export const TEAM_KEYS = ['dashbord_admin', 'dashbord_user'] as const
+
 export const DERIVED_KEYS = {
     bulk_jobs: (p: Record<string, unknown>) => BULK_JOB_KEYS.some((k) => p[k] === true),
+    requests_any: (p: Record<string, unknown>) => REQUEST_KEYS.some((k) => p[k] === true),
+    plans_any: (p: Record<string, unknown>) => PLAN_KEYS.some((k) => p[k] === true),
+    team_any: (p: Record<string, unknown>) => TEAM_KEYS.some((k) => p[k] === true),
 }
 
 /** The permission map plus the derived keys. Never removes or changes a real key. */

@@ -130,16 +130,19 @@ def test_one_active_plan_per_case(db):
 def test_plan_capacity_is_enforced_on_both_sides_by_the_database(db):
     case = make_case(db, 10_000)
     other = make_case(db, 10_000)
+    early = make_payment(db, case, 500, status=True)                    # approved before the plan: free
     plan = insert_plan(db, case, "300.00", count=3, frequency="weekly")
     i1, i2, i3 = [i[0] for i in installments(db, plan)]
     pay = make_payment(db, case, 150, status=True)                      # auto: 100 -> i1, 50 -> i2
     assert plan_allocs(db, payment_id=pay) == [(i1, pay, D("100.00"), "auto"), (i2, pay, D("50.00"), "auto")]
     assert pgcode(lambda: alloc_sql(db, plan, i3, pay, case, "0.01")) == "CW101"          # payment full
+    assert pgcode(lambda: alloc_sql(db, plan, i1, early, case, "0.01")) == "CW102"        # installment full
     pay2 = make_payment(db, case, 500, status=True)                     # auto: 50 -> i2, 100 -> i3
-    assert pgcode(lambda: alloc_sql(db, plan, i1, pay2, case, "0.01")) == "CW102"         # installment full
-    assert plan_state(db, plan)[:2] == ("completed", D("300.00"))
+    assert plan_state(db, plan)[:2] == ("completed", D("300.00"))       # closed automatically (0038)
+    assert pgcode(lambda: alloc_sql(db, plan, i1, early, case, "0.01")) == "CW104"        # completed: not active
     pending = make_payment(db, case, 10)
     q(db, "UPDATE plan_allocations SET voided_at=now(), void_reason='t' WHERE payment_id=%s", (pay2,))
+    assert q1(db, "SELECT status, completed_at FROM repayment_plans WHERE id=%s", (plan,)) == ("active", None)
     assert pgcode(lambda: alloc_sql(db, plan, i3, pending, case, 1)) == "CW103"           # not approved
     other_pay = make_payment(db, other, 10, status=True)
     assert pgcode(lambda: alloc_sql(db, plan, i3, other_pay, case, 1)) == "CW105"         # other case

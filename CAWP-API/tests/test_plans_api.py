@@ -348,15 +348,20 @@ def test_cancel_needs_reason_and_revision_and_keeps_evidence(pc, db):
     assert create(pc, case, total="100").status_code == 201
 
 
-def test_a_completed_plan_must_be_cancelled_before_a_new_one(pc, db):
+def test_a_completed_plan_closes_and_a_new_plan_is_allowed(pc, db):
     case = make_case(db, 10_000)
     plan = created_plan(pc, case, total="100", installment_count=2)
     approve_v2(pc, db, make_payment(db, case, 100))
-    assert pc.get(f"/v2/plans/{plan['id']}", P.super).get_json()["data"]["state"] == "completed"
-    r = create(pc, case, total="100")
-    assert r.status_code == 409 and r.get_json()["error"] == {"plan_id": plan["id"], "state": "completed"}
-    r = cancel(pc, db, plan["id"], reason="completed, replaced by a new plan")
-    assert r.status_code == 200 and [i["state"] for i in r.get_json()["data"]["installments"]] == ["paid", "paid"]
+    d = pc.get(f"/v2/plans/{plan['id']}", P.super).get_json()["data"]
+    assert (d["state"], d["status"], d["revision"]) == ("completed", "completed", 1)
+    assert d["completed_at"] == d["installments"][-1]["paid_at"] and d["completed_with_voided_evidence"] is False
+    assert d["events"][-1]["event"] == "completed"
+    # a completed plan is closed: it cannot be cancelled and takes no manual allocation
+    r = cancel(pc, db, plan["id"], reason="x")
+    assert r.status_code == 409 and r.get_json()["error"] == {"state": "completed"}
+    r = pc.post(f"/v2/plans/{plan['id']}/allocations", P.super,
+                {"payment_id": make_payment(db, case, 5, status=True), "reason": "x"})
+    assert r.status_code == 409 and r.get_json()["error"] == {"state": "completed"}
     assert create(pc, case, total="100").status_code == 201
 
 

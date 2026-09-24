@@ -634,6 +634,27 @@ export const protectedRoutes = [
     authority: [],
   },
 
+  /* ── Phase 3: requests, repayment plans, team targets. Each key is derived
+   *    (utils/v2/derivedPermissions): any key the screen's list endpoint accepts. ── */
+  {
+    key: "requests_any",
+    path: "/requests",
+    component: lazy(() => import("@/views/phase3/requests")),
+    authority: [],
+  },
+  {
+    key: "plans_any",
+    path: "/plans",
+    component: lazy(() => import("@/views/phase3/plans")),
+    authority: [],
+  },
+  {
+    key: "team_any",
+    path: "/team",
+    component: lazy(() => import("@/views/phase3/team")),
+    authority: [],
+  },
+
   {
     key: "accessDenied",
     path: "/access-denied",

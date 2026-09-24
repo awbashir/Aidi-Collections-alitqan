@@ -37,8 +37,17 @@ const userSlice = createSlice({
       state.permissions = action.payload?.role?.permission;
       state.id = action.payload?.id;
     },
+    /* Phase 3: GET /v2/me refreshes the effective permissions (and the role
+     * name) without a new sign-in, so a grant change reaches the nav at once. */
+    setPermissions(
+      state,
+      action: PayloadAction<{ permissions: Record<string, boolean>; roleName?: string | null }>
+    ) {
+      state.permissions = action.payload.permissions;
+      if (action.payload.roleName) state.permission_name = action.payload.roleName;
+    },
   },
 });
 
-export const { setUser } = userSlice.actions;
+export const { setUser, setPermissions } = userSlice.actions;
 export default userSlice.reducer;

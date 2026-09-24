@@ -6,12 +6,13 @@
   permission keys.
 * `visibility()` is the one visibility rule, used by every read and write:
 
-    requester   `requests`                          -> requests they raised (any case)
-    reviewer    `requests_<department>`             -> that department's requests on cases in
-                                                       their case scope
-    supervisor  `requests` + a supervisor scope     -> requests on cases in their scope, and
+    reviewer    any `requests_<department>` key     -> requests they raised + their department(s)'
+                                                       requests on cases in their case scope
+                                                       (never widened by the supervisor rule)
+    supervisor  `requests`, no department key       -> own + requests on cases in their scope +
                                                        requests raised by a supervised user
-    SuperAdmin  `requests` (scope "super")          -> every request
+    SuperAdmin  `requests`, no department key       -> every request
+    collector   `requests`, no department key       -> only the requests they raised
 
   A request the caller cannot see answers 404 everywhere (no existence leak).
 """
@@ -194,35 +195,39 @@ class Visibility:
 
 
 def visibility(session, viewer: Viewer) -> Visibility:
+    """Decision 2026-09-24 (review/phase3-requests.md §3.5):
+
+    * a caller holding ANY department key is a reviewer and sees only the requests they
+      raised plus their department(s)' requests on cases in their scope; the supervisor
+      "team through scope" rule never widens that to other departments;
+    * a caller with `requests` and no department key: own requests; a supervisor also sees
+      requests on cases in their scope and requests raised by supervised users; SuperAdmin
+      sees all;
+    * a collector (no department key) sees only the requests they raised.
+    """
     R = REQUESTS
-    case_scope = viewer.case_scope(session)
-    unrestricted = case_scope is None
-    conds, needs_case = [], False
+    own = R.c.requested_by == viewer.identity
+    if viewer.departments:
+        case_scope = viewer.case_scope(session)
+        dept = (R.c.department.in_(viewer.departments) if len(viewer.departments) < len(DEPARTMENTS)
+                else None)
+        if case_scope is None:                      # SuperAdmin scope
+            if dept is None:
+                return Visibility(None, False)
+            return Visibility(sa.or_(own, dept), False)
+        reviewed = case_scope if dept is None else sa.and_(dept, case_scope)
+        return Visibility(sa.or_(own, reviewed), True)
     if viewer.base:
         if viewer.scope.kind == SUPER:
             return Visibility(None, False)
-        conds.append(R.c.requested_by == viewer.identity)
         if viewer.scope.kind == SUPERVISOR:
-            conds.append(case_scope)
-            needs_case = True
+            conds = [own, viewer.case_scope(session)]
             others = sorted(u for u in (viewer.scope.user_ids or ()) if u != viewer.identity)
             if others:
                 conds.append(R.c.requested_by.in_(others))
-            # the reviewer branch (department AND case scope) is a subset of case scope
-            return Visibility(sa.or_(*conds), needs_case)
-    if viewer.departments:
-        dept = (R.c.department.in_(viewer.departments) if len(viewer.departments) < len(DEPARTMENTS)
-                else None)
-        if unrestricted:
-            if dept is None:
-                return Visibility(None, False)
-            conds.append(dept)
-        else:
-            conds.append(case_scope if dept is None else sa.and_(dept, case_scope))
-            needs_case = True
-    if not conds:
-        return Visibility(sa.false(), False, nothing=True)
-    return Visibility(conds[0] if len(conds) == 1 else sa.or_(*conds), needs_case)
+            return Visibility(sa.or_(*conds), True)
+        return Visibility(own, False)
+    return Visibility(sa.false(), False, nothing=True)
 
 
 def case_in_scope(session, viewer: Viewer, case_id):

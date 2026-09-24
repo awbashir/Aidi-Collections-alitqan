@@ -43,6 +43,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
 from dateutil.relativedelta import relativedelta
 from flask import Blueprint, Response, request
+from core.auth import required_roles
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy import func
 
@@ -469,6 +470,7 @@ def _allcollector_payload():
 
 @bp.route("/dashbord/Allcollector/v2", methods=["GET"])
 @jwt_required()
+@required_roles("dashbord_admin")  # the all-collectors card (ProjectDashboard.tsx loads it only for dashbord_admin)
 def dashbord_all_collector_v2():
     """Cache key: `dash:allcollector:v2:<contract filter>:<today>`, TTL 120 s, JSON.
 
@@ -548,7 +550,8 @@ def dashbord_comments_report_v2():
         calls_future = _calls_async(today, today)
 
         # payload is global (today's comments for every user) -> one shared fragment
-        key = "dash:commentsreport:v2:%s" % today.isoformat()
+        from core.user_privacy import cache_key as _privacy_key   # embeds user dicts
+        key = "dash:commentsreport:v2:%s:%s" % (today.isoformat(), _privacy_key())
         frag = _cache_get_raw(key)
         if frag is None:
             frag = _fragment(_comments_report_db())
@@ -605,7 +608,9 @@ def get_dashboard_data():
 
     try:
         identity = get_jwt_identity()
-        key = "dash:v1:%s:%s:%s" % (identity, start_date.isoformat(), end_date.isoformat())
+        from core.user_privacy import cache_key as _privacy_key   # embeds user dicts
+        key = "dash:v1:%s:%s:%s:%s" % (identity, start_date.isoformat(), end_date.isoformat(),
+                                       _privacy_key())
         frag = _cache_get_raw(key)
         if frag is None:
             frag = _fragment(_dashboard_v1_payload(start_date, end_date))

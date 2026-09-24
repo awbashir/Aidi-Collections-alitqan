@@ -38,7 +38,8 @@ const Fields = (props: Fields) => {
      labelled in the current language. */
   const phase1Node = {
     value: "phase1_",
-    label: t("p1.perm.section"),
+    /* Phase 3: the node now holds every registered new key (Phases 1–3). */
+    label: t("p3.perm.section"),
     children: PHASE1_PERMISSION_GROUPS.map((group) => ({
       value: `phase1_${group}_`,
       label: t(`p1.perm.group.${group}`),

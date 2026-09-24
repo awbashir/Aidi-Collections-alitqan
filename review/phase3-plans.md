@@ -1,17 +1,22 @@
 # Phase 3, stream B: repayment plans
 
-Date: 2026-09-24. Branch `phase-3-requests-plans-targets`, not committed. Scope: `docs/phase3-spec.md`,
-"Stream B". **Migrations 0031–0033 were not applied to `cawp-db`**; the integration step does that.
-Every measurement on `cawp-db` ran inside one transaction that was rolled back.
+Date: 2026-09-24. Branch `phase-3-requests-plans-targets`. Scope: `docs/phase3-spec.md`, "Stream B".
+0031–0033 are integrated and applied to `cawp-db`. **0038 (automatic completion, §11) is not applied
+yet** and is not committed. Every measurement on `cawp-db` ran inside a transaction that was rolled back.
+
+> **Update 2026-09-24 (decision): a fully paid plan now closes automatically** (stored status
+> `completed`, migration 0038) and no longer blocks a new plan. Evidence loss reopens it, or flags it
+> when a newer active plan exists. §11 describes the change; the sections below are updated where they
+> changed (§2.1, §3, §5, §6, §9, §10).
 
 ## 1. Files
 
 | Area | Files |
 |---|---|
-| Migrations | `db/migrations/0031_repayment_plans_tables.sql` (tables, indexes, append-only guards), `0032_repayment_plans_triggers.sql` (plan/installment guards, deferred schedule check, capacity guard, auto-allocate, void, the `"Payments"` trigger), `0033_repayment_plans_state.sql` (`cawp_plan_broken_threshold()`, `v_plan_installment_state`, `v_plan_state`). All transactional and re-runnable by hand. |
+| Migrations | `db/migrations/0031_repayment_plans_tables.sql` (tables, indexes, append-only guards), `0032_repayment_plans_triggers.sql` (plan/installment guards, deferred schedule check, capacity guard, auto-allocate, void, the `"Payments"` trigger), `0033_repayment_plans_state.sql` (`cawp_plan_broken_threshold()`, `v_plan_installment_state`, `v_plan_state`), `0038_repayment_plans_auto_complete.sql` (stored `completed`, complete / reopen / flag trigger, new guard, `v_plan_state` from the stored status, backfill). All transactional and re-runnable by hand. |
 | Blueprint | `CAWP-API/api/plans.py` (`bp`, 8 routes, `URL_PREFIX = None`; already listed in `api/__init__.py`) |
 | Services | `services/plans_schedule.py` (pure: halala splitting, due dates), `services/plans_query.py` (list, detail, case plans, serialization), `services/plans.py` (preview, create, cancel, allocate, deallocate), `services/plans_attention.py` (`missed_installment`, **reported, not integrated**) |
-| Tests | `tests/test_plans_support.py` (fixtures, helpers), `test_plans_schedule.py`, `test_plans_db.py`, `test_plans_api.py`, `test_plans_concurrency.py`, `test_plans_legacy.py`, `test_plans_attention.py`, `tests/fixtures/seed_plans.sql` |
+| Tests | `tests/test_plans_support.py` (fixtures, helpers), `test_plans_schedule.py`, `test_plans_db.py`, `test_plans_api.py`, `test_plans_concurrency.py`, `test_plans_legacy.py`, `test_plans_attention.py`, `test_plans_completion.py` (0038), `tests/fixtures/seed_plans.sql` |
 
 Not touched: 0007/0008, `services/money*.py`, `app.py`, `models.py`, `core/*`, `conftest.py`, `seed.sql`,
 `services/worklist_*`, the other streams' files, the frontend. The tests reuse `q`, `q1`, `D` and the
@@ -32,13 +37,15 @@ real-app driver `run_legacy` from `test_money_support.py` (imported, not changed
   as the promise create does.
 * **At most 240 installments**, each at least 0.01.
 * **Stored status vs. derived state.**
-  * `repayment_plans.status` is `active` or `cancelled` (with `cancelled_at/by/reason`).
-  * `completed` and `broken` are derived by `v_plan_state` from the installments.
+  * `repayment_plans.status` is `active`, `completed` (since 0038, with `completed_at`) or `cancelled`
+    (with `cancelled_at/by/reason`).
+  * Only `broken` is derived, and only for active plans.
   * **One active plan per case**: partial unique index `uq_repayment_plans_one_active (case_id) WHERE status='active'`.
-* **A completed plan still blocks a new plan.** It stays stored `active`, so it must be cancelled
-  (with a reason) before a new plan is created. The create answers `409 plan_already_active` with
-  `error.state = "completed"`, so the UI can offer that step. See open item 1.
-* **Cancelling keeps the allocations.**
+* **A fully paid plan closes automatically (0038, §11).**
+  * It no longer blocks a new plan, cannot be cancelled, and takes no new allocation.
+  * If it loses evidence it reopens, or it is flagged when a newer active plan exists.
+  * *(Before 0038 a completed plan blocked a new one until it was cancelled.)*
+* **Cancelling (active plans only) keeps the allocations.**
   * They are evidence of what was paid under the plan.
   * A paid installment of a cancelled plan stays `paid`; the others become `cancelled`.
   * Old payments must not move to a replacement plan: they already lowered the outstanding balance
@@ -81,7 +88,7 @@ The database also checks this at commit (§3.2).
 
 | Table | Columns | Notes |
 |---|---|---|
-| `repayment_plans` | `id`, `case_id`, `status` active\|cancelled, `frequency`, `start_date date`, `total_amount numeric(14,2) > 0`, `installment_count 1..240`, `split_mode` count\|amount, `installment_amount` (amount mode only, CHECK), `outstanding_at_creation`, `note`, `created_by/at`, `cancelled_at/by`, `cancel_reason`, `revision`, `request_id`, `idempotency_key` | CHECK total ≤ outstanding_at_creation; CHECK cancelled ⇔ non-blank reason. Partial unique index for one active plan per case. Never deleted (DELETE/TRUNCATE raise). |
+| `repayment_plans` | `id`, `case_id`, `status` active\|completed\|cancelled (completed since 0038, with `completed_at`, `evidence_voided_at`), `frequency`, `start_date date`, `total_amount numeric(14,2) > 0`, `installment_count 1..240`, `split_mode` count\|amount, `installment_amount` (amount mode only, CHECK), `outstanding_at_creation`, `note`, `created_by/at`, `cancelled_at/by`, `cancel_reason`, `revision`, `request_id`, `idempotency_key` | CHECK total ≤ outstanding_at_creation; CHECK cancelled ⇔ non-blank reason. Partial unique index for one active plan per case. Never deleted (DELETE/TRUNCATE raise). |
 | `plan_installments` | `id`, `plan_id` (FK), `case_id`, `seq` (UNIQUE per plan), `due_date date`, `amount numeric(14,2) > 0` | Immutable (UPDATE/DELETE/TRUNCATE raise). |
 | `plan_allocations` | `id`, `plan_id` (FK), `installment_id` (FK), `payment_id`, `case_id`, `amount > 0`, `source` auto\|manual, `note` (**required for manual**: the reason), `created_by`, `created_at` (`clock_timestamp()`), `voided_at/by`, `void_reason` | Never deleted; the only UPDATE allowed is a void. Partial covering indexes on the active rows per installment and per payment. |
 | `plan_events` | `id identity`, `plan_id`, `case_id`, `event` ∈ created/cancelled/allocated/deallocated/allocation_voided, `occurred_at`, `actor_user_id`, `amount`, `reason` (required for cancelled/deallocated), `installment_id`, `allocation_id`, `payment_id`, `details jsonb`, `source` api\|legacy, `request_id`, `idempotency_key` | Append-only. |
@@ -150,7 +157,7 @@ State, first match wins:
 `plan_id, case_id, status, state, frequency, start_date, end_date, total_amount, installment_count, allocated, remaining, upcoming_count, due_count, overdue_count, partially_paid_count, paid_count, cancelled_count, overdue_amount, oldest_overdue_date, next_due_date, completed_at, created_by, created_at, cancelled_at`.
 State, first match wins:
 1. `cancelled`;
-2. `completed` (all installments paid);
+2. `completed`: the stored status since 0038 (before, derived as "all installments paid");
 3. `broken` (overdue_count ≥ `cawp_plan_broken_threshold()`);
 4. `active`.
 
@@ -220,7 +227,7 @@ Conventions are those of stream A:
 |---|---|---|---|
 | `POST /v2/cases/<case_id>/plans/preview` | `plans_manage` | same body as create; no idempotency key; **writes nothing** | 200 schedule |
 | `POST /v2/cases/<case_id>/plans` | `plans_manage` | `{total_amount, frequency, start_date, installment_count \| installment_amount, note?}` | 201 plan detail |
-| `GET /v2/plans` | `plans`, `plans_manage` | `state` (comma list of active, completed, broken, cancelled; default all), `case_id`, `owner_id` (current case owner), `created_by`, `portfolio_id`, `contract_id`, `frequency`, `created_from`/`created_to` (Riyadh civil, on `created_at`), `next_due_from`/`next_due_to` (inclusive), `sort` = `-created_at` (default) \| `created_at` \| `next_due_date` \| `oldest_overdue_date` \| `total_amount` \| `-total_amount`, `page`, `page_size` (≤ 200) | 200 `{items[], page, page_size, sort, state[], total, totals: {total_amount, allocated, remaining, overdue_amount}, counts_by_state: {state: {count, total_amount, allocated, overdue_amount}}, broken_threshold}`. `counts_by_state` ignores the `state` filter (for tabs). |
+| `GET /v2/plans` | `plans`, `plans_manage` | `state` (comma list of active, completed, broken, cancelled; default all), `case_id`, `owner_id` (current case owner), `created_by`, `portfolio_id`, `contract_id`, `frequency`, `created_from`/`created_to` (Riyadh civil, on `created_at`), `next_due_from`/`next_due_to` (inclusive), `evidence_voided` = `true`\|`false` (0038 flag), `sort` = `-created_at` (default) \| `created_at` \| `next_due_date` \| `oldest_overdue_date` \| `total_amount` \| `-total_amount`, `page`, `page_size` (≤ 200) | 200 `{items[], page, page_size, sort, state[], total, totals: {total_amount, allocated, remaining, overdue_amount}, counts_by_state: {state: {count, total_amount, allocated, overdue_amount}}, broken_threshold}`. `counts_by_state` ignores the `state` filter (for tabs). |
 | `GET /v2/plans/<plan_id>` | `plans`, `plans_manage` | – | 200 plan + `installments[]` (each with `allocations[]`) + `events[]` |
 | `GET /v2/cases/<case_id>/plans` | `plans`, `plans_manage` | – | 200 `{case_id, balance, active_plan_id, broken_threshold, items[]}`. The active plan comes first, then newest; each item has installments and events. |
 | `POST /v2/plans/<plan_id>/cancel` | `plans_manage` | `{expected_revision, reason}` | 200 plan |
@@ -232,8 +239,8 @@ Conventions are those of stream A:
 | Area | Codes |
 |---|---|
 | Preview / create | `validation_failed` (422; `error` per field: `total_amount` required\|invalid\|not_positive\|too_precise\|too_large; `frequency` required\|invalid; `start_date` required\|invalid; `installment_count`/`installment_amount` exactly_one_of\|invalid\|not_positive), `start_date_in_past` (422, `{start_date, today}`), `start_date_too_far` (422, `{start_date, max}`), `installment_too_small` (422, `{field, installment_count, max_installment_count}`), `too_many_installments` (422, `{field, max: 240, installment_count}`), `installment_amount_exceeds_total` (422), `amount_exceeds_balance` (409, `{original, approved, outstanding, total_amount}`), `plan_already_active` (409, `{plan_id, state}`), `case_locked` (423) |
-| Cancel | `validation_failed` (reason / expected_revision required), `revision_conflict` (409), `plan_not_cancellable` (409) |
-| Allocate | `validation_failed` (reason required, payment_id invalid), `payment_not_found` / `installment_not_found` (404), `case_mismatch` (422), `payment_not_allocatable` (409, `error.status` = pending\|rejected\|reversed\|deleted), `plan_not_allocatable` (409), `payment_capacity_exceeded` / `installment_capacity_exceeded` (409, `error.available`), `nothing_to_allocate` (409, `{payment_available, installments_available}`) |
+| Cancel | `validation_failed` (reason / expected_revision required), `revision_conflict` (409), `plan_not_cancellable` (409, `error.state` = completed\|cancelled) |
+| Allocate | `validation_failed` (reason required, payment_id invalid), `payment_not_found` / `installment_not_found` (404), `case_mismatch` (422), `payment_not_allocatable` (409, `error.status` = pending\|rejected\|reversed\|deleted), `plan_not_allocatable` (409, `error.state` = completed\|cancelled), `payment_capacity_exceeded` / `installment_capacity_exceeded` (409, `error.available`), `nothing_to_allocate` (409, `{payment_available, installments_available}`) |
 | Deallocate | `allocation_already_voided` (409), `allocation_not_found` (404) |
 
 The preview runs the same checks as create, with the same codes, so a successful preview means the
@@ -265,7 +272,8 @@ Plan object (create, detail, cancel, list items; list items have no `installment
  "oldest_overdue_date": null, "next_due_date": "2026-11-30", "broken_threshold": 2,
  "outstanding_at_creation": "4500.50", "note": "agreed on the call",
  "created_by": {"id": "…501", "name": "Plan Super"}, "created_at": "2026-09-23T22:57:12.646710+00:00",
- "revision": 0, "completed_at": null,
+ "revision": 0, "completed_at": null,                 // stored since 0038
+ "completed_with_voided_evidence": false, "evidence_voided_at": null,   // 0038 flag (§11)
  "cancellation": null,                      // or {"at", "by": {"id", "name"}, "reason"}
  "case": {"id", "name", "account_number", "identity_number", "owner": {…}, "portfolio": {…}, "contract": {…}},
  "installments": [{"id": "e343…", "seq": 1, "due_date": "2026-10-31", "amount": "333.34", "allocated": "333.34",
@@ -307,8 +315,11 @@ and also lets the holder read.
 ## 6. Frontend notes
 * **Create wizard:** call `preview` on every change. It returns the same error codes as create, and on
   success the exact installments, the balance and the rule names. Then call `create` with a new
-  `Idempotency-Key`. On `409 plan_already_active` with `state: "completed"`, offer "cancel the completed
-  plan" first.
+  `Idempotency-Key`. Since 0038 a completed plan never blocks creation. `409 plan_already_active`
+  now means a real active plan (or one just reopened by a reversal), so show it rather than a cancel step.
+* **Completed plans** (0038): no Cancel button. Show `completed_at`; when `completed_with_voided_evidence`
+  is true, show a warning ("completed, but payment evidence was later reversed"). The installments then
+  show their true states. The list can filter with `evidence_voided=true`.
 * **Plan tab:** use `GET /v2/cases/<id>/plans`. It has `active_plan_id` and `balance`, and each plan has
   installments, allocations and events. Cancel needs the plan's `revision`.
 * **Plans screen:** `GET /v2/plans`. The state tabs come from `counts_by_state`; the filters and sort go
@@ -427,14 +438,15 @@ with 2,617 plans. Today there are no plans, so it costs nothing.
 
 `docker compose --profile test run --rm -e TEST_DB_PREFIX=cawp_test_plans api-test`
 
-**Plan tests: 76 passed.** Per file:
+**Plan tests: 85 passed** (76 + 9 in `test_plans_completion.py`, after 0038). Per file:
 * `test_plans_schedule.py` 29 (pure, `no_db`);
 * `test_plans_db.py` 11;
 * `test_plans_api.py` 27;
 * `test_plans_concurrency.py` 4;
 * `test_plans_legacy.py` 3;
 * `test_plans_attention.py` 1;
-* `test_plans_support.py` 1.
+* `test_plans_support.py` 1;
+* `test_plans_completion.py` 9 (§11).
 
 | Area | Tests |
 |---|---|
@@ -446,12 +458,14 @@ with 2,617 plans. Today there are no plans, so it costs nothing.
 | Auto-allocation | both ledgers from one approval, oldest due first across installments, insert of an approved row, non-positive and rejected rows ignored, no back-fill of payments approved before the plan |
 | Void | legacy reject (actor = rejecter), hard delete, case move, amount shrink (growth keeps), v2 reversal (reason + reverser, both ledgers), whole-case delete, cancelled plan gets nothing, paid installments stay paid |
 | States | every installment state against Riyadh today, plan state broken/active/completed/cancelled with counts, overdue amount, next due, end date, `paid_at`/`completed_at`, threshold override and fallback (0, -1, abc, empty), broken not automatic |
-| API | preview (writes nothing, both modes, rules), 13 parametrized validation cases on preview and create, Riyadh start-date rules, exact outstanding (float debt, 0.1 + 0.2, pending/rejected ignored, overpaid), locked case 423, one active plan 409, create stores the previewed schedule plus event and audit, idempotent replay / reuse / missing key, numbers as input, permissions (403 per route and key), scope 404 (collector, supervisor), list filters/totals/states/sort/paging/validation, detail and case plans, cancel (reason, revision, If-Match, evidence kept, second cancel, new plan), completed plan must be cancelled first, manual allocate (installment, spread, capacity errors, status, case, 404s, events, audit) and deallocate |
+| API | preview (writes nothing, both modes, rules), 13 parametrized validation cases on preview and create, Riyadh start-date rules, exact outstanding (float debt, 0.1 + 0.2, pending/rejected ignored, overpaid), locked case 423, one active plan 409, create stores the previewed schedule plus event and audit, idempotent replay / reuse / missing key, numbers as input, permissions (403 per route and key), scope 404 (collector, supervisor), list filters/totals/states/sort/paging/validation, detail and case plans, cancel (reason, revision, If-Match, evidence kept, second cancel, new plan), a completed plan closes (no cancel, no allocation, new plan allowed), manual allocate (installment, spread, capacity errors, status, case, 404s, events, audit) and deallocate |
 | Concurrency | approval waits for the case lock; allocate-vs-legacy-reject in both orders; the 3-round storm through the real app (no deadlock, exact per-payment ledgers); negative control that shows the rejected lock order deadlocks |
 | Real `app.py` | legacy approve / reject / delete / edit-shrink / create-approved feed and void plan allocations (actors, reasons, `legacy` source, freed capacity re-used), legacy response keys unchanged, 8 parallel legacy approvals fill the plan exactly, the real app serves preview/create (replay)/case plans/list |
 | Attention | `missed_installment` set and facts vs. the view, super vs. collector scope, archived / cancelled / paid / due-today excluded, the report's raw SQL, `has_active_plan` |
 
 **Wider runs**
+* **After 0038: the whole suite with `TEST_DB_PREFIX=cawp_test_plans`: 574 passed, 0 failed** (all streams).
+* Before 0038:
 * Plans + `test_migrations.py` (all migrations, including the other streams' 0028–0036) + all money tests +
   worklist tests: **178 passed**.
 * The whole suite **without** the other Phase 3 streams' in-progress tests (`test_admin_*`,
@@ -462,9 +476,8 @@ with 2,617 plans. Today there are no plans, so it costs nothing.
   admin tests ran. Every one of them passes when run alone, and none involves plan code.
 
 ## 10. Open items
-1. **Completed plans block a new plan until cancelled.** This is simple and DB-enforced. The alternative
-   is to "close" a completed plan automatically when a new one is created. That would need a third stored
-   status, plus a rule for a closed plan whose allocation is voided later. Decide before the wizard ships.
+1. ~~Completed plans block a new plan until cancelled.~~ **Resolved by 0038** (§11): completed plans
+   close automatically. The remaining follow-up is item 9.
 2. **Payments approved before a plan exists are not auto-allocated.** The spec says to allocate on
    approval; use the manual allocate endpoint, whose default amount is the most both sides allow. This is
    the same behaviour as promises (stream A, open item 6).
@@ -484,3 +497,106 @@ with 2,617 plans. Today there are no plans, so it costs nothing.
    auto-allocate to plans too, and the trigger records it with source `legacy`.
 8. **`missed_installment`** is ready in `services/plans_attention.py` and needs about 10 lines in
    `worklist_attention.py` (§7). Also decide whether an active plan makes a case "scheduled".
+9. **(0038) Approvals while a plan is completed get no plan allocation, and are not back-filled when the
+   plan reopens.** Example: a completed plan, an approval, then a reversal of an older payment. The plan
+   reopens with an unpaid gap, while the newer payment's plan capacity stays free. Use manual allocate,
+   whose default is the most both sides allow. This is the same rule as items 2 and "allocate on approval".
+10. **(0038) A flagged plan** (`evidence_voided_at`) stays `completed` forever, even if the newer plan is
+   later cancelled. It is reported (`completed_with_voided_evidence`, list filter `evidence_voided=true`)
+   and is not in the attention queue: `missed_installment` counts active plans only. Decide whether a
+   supervisor view should list flagged plans.
+
+## 11. Automatic completion (migration 0038, decision 2026-09-24)
+
+**Behaviour**
+* **Completion.** When an allocation makes every installment of an **active** plan fully allocated, the
+  same transaction sets `status = 'completed'` and `completed_at` (= the completing allocation's
+  `created_at`), bumps `revision`, and writes a `completed` event (actor = the allocation's creator).
+  This covers:
+  * auto allocation on approval (v2 and legacy approve, legacy insert of an approved row);
+  * manual allocation;
+  * direct SQL.
+* **A new plan is allowed at once.** The one-active index only counts `status = 'active'`. A completed
+  plan cannot be cancelled (`409 plan_not_cancellable`, `state: completed`) and takes no allocation
+  (`CW104`, `409 plan_not_allocatable`). Later approvals go to the newer plan.
+* **Evidence lost.** A reversal, legacy reject / delete / amount shrink, manual deallocate or direct SQL
+  voids an allocation of a completed plan. Then:
+  * *no other active plan on the case:* back to `active`, `completed_at` cleared, event `reopened_unpaid`
+    (actor = the voider, reason = the void reason, e.g. `payment reversed: cheque bounced`);
+  * *a newer active plan exists:* stays `completed`, `evidence_voided_at` is set **once**, event
+    `completed_evidence_voided` (`details.active_plan_id` = the newer plan). The API shows it as
+    `completed_with_voided_evidence: true`, and `GET /v2/plans?evidence_voided=true` lists these plans.
+    Its installments show their true states (e.g. overdue).
+* **Backfill.** 0038 completes any active plan that is already fully allocated (event source
+  `migration`). There were none on `cawp-db` (7 real plans, none fully paid).
+
+**Design choices** (these differ from, or refine, the proposed design)
+* **The completion/reopen trigger is AFTER INSERT / AFTER UPDATE OF voided_at on `plan_allocations`,
+  not a deferred trigger.** The API returns the plan in the same request and stores that response for
+  idempotent replays, so the state must be right before commit. One place covers every path.
+* **Reopen vs. flag is decided by the unique index itself.** The void paths hold no case lock (a
+  deliberate choice, §4), so a plan creation can race a reopen. The reopen UPDATE runs in a sub-block, and
+  a `unique_violation` turns it into the flag. If the create wins, the reopen waits on the index and then
+  flags (no error). If the reopen wins, the create waits and then answers `409 plan_already_active` with
+  the reopened plan's id (it used to give `plan_id: null`). Both orders are tested.
+* **Race found and fixed while writing the tests.** Completion and reopen both read the plan's status.
+  Unlocked, a legacy reject (payment row only) could void evidence while an approval was completing the
+  plan, which would end `completed` but not fully paid. Both branches now lock the plan row
+  (`FOR NO KEY UPDATE`, which does not conflict with the FK `KEY SHARE` of allocation inserts) and decide
+  on a fresh snapshot.
+  * **Lock order:** case row → payment row → ledger rows → **plan row, always last**. No path takes a
+    payment or the case after the plan row, so no cycle is added.
+  * **Cheap exit:** before locking, the completion check looks at the installment just allocated and the
+    plan's last-due installment. If either is unpaid, the plan cannot be complete, and no lock is needed
+    because the allocating transaction holds the case row.
+* **The guard enforces the state machine.** Allowed changes: active→cancelled, active→completed (only if
+  fully allocated), completed→active (only if not, and never a flagged plan), and completed→completed
+  setting the flag once. Anything else is `CW108`, including cancelling a completed plan, un-completing it
+  by hand, or editing `completed_at`.
+* **`v_plan_state` keeps 0033's exact column list**, so re-running 0033 by hand, as `test_migrations`
+  does, still works. `state` and `completed_at` now come from the stored status. The flag is read from
+  `repayment_plans.evidence_voided_at`.
+* **New events sort after their cause.** They use `occurred_at = clock_timestamp()`, after the
+  `allocated` / `allocation_voided` / `deallocated` event (`now()`) that caused them.
+* **The API changed only additively.**
+  * New fields `completed_with_voided_evidence` and `evidence_voided_at`, and the filter `evidence_voided`.
+  * `state` values, filters and `counts_by_state` are unchanged: `completed` now means stored-completed.
+  * `missed_installment` is unaffected: it counts active plans only, so a reopened plan with overdue
+    installments appears again.
+
+**Tests (`test_plans_completion.py`, 9)**
+* auto-complete on the last allocation, with events in order and a new plan allowed afterwards;
+* manual allocate completes, deallocate reopens;
+* reversal reopens and the plan completes again;
+* reversal with a newer active plan flags it, only once, and the list filter finds it;
+* the guard state machine;
+* the legacy approve → reject → approve → v2 create → delete sequence through the real `app.py`
+  (complete, reopen, complete, flag);
+* the reopen-vs-create race in both orders;
+* a 3-round parallel storm on a small plan that completes and reopens, through the real `app.py`, with
+  v2 and legacy approvals, reversals, rejects and deletes. There are no deadlocks, both ledgers stay
+  exact, and the stored status always matches the ledger;
+* the backfill on a scratch database, including a manual re-run of 0038.
+
+Updated earlier tests: the capacity test (CW102 before completion, CW104 on a completed plan, reopen on
+void) and the API test (a completed plan closes; a new plan is allowed).
+
+**Timings on `cawp-db` (rolled back)**
+* **0038 on the real data:** 23–37 ms. One run took 1.27 s: the `ALTER TABLE`s need ACCESS EXCLUSIVE
+  on `repayment_plans` / `plan_events` and waited for the live stack; `lock_timeout` is 5 s.
+* **0038 over the 24k synthetic plans:** 0.95–1.2 s, including the backfill that completed 4,986 plans.
+* **List** (super): counts 434–475 ms, page 6–7 ms. That is unchanged from §8, because the view now
+  reads the stored status.
+
+| Statement (5,000 rows, 3 runs) | Without `plan_allocations_state_trg` | With it | Per row |
+|---|---|---|---|
+| One approval that completes a plan (~7 installments) | – | whole UPDATE 2.5–2.7 ms warm; `payments_plans_trg` 1.37 ms | |
+| Approve 5,000 payments that do not complete their plan | 2.87–2.93 s | 2.95–3.35 s | +0.01–0.08 ms |
+| Approve 5,000 payments that each complete their plan | 6.54–6.73 s | 8.56–8.67 s | +0.4 ms |
+| Reject those 5,000 (each reopens its plan) | 2.53–2.78 s | 3.96–4.13 s | +0.3 ms |
+
+**Harness note:** the real plan tables now have autovacuum statistics of a few rows. Bulk-generating
+66k allocations inside one statement therefore made the cached plpgsql plans quadratic (a full scan of
+a partial index per probe). The generator allocates a first batch, runs ANALYZE, then does the rest. A
+live system grows gradually and re-plans after autoanalyze.
+

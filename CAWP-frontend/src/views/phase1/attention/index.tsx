@@ -20,6 +20,8 @@ import { formatCount, formatRiyadhDateTime } from '@/utils/v2/format'
 import { caseLink } from '@/utils/v2/links'
 import { CivilDate, Ltr, MoneyText, RiyadhTime } from '@/components/v2/Display'
 import { BucketBadge, PlainBadge, ReasonBadge } from '@/components/v2/Badges'
+import { reasonLabel } from '@/utils/v2/labels'
+import { usePermissions } from '@/utils/v2/hooks'
 import { EmptyState, ErrorState, Note, SkeletonRows } from '@/components/v2/States'
 import { CountTabs, PageHead, PagerFooter, ScopeFilters, TableFrame, rowClass } from '@/components/v2/ListParts'
 
@@ -55,6 +57,11 @@ const workLink = (reason: AttentionReason, caseId: string) => {
             return caseLink(caseId, 'followUps')
         case 'missed_promise':
             return caseLink(caseId, 'promises')
+        /* Phase 3 */
+        case 'missed_installment':
+            return caseLink(caseId, 'plan')
+        case 'open_request':
+            return caseLink(caseId, 'requests')
         case 'pending_approval':
             return `/payment-approvals#status=pending&case=${encodeURIComponent(caseId)}`
         case 'unassigned':
@@ -85,6 +92,28 @@ const FactLine = ({ item, reason }: { item: AttentionItem; reason: AttentionReas
             t('p1.attention.fact.pending', { count: f.pending_approval.count }),
             <MoneyText key="a" value={f.pending_approval.amount} />,
         ]
+    } else if (reason === 'missed_installment' && f.missed_installment) {
+        parts = [
+            t('p3.attention.fact.overdueInstallments', { count: f.missed_installment.count }),
+            <span key="d">
+                {t('p3.attention.fact.since')} <CivilDate value={f.missed_installment.oldest_due_date} />
+            </span>,
+            <span key="a">
+                {t('p3.attention.fact.unpaid')} <MoneyText value={f.missed_installment.unpaid_amount} />
+            </span>,
+        ]
+    } else if (reason === 'open_request' && f.open_request) {
+        parts = [
+            t('p3.attention.fact.requests', {
+                count: f.open_request.count,
+                open: f.open_request.open,
+                inReview: f.open_request.in_review,
+            }),
+            f.open_request.departments.map((d) => t(`p3.req.dept.${d}`)).join(String(t('p3.req.listSep'))),
+            <span key="d">
+                {t('p3.attention.fact.oldest')} <RiyadhTime iso={f.open_request.oldest_created_at} />
+            </span>,
+        ]
     } else if (reason === 'unassigned') {
         parts = [t('p1.attention.fact.unassigned')]
     } else if (reason === 'unscheduled') {
@@ -109,10 +138,29 @@ const FactLine = ({ item, reason }: { item: AttentionItem; reason: AttentionReas
     )
 }
 
+/** Phase 3: an open-request fact also links to the requests screen, filtered to the case. */
+const RequestsScreenLink = ({ caseId }: { caseId: string }) => {
+    const { t } = useTranslation()
+    return (
+        <Link
+            to={`/requests#case=${encodeURIComponent(caseId)}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block py-0.5 text-[12px] text-azure-600 hover:underline"
+            data-testid="p3-work-link-requests-screen"
+        >
+            {t('p3.attention.openRequestsScreen')}
+        </Link>
+    )
+}
+
 const AttentionQueue = () => {
     const { t } = useTranslation()
     const navigate = useNavigate()
     const { state, setState } = useHashState(schema)
+    const perms = usePermissions()
+    /* `open_request` applies only to request reviewers (the API reports 0 otherwise). */
+    const reviewsRequests = !!(perms.requests_legal || perms.requests_finance || perms.requests_operations)
+    const visibleTabs = TABS.filter((tab) => tab !== 'open_request' || reviewsRequests || state.tab === tab)
     const reason = state.tab === 'all' ? undefined : state.tab
 
     const query = useV2Query(
@@ -134,9 +182,9 @@ const AttentionQueue = () => {
 
     const tabs = useMemo(
         () =>
-            TABS.map((tab) => ({
+            visibleTabs.map((tab) => ({
                 value: tab,
-                label: t(tab === 'all' ? 'p1.attention.all' : `p1.reason.${tab}`),
+                label: tab === 'all' ? t('p1.attention.all') : reasonLabel(t, tab),
                 // "All" is the distinct number of cases, known only for the unfiltered list.
                 count:
                     tab === 'all'
@@ -147,7 +195,8 @@ const AttentionQueue = () => {
                         ? data.counts[tab]
                         : undefined,
             })),
-        [data, state.tab, t]
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [data, state.tab, t, reviewsRequests]
     )
 
     const openCase = (item: AttentionItem) => {
@@ -252,6 +301,9 @@ const AttentionQueue = () => {
                                             {item.reasons.map((r) => (
                                                 <FactLine key={r} item={item} reason={r} />
                                             ))}
+                                            {item.reasons.includes('open_request') && (
+                                                <RequestsScreenLink caseId={item.case.id} />
+                                            )}
                                         </Td>
                                         <Td>{item.case.owner?.name || <span className="text-gray-500">{t('p1.unassigned')}</span>}</Td>
                                         <Td>
