@@ -122,6 +122,13 @@ class Worker:
         signal.signal(signal.SIGTERM, handler)
         signal.signal(signal.SIGINT, handler)
 
+    def _calling_retention(self):
+        try:
+            from services import calling_cdr_retention
+            calling_cdr_retention.worker_tick()
+        except Exception:  # noqa: BLE001 - e.g. migrations 0057/0058 not applied yet
+            log.exception("calling retention tick failed")
+
     def _sync_targets(self):
         from extensions import db
         from services import targets
@@ -149,6 +156,7 @@ class Worker:
                     if time.monotonic() >= next_retention:
                         retention.run()
                         next_retention = time.monotonic() + self.settings.retention_interval_seconds
+                    self._calling_retention()          # Phase 5: rate-limited inside, never raises
                     if time.monotonic() >= next_target_sync:
                         # Phase 3: a target set in advance reaches the legacy dashboard columns
                         # when its month starts (idempotent; hourly, so within an hour of rollover)

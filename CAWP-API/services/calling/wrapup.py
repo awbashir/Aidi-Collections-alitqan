@@ -23,6 +23,17 @@ One wrap-up per attempt, saved in ONE transaction (the @idempotent route commits
 Evidence rule for PBX attempts: outcomes that claim a conversation (connected,
 promise_discussed, dispute, wrong_number) need PBX bridge evidence (`bridged_at`); otherwise
 409 `conversation_not_evidenced`. A manual log records what the collector reports.
+
+A PBX call on a LOCKED or ARCHIVED case (the lead's decision, P1; migration 0053): the call
+happened, so its facts are never blocked. The wrap-up is recorded (outcome + the note text in
+call_wrapups.note_text) and the reservation is released, but the protected case mutations -
+the legacy note row, the callback follow-up, the promise, the contact block (wrong number)
+and the case block (do-not-call) - are NOT applied. What was asked for is kept in
+`deferred_actions`; the wrap-up is `needs_review` (review_reason case_locked | case_archived)
+and a `wrapup_needs_review` flag lists it for supervisors (GET /v2/calling/review). A
+deferred do-not-call or wrong number makes that flag block calling the case until a
+supervisor resolves it. A MANUAL log on a locked/archived case is still refused (409): it
+creates a new call record at the collector's initiative, with no reservation to release.
 """
 from __future__ import annotations
 
@@ -363,8 +374,60 @@ def wrapup(attempt_id, body: dict, expected_revision) -> str:
                        "the PBX shows no bridged conversation for this call; choose no_answer, busy or do_not_call",
                        {"outcome": v["outcome"], "state": attempt["state"]})
     contact = _contact(attempt["contact_id"], case) if attempt["contact_id"] else None
-    _save(dict(attempt), case, contact, v)
+    state = sess().execute(text("""
+        SELECT is_locked, is_archive FROM clints WHERE id = CAST(:id AS uuid) FOR NO KEY UPDATE"""),
+        {"id": str(attempt["case_id"])}).mappings().first()
+    if state is not None and (state["is_locked"] or state["is_archive"]):
+        _save_for_review(dict(attempt), case, contact, v, "case_locked" if state["is_locked"] else "case_archived")
+    else:
+        _save(dict(attempt), case, contact, v)
     return str(attempt_id)
+
+
+def _save_for_review(attempt: dict, case: dict, contact: dict | None, v: dict, review_reason: str) -> dict:
+    """The locked/archived-case wrap-up: record the facts, apply no protected case change."""
+    import json
+
+    from flask import request
+
+    from services.calling.projection import flag
+    actor, attempt_id, case_id = me(), str(attempt["id"]), str(case["id"])
+    if v["outcome"] == "wrong_number" and contact is None:
+        _bad("contact_id", "a wrong number needs the contact that was called", "required",
+             code="contact_required")
+    deferred = {
+        "note": {"comment_status_id": v["status_id"], "contact_method_id": v["method_id"],
+                 "comment_reachability_id": v["reach_id"]},
+        "callback_at": iso(v["callback"]),
+        "promise": ({"agreed": True, "amount": v["promise"].get("amount"), "due_date": v["promise"].get("due_date")}
+                    if v["promise"] is not None else None),
+        "wrong_number": ({"contact_id": str(contact["id"]), "replacement_default_id": v["replacement_default_id"],
+                          "reason": v["wrong_number_reason"]} if v["outcome"] == "wrong_number" else None),
+        "do_not_call": ({"reason": v["do_not_call_reason"] or "Do-not-call requested during a call"}
+                        if v["outcome"] == "do_not_call" else None),
+    }
+    wid = sess().execute(text("""
+        INSERT INTO call_wrapups (attempt_id, case_id, outcome, note_id, note_text, contact_id, reviewed_by,
+                                  needs_review, review_reason, deferred_actions, request_id, idempotency_key)
+        VALUES (CAST(:a AS uuid), CAST(:c AS uuid), :outcome, NULL, :text, CAST(:contact AS uuid), CAST(:by AS uuid),
+                true, :why, CAST(:deferred AS jsonb), :req, :idem)
+        RETURNING id"""), {
+        "a": attempt_id, "c": case_id, "outcome": v["outcome"], "text": v["note_text"],
+        "contact": str(contact["id"]) if contact else None, "by": actor, "why": review_reason,
+        "deferred": json.dumps(deferred, sort_keys=True), "req": request.headers.get("X-Request-ID"),
+        "idem": request.headers.get("Idempotency-Key")}).scalar()
+    sess().execute(text("UPDATE call_attempts SET wrapped_up_at = now() WHERE id = CAST(:id AS uuid)"),
+                   {"id": attempt_id})
+    released = A.release_reservation(attempt_id, "wrapup", by=actor, reason=f"wrap-up saved ({review_reason})")
+    blocks = v["outcome"] in ("do_not_call", "wrong_number")
+    flag(sess(), {"id": attempt_id, "case_id": case_id}, "wrapup_needs_review", review_reason,
+         detail={"wrapup_id": str(wid), "outcome": v["outcome"],
+                 "deferred": sorted(k for k, val in deferred.items() if val and k != "note") + ["note"]},
+         blocks_calling=blocks)
+    audit.record("call.wrapup", "call_attempt", attempt_id, case_id=case_id, after={
+        "wrapup_id": str(wid), "outcome": v["outcome"], "needs_review": True, "review_reason": review_reason,
+        "deferred_actions": deferred, "reservation_released": released, "blocks_calling": blocks})
+    return {"wrapup_id": str(wid)}
 
 
 # --------------------------------------------------------------------------- blocks

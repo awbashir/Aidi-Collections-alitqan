@@ -109,8 +109,10 @@ def test_consumer_session_events_and_legs(cl_app, world, pgc):
                                            "bridge_id, hangup_cause FROM call_legs WHERE attempt_id = %s", a)}
     assert legs[agent][0] == "agent" and legs[agent][1] is True and str(legs[agent][2]) == "101.000000"
     assert legs[cust][0] == "customer" and legs[cust][3] == "b1" and legs[cust][4] == 16
-    # evidence only: the attempt's business state is not advanced by P0
-    assert q1(pgc, "SELECT state FROM call_attempts WHERE id = %s", a)[0] == "dispatched"
+    # P1 projection: both legs answered and shared a bridge, but this attempt never passed the gate
+    # (no AGI allow, no `authorized` UserEvent), so it is not a conversation: ended, not bridged
+    assert q1(pgc, "SELECT state, reason_code, bridged_at FROM call_attempts WHERE id = %s", a) == \
+        ("ended", "not_bridged", None)
 
 
 def test_lost_session_marks_in_flight_uncertain_and_keeps_reservations(cl_app, world, pgc):

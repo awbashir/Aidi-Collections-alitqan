@@ -40,6 +40,12 @@ Attribution (the reviewed rules; every row says which applied):
   Call-center rows use the agent's number (`call_center.agent.number`).
 * **case -> collector**: the attributed case's CURRENT owner (clints.user_id). The agent and
   the owner are different roles and are reported separately.
+* **CDR row -> call attempt** (Phase 5 P4, services/calling_cdr.attempt_tag): a record whose
+  userfield carries `cawp:<attempt>` or whose uniqueid/linkedid is `cawp-<attempt>` (or a
+  truncated uniqueid naming exactly one attempt) is linked to that `call_attempts` row. The
+  link is exact, so it replaces the phone match for that record: case = the attempt's case
+  (attribution = attempt when it is in the viewer's scope), agent = the attempt's collector
+  (agent_basis = attempt). Untagged records are attributed exactly as before.
 
 Visibility (never reveal a call on an out-of-scope case): a record is visible when
   (a) it matches at least one case in the viewer's current case scope, or
@@ -83,10 +89,12 @@ DIRECTIONS = {"outbound": ("Outbound", "صادرة"), "inbound": ("Inbound", "و
 PBX_STATUS = {"answered": ("PBX answered (not proof of a conversation)", "رد المقسم (ليس دليلاً على محادثة)"),
               "no_answer": ("No answer", "لم يتم الرد"), "busy": ("Busy", "مشغول"),
               "failed": ("Failed", "فشل"), "other": ("Other", "أخرى"), "unknown": ("Unknown", "غير معروف")}
-ATTRIBUTION = {"case": ("One case in your scope", "عميل واحد ضمن نطاقك"),
+ATTRIBUTION = {"attempt": ("Call attempt tag (exact)", "وسم محاولة الاتصال (مطابق)"),
+               "case": ("One case in your scope", "عميل واحد ضمن نطاقك"),
                "ambiguous": ("Several cases in your scope", "أكثر من عميل ضمن نطاقك"),
                "unmatched": ("No matching case", "لا يوجد عميل مطابق")}
-AGENT_BASIS = {"extension": ("Current extension of one user", "التحويلة الحالية لمستخدم واحد"),
+AGENT_BASIS = {"attempt": ("Collector of the call attempt", "محصل محاولة الاتصال"),
+               "extension": ("Current extension of one user", "التحويلة الحالية لمستخدم واحد"),
                "ambiguous": ("Extension shared by several users", "تحويلة مشتركة بين عدة مستخدمين"),
                "unknown_extension": ("Extension of no active user", "تحويلة لا تخص مستخدماً نشطاً"),
                "none": ("No extension on the call", "لا توجد تحويلة في المكالمة")}
@@ -155,7 +163,8 @@ def _connect():
 
 
 _CDR_SQL = """
-    SELECT calldate, src, dst, dcontext, channel, dstchannel, duration, billsec, disposition, uniqueid, recordingfile
+    SELECT calldate, src, dst, dcontext, channel, dstchannel, duration, billsec, disposition, uniqueid, recordingfile,
+           userfield
       FROM asteriskcdrdb.cdr
      WHERE calldate >= %s AND calldate < %s{extra}
      ORDER BY calldate, uniqueid
@@ -261,6 +270,11 @@ def _cc_status(status):
             "failure": "failed", "failed": "failed"}.get(s, "other")
 
 
+def _attempt_tag(r: dict):
+    from services.calling_cdr import attempt_tag
+    return attempt_tag(r.get("uniqueid"), r.get("userfield"), r.get("linkedid"))
+
+
 def _cdr_row(r: dict, zone) -> dict:
     src, dst = (r.get("src") or "").strip(), (r.get("dst") or "").strip()
     direction, ext = _direction(src, dst)
@@ -280,6 +294,7 @@ def _cdr_row(r: dict, zone) -> dict:
         "uniqueid": r.get("uniqueid") or None,
         "recording": (r.get("recordingfile") or "").strip() or None, "recording_count": None,
         "recording_url": recording_url((r.get("recordingfile") or "").strip() or None),
+        "attempt_tag": _attempt_tag(r), "attempt_id": None, "attempt_link": None,
     }
 
 
@@ -317,6 +332,7 @@ def _cc_rows(raw: list, zone) -> list[dict]:
             "billsec": None,                                   # the call center has no billable duration
             "uniqueid": r.get("uniqueid") or None,
             "recording": rec, "recording_count": 1 if rec else 0, "recording_url": recording_url(rec),
+            "attempt_tag": None, "attempt_id": None, "attempt_link": None,
         }
         by_id[cid] = row
         out.append(row)
@@ -367,6 +383,8 @@ _COLS = (  # (array name, SQL type, row key)
     ("n_all", "int", "n_all"), ("n_scope", "int", "n_scope"), ("case_id", "uuid", "case_id"),
     ("attribution", "text", "attribution"), ("agent_user_id", "uuid", "agent_user_id"),
     ("agent_basis", "text", "agent_basis"), ("agent_in_scope", "boolean", "agent_in_scope"),
+    # call-attempt link (Phase 5 P4)
+    ("attempt_id", "uuid", "attempt_id"), ("attempt_link", "text", "attempt_link"),
 )
 
 
@@ -411,8 +429,9 @@ def attribute(ctx, rows: list[dict], conn=None) -> list[dict]:
     n_all        cases (anywhere) whose live contacts match the src or dst phone key
     n_scope      of those, the cases in the viewer's current case scope
     case_id      the in-scope case when n_scope == 1, else None
-    attribution  case | ambiguous | unmatched (see the module docstring)
+    attribution  attempt | case | ambiguous | unmatched (see the module docstring)
     agent_*      the active user holding the agent extension (unique), basis, in the viewer's user scope
+    attempt_*    the call attempt named by the record's cawp tag (exact), and how it was linked
 
     Two indexed lookups in one short read-only transaction (index 0046 for the keys), run
     once per report request, just before the report's own snapshot."""
@@ -424,6 +443,7 @@ def attribute(ctx, rows: list[dict], conn=None) -> list[dict]:
     key_sql = KEY_SQL.format(col="cc.contact")
     hits: dict[str, list] = {}
     agents: dict[str, list] = {}
+    tagged: dict[str, dict] = {}         # tag key -> attempt row + case/user scope flags
 
     def run(c):
         if keys:
@@ -448,6 +468,23 @@ def attribute(ctx, rows: list[dict], conn=None) -> list[dict]:
                     SELECT u.extension, u.id::text, ({user_scope}) FROM users u
                      WHERE u.is_active AND u.extension = ANY(CAST(:cdr_exts AS text[]))"""), {"cdr_exts": exts, **up}):
                 agents.setdefault(ext, []).append((uid, bool(in_scope)))
+        tags = [r.get("attempt_tag") for r in rows if r.get("attempt_tag")]
+        if tags:
+            from services.calling_cdr import resolve_attempt_tags
+            found = resolve_attempt_tags(c, tags)
+            if found:
+                case_ids = sorted({a["case_id"] for a in found.values()})
+                user_ids = sorted({a["collector_user_id"] for a in found.values()})
+                cin = dict(c.execute(text(f"""SELECT c.id::text, ({case_scope}) FROM clints c
+                                               WHERE c.id = ANY(CAST(:cdr_acases AS uuid[]))"""),
+                                     {"cdr_acases": case_ids, **cp}).all())
+                uin = dict(c.execute(text(f"""SELECT u.id::text, ({user_scope}) FROM users u
+                                               WHERE u.id = ANY(CAST(:cdr_ausers AS uuid[]))"""),
+                                     {"cdr_ausers": user_ids, **up}).all())
+                for k, a in found.items():
+                    if a["case_id"] in cin:          # a hard-deleted case: fall back to the phone match
+                        tagged[k] = {**a, "case_in_scope": bool(cin[a["case_id"]]),
+                                     "user_in_scope": bool(uin.get(a["collector_user_id"]))}
 
     if conn is not None:
         run(conn)
@@ -478,6 +515,18 @@ def attribute(ctx, rows: list[dict], conn=None) -> list[dict]:
         r["agent_basis"] = basis
         r["agent_user_id"] = holders[0][0] if basis == "extension" else None
         r["agent_in_scope"] = holders[0][1] if basis == "extension" else False
+        tag = r.get("attempt_tag")
+        a = tagged.get(tag["key"]) if tag else None
+        r["attempt_id"] = a["id"] if a else None
+        r["attempt_link"] = tag["via"] if a else None
+        if a:                                   # the exact tag replaces the phone match
+            r["n_all"] = 1
+            r["n_scope"] = 1 if a["case_in_scope"] else 0
+            r["case_id"] = a["case_id"] if a["case_in_scope"] else None
+            r["attribution"] = "attempt" if a["case_in_scope"] else "unmatched"
+            r["agent_basis"] = "attempt"
+            r["agent_user_id"] = a["collector_user_id"]
+            r["agent_in_scope"] = a["user_in_scope"]
     return rows
 
 

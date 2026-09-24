@@ -32,19 +32,34 @@ Calling administration
   GET  /v2/calling/windows           policy + Riyadh status + history                  calls | calls_make | calls_manage
   PUT  /v2/calling/windows           replace the policy (reviewed, with reason)       calls_manage
 
-No route here originates a call or talks to the PBX: that is the `calling` service (P1 adds
-click-to-call). `can_call` is therefore always false in P0, with the first blocking reason.
+Click-to-call (P1, review/phase5-click-to-call.md)
+  POST /v2/calls                     authorize + enqueue a click-to-call     calls_make
+  GET  /v2/calls/<id>/live           live-call panel view (ETag / 304)       calls | calls_make
+  POST /v2/calls/<id>/cancel         cancel before the dispatcher claimed it  calls_make (own) | calls_manage
+  GET  /v2/me/calls/active           my attempt that holds a reservation      calls | calls_make
+  GET  /v2/calling/uncertain         uncertain attempts in scope              calls_manage
+  POST /v2/calls/<id>/resolve        resolve an uncertain attempt (reason)    calls_manage
+  GET  /v2/calling/review            review flags in scope                    calls_manage
+  POST /v2/calling/review-flags/<id>/resolve   close a flag (reason)          calls_manage
+
+No route here talks to the PBX: POST /v2/calls writes a dispatch row that the `calling`
+service (the only AMI owner) claims, rechecks and sends. AMI Success = submitted.
 """
 from __future__ import annotations
 
-from flask import Blueprint, request
+from flask import Blueprint, make_response, request
 from flask_jwt_extended import jwt_required
 
 from core.api_response import created, json_body, ok, register_api_errors
+from core.auth import has_permission
 from core.idempotency import idempotent
 from core.revisions import expected_revision_from_request
+from services.calling import dispatch as dispatch_svc
 from services.calling import extensions as ext_svc
+from services.calling import live as live_svc
 from services.calling import queries
+from services.calling import review as review_svc
+from services.calling import rules
 from services.calling import settings as settings_svc
 from services.calling import wrapup as wrap_svc
 from services.calling.common import CALLS, CALLS_MAKE, CALLS_MANAGE, me, page_args, permission_required
@@ -105,6 +120,81 @@ def wrapup(attempt_id):
     return ok(queries.call_detail(attempt_id), "wrap-up saved")
 
 
+# --------------------------------------------------------------------------- click-to-call (P1)
+@bp.post("/v2/calls")
+@jwt_required()
+@permission_required(CALLS_MAKE)
+@idempotent()
+def place_call():
+    attempt_id = dispatch_svc.authorize_call(json_body())
+    return created(live_svc.live_view(attempt_id), "call authorized; the calling service dispatches it")
+
+
+@bp.get("/v2/calls/<uuid:attempt_id>/live")
+@jwt_required()
+@permission_required(CALLS, CALLS_MAKE)
+def live_call(attempt_id):
+    tag = live_svc.etag(attempt_id)
+    if tag and tag in [t.strip() for t in (request.headers.get("If-None-Match") or "").split(",")]:
+        resp = make_response("", 304)
+        resp.headers["ETag"] = tag
+        return resp
+    body, status = ok(live_svc.live_view(attempt_id))
+    body.headers["ETag"] = tag
+    body.headers["Cache-Control"] = "no-store"
+    return body, status
+
+
+@bp.post("/v2/calls/<uuid:attempt_id>/cancel")
+@jwt_required()
+@permission_required(CALLS_MAKE, CALLS_MANAGE)
+@idempotent()
+def cancel_call(attempt_id):
+    dispatch_svc.cancel(attempt_id, json_body(), expected_revision_from_request())
+    return ok(live_svc.live_view(attempt_id), "call cancelled")
+
+
+@bp.get("/v2/me/calls/active")
+@jwt_required()
+@permission_required(CALLS, CALLS_MAKE)
+def my_active_call():
+    return ok(live_svc.my_active())
+
+
+@bp.get("/v2/calling/uncertain")
+@jwt_required()
+@permission_required(CALLS_MANAGE)
+def uncertain_calls():
+    page, size, offset = page_args()
+    return ok(review_svc.list_uncertain(request.args, page, size, offset))
+
+
+@bp.post("/v2/calls/<uuid:attempt_id>/resolve")
+@jwt_required()
+@permission_required(CALLS_MANAGE)
+@idempotent()
+def resolve_call(attempt_id):
+    review_svc.resolve(attempt_id, json_body(), expected_revision_from_request())
+    return ok(live_svc.live_view(attempt_id), "call resolved")
+
+
+@bp.get("/v2/calling/review")
+@jwt_required()
+@permission_required(CALLS_MANAGE)
+def review_flags():
+    page, size, offset = page_args()
+    return ok(review_svc.list_review(request.args, page, size, offset))
+
+
+@bp.post("/v2/calling/review-flags/<uuid:flag_id>/resolve")
+@jwt_required()
+@permission_required(CALLS_MANAGE)
+@idempotent()
+def resolve_review_flag(flag_id):
+    out = review_svc.resolve_flag(flag_id, json_body())
+    return ok({"flag_id": out["id"], "call": live_svc.live_view(out["attempt_id"])}, "review flag resolved")
+
+
 # --------------------------------------------------------------------------- blocks
 @bp.get("/v2/cases/<uuid:case_id>/calling-blocks")
 @jwt_required()
@@ -127,19 +217,21 @@ def _my_calling() -> dict:
     user_id = me()
     extension = ext_svc.my_extension(user_id)
     window = settings_svc.window_status()
-    status = queries.service_status()
     if extension is None:
         reason = "no_extension"
     elif not window["configured"]:
         reason = "calling_windows_missing"
     elif not window["open"]:
         reason = window["reason"]
-    elif not (status["pbx"] or {}).get("connected"):
+    elif rules.transport_status() is None:           # the same check POST /v2/calls makes
         reason = "transport_not_connected"
+    elif not has_permission(CALLS_MAKE):
+        reason = "forbidden"
     else:
-        reason = "click_to_call_not_enabled"          # P1 enables placement
+        reason = None                                  # P1: click-to-call is enabled (rechecked per call)
     return {"user_id": user_id, "extension": extension, "preferences": settings_svc.get_preferences(user_id),
-            "window": window, "can_call": False, "reason": reason}
+            "window": window, "can_call": reason is None, "reason": reason,
+            "active_attempt_id": queries.my_active_attempt_id(user_id)}
 
 
 @bp.get("/v2/me/calling")

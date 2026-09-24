@@ -1320,6 +1320,10 @@ def getcdr():
     try:
       db_1 = Issable_db()
       dd = db_1.GetSubscription()
+      # Phase 5 P4: only the records the caller may see (SuperAdmin: all, unchanged);
+      # services/calling_cdr.py has the rules. The row shape is the legacy one.
+      from services.calling_cdr import scope_legacy_rows
+      dd = scope_legacy_rows(get_jwt_identity(), dd)
       return jsonify(dd ),200
         
     except Exception as e:
@@ -1351,6 +1355,9 @@ def getcdr_by_date():
         
         # Pass the dates and numbers to GetCallsByDate
         dd = db_1.GetCombinedCalls(start_date, end_date, numbers)
+        # Phase 5 P4: only the records the caller may see (SuperAdmin: all, unchanged)
+        from services.calling_cdr import scope_legacy_rows
+        dd = scope_legacy_rows(get_jwt_identity(), dd)
         return jsonify(dd), 200
 
     except Exception as e:
@@ -1366,9 +1373,11 @@ def download_recording():
     try:
         from io import BytesIO
 
-        db_1 = Issable_db()
-        # Get the recording file data as bytes
-        file_data = db_1.download_call_recording(recording_path)
+        # Phase 5 P4: served only when the path is the recording of a CDR record the caller
+        # may see; otherwise the legacy "not found" answer. Every request is audited. The file
+        # is read as before (Issable_db.download_call_recording). services/calling_cdr.py.
+        from services.calling_cdr import scoped_recording
+        file_data = scoped_recording(get_jwt_identity(), recording_path)
         if not file_data:
             return jsonify({"message": "تسجيل المكالمة غير موجود", "status": False, "error": "recording not found"}), 404
         

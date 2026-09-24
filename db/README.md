@@ -57,6 +57,10 @@ db/
 | 0049 | `migrations/0049_call_attempts_reservations.sql` | `call_attempts` (lifecycle trigger), `call_reservations` (never auto-released), dispatch tokens | new tables | Yes |
 | 0050 | `migrations/0050_call_evidence.sql` | `pbx_sessions`, `call_events` (append-only), `call_legs`, `call_agi_decisions` | new tables | Yes |
 | 0051 | `migrations/0051_call_wrapups_blocks.sql` | `call_wrapups` (immutable), `calling_blocks` (do-not-call) | new tables | Yes |
+| 0052 | `migrations/0052_click_to_call.sql` | dispatch queue, reconciliations, `no_customer_contact` release source, evidence projection support | new tables + constraint changes, instant | Yes |
+| 0053 | `migrations/0053_call_wrapup_review.sql` | wrap-up `needs_review` flags and deferred actions (locked/archived cases) | instant | Yes |
+| 0057 | `migrations/0057_pbx_cdr_imported.sql` | `pbx_cdr_imported` evidence (append-only; retention may delete) | new table | Yes |
+| 0058 | `migrations/0058_call_events_retention.sql` | `call_events` guard allows only the retention task to delete | instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

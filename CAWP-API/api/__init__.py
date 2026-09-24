@@ -24,6 +24,7 @@ MODULES = [
     "api.admin_v2",          # Phase 3 C: targets, sessions, /v2/me
     "api.reports_v2",        # Phase 4: /v2/reports, report options, report exports
     "api.calling",           # Phase 5: calls, attempts, wrap-up, extensions, campaigns, SIP credentials
+    "api.calling_evidence",  # Phase 5 P4: attempt PBX evidence (CDR, recordings, imported CDR)
 ]
 
 

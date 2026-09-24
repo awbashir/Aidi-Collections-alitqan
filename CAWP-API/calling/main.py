@@ -9,7 +9,15 @@ What it does when CALLING_ENABLED=1 (config: calling/config.py):
   stopping or restarting) marks in-flight attempts `uncertain`; it NEVER releases a
   reservation;
 * answers the FastAGI authorization hook (services/calling/agi.py) that the restricted
-  dialplan calls before any customer leg is dialled.
+  dialplan calls before any customer leg is dialled;
+* P1: dispatches click-to-calls (services/calling/dispatch.py Dispatcher): claims queued
+  rows FOR UPDATE SKIP LOCKED, rechecks every rule, issues the one-shot token and sends ONE
+  extension-first Originate on the live session (AMI Success = submitted);
+* P1: reconciles (services/calling/reconcile.py Reconciler): re-projects evidence, marks
+  attempts with missing evidence uncertain, and resolves uncertain attempts from the channel
+  inventory (CoreShowChannels) and a CDR lookup, or leaves them for human review;
+* P1: reports a heartbeat into calling_service_status every 2 s (AMI state, PBX epoch); the
+  API dispatches only while a fresh heartbeat shows a connected session.
 
 With CALLING_ENABLED=0 (the default) it opens no socket at all and stays healthy, so the
 container can be part of the stack without ever touching a PBX.
@@ -91,6 +99,9 @@ class CallingService:
         self.status_server = None
         self.ami_down_since = time.time()
         self.recovered_on_start = None
+        self.dispatcher = None
+        self.reconciler = None
+        self._status_failing = False
 
     # ---- lifecycle ------------------------------------------------------------------
     def start(self):
@@ -116,9 +127,24 @@ class CallingService:
             on_heartbeat=self.consumer.on_heartbeat,
             session_options={"heartbeat": self.cfg.heartbeat_seconds})
         self.supervisor.start()
+        if self.cfg.dispatch_enabled:
+            from services.calling.dispatch import Dispatcher
+            self.dispatcher = Dispatcher(self.app, self.current_ctx, self.worker_id)
+            self.dispatcher.start()
+        if self.cfg.reconcile_seconds:
+            from services.calling import cdr_lookup
+            from services.calling.reconcile import Reconciler
+            self.reconciler = Reconciler(self.app, self.current_ctx, cdr_lookup.from_env(),
+                                         interval=self.cfg.reconcile_seconds)
+            self.reconciler.start()
         self._start_status()
         log.info("calling service started (%s, PBX %s:%s, TLS %s, database %s)", self.worker_id,
                  self.cfg.ami_host, self.cfg.ami_port, "on" if self.cfg.ami_tls else "off", database_label())
+
+    def current_ctx(self):
+        """The live AMI session context (None while disconnected)."""
+        sup = self.supervisor
+        return sup.current if sup is not None else None
 
     def _on_session_start(self, ctx):
         self.consumer.on_session_start(ctx)
@@ -127,6 +153,7 @@ class CallingService:
     def _on_session_end(self, ctx, code):
         self.ami_down_since = time.time()
         self.consumer.on_session_end(ctx, code)
+        self.report_status()                 # the API must stop dispatching on this epoch at once
 
     def startup_recovery(self) -> dict:
         """A new process observed nothing of what an earlier one dispatched: in-flight attempts
@@ -138,6 +165,15 @@ class CallingService:
             try:
                 changed = mark_in_flight_uncertain("calling_service_restarted")
                 held = active_reservations()
+                # a dispatch that was being sent when the previous process died: its outcome is unknown
+                from sqlalchemy import text
+                db.session.execute(text("""
+                    UPDATE call_dispatch_queue SET state = 'unacknowledged', finished_at = now(),
+                           result_code = 'calling_service_restarted'
+                     WHERE state = 'sending'"""))
+                db.session.execute(text("""
+                    UPDATE calling_service_status SET stopped_at = coalesce(stopped_at, now()), ami_connected = false
+                     WHERE stopped_at IS NULL AND heartbeat_at < now() - interval '30 seconds'"""))
                 db.session.commit()
             except Exception:  # noqa: BLE001 - e.g. migrations 0048-0051 not applied yet
                 db.session.rollback()
@@ -154,6 +190,10 @@ class CallingService:
         log.info("calling service stopping")
         if self.consumer is not None:
             self.consumer.stopping = True
+        if self.dispatcher is not None:
+            self.dispatcher.stop()
+        if self.reconciler is not None:
+            self.reconciler.stop()
         if self.agi is not None:
             self.agi.stop()
         if self.supervisor is not None:
@@ -165,7 +205,7 @@ class CallingService:
 
     def run_forever(self) -> int:
         self.start()
-        while not self.stop_event.wait(5):
+        while not self.stop_event.wait(2):
             self.touch()
         self.shutdown()
         return 0
@@ -190,9 +230,56 @@ class CallingService:
             "evidence": dict(self.consumer.stats) if self.consumer else None,
             "buffered_events": len(self.consumer.buffer) if self.consumer else 0,
             "startup_recovery": self.recovered_on_start,
+            "dispatcher": ({"running": self.dispatcher.is_alive(), **self.dispatcher.stats}
+                           if self.dispatcher else None),
+            "reconciler": ({"running": self.reconciler.is_alive(), "last_pass_at": self.reconciler.last_pass_at,
+                            **self.reconciler.stats} if self.reconciler else None),
         }
 
+    def report_status(self, final: bool = False):
+        """Upsert this process's heartbeat row (calling_service_status). Best effort."""
+        if not self.cfg.enabled or self.app is None:
+            return
+        import json as _json
+
+        from sqlalchemy import text
+
+        from extensions import db
+        ctx = self.current_ctx()
+        connected = bool(ctx is not None and ctx.session.ready and not final)
+        detail = {"ami_down_since": self.ami_down_since,
+                  "dispatcher": dict(self.dispatcher.stats) if self.dispatcher else None,
+                  "reconciler": dict(self.reconciler.stats) if self.reconciler else None}
+        with self.app.app_context():
+            try:
+                db.session.execute(text("""
+                    INSERT INTO calling_service_status (worker_id, host, heartbeat_at, ami_connected, epoch, epoch_uuid,
+                                                        dispatcher, reconciler, stopped_at, detail)
+                    VALUES (:w, :h, now(), :c, :ep, :eu, :d, :r, CASE WHEN :final THEN now() END, CAST(:det AS jsonb))
+                    ON CONFLICT (worker_id) DO UPDATE
+                       SET heartbeat_at = now(), ami_connected = EXCLUDED.ami_connected, epoch = EXCLUDED.epoch,
+                           epoch_uuid = EXCLUDED.epoch_uuid, dispatcher = EXCLUDED.dispatcher,
+                           reconciler = EXCLUDED.reconciler, stopped_at = EXCLUDED.stopped_at,
+                           detail = EXCLUDED.detail"""), {
+                    "w": self.worker_id, "h": self.cfg.ami_host, "c": connected,
+                    "ep": ctx.epoch if ctx else None, "eu": ctx.identity.epoch_uuid if ctx else None,
+                    "d": bool(self.dispatcher and self.dispatcher.is_alive() and not final),
+                    "r": bool(self.reconciler and self.reconciler.is_alive() and not final), "final": final,
+                    "det": _json.dumps(detail, default=str)})
+                db.session.commit()
+                if self._status_failing:
+                    log.info("status heartbeat writes recovered")
+                self._status_failing = False
+            except Exception:  # noqa: BLE001 - e.g. the database (or migration 0052) is not there yet
+                db.session.rollback()
+                if not self._status_failing:
+                    log.warning("could not write the status heartbeat (is migration 0052 applied?)", exc_info=True)
+                self._status_failing = True
+            finally:
+                db.session.remove()
+
     def touch(self, final: bool = False):
+        self.report_status(final)
         data = {"pid": os.getpid(), "at": time.time(), "final": final, **self.status()}
         try:
             tmp = self.cfg.health_file + ".tmp"
@@ -244,6 +331,9 @@ def healthy_status(data: dict, cfg) -> tuple[bool, str]:
     agi = data.get("agi")
     if cfg.agi_enabled and (not agi or not agi.get("listening")):
         return False, "FastAGI listener is not running"
+    disp = data.get("dispatcher")
+    if getattr(cfg, "dispatch_enabled", False) and disp is not None and not disp.get("running"):
+        return False, "click-to-call dispatcher is not running"
     return True, "ok"
 
 

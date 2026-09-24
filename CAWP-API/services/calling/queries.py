@@ -25,7 +25,9 @@ _COLS = f"""
     c.name AS case_name, c."accountNumber" AS account_number,
     w.id AS wrapup_id, w.outcome, w.note_id, w.follow_up_id, w.callback_at, w.promise_id, w.contact_blocked,
     w.calling_block_id, w.reviewed_by, {USER_NAME_SQL.format(a='ru')} AS reviewed_by_name, w.reviewed_at,
-    k.contact AS contact_value
+    w.needs_review, w.review_reason, w.note_text AS wrapup_note_text, w.deferred_actions,
+    k.contact AS contact_value,
+    (SELECT r.release_source FROM call_reservations r WHERE r.attempt_id = a.id) AS release_source
 """
 _JOINS = """
     LEFT JOIN clints c ON c.id = a.case_id
@@ -45,7 +47,9 @@ def serialize(r, *, show_numbers: bool) -> dict:
                 "follow_up_id": s(r["follow_up_id"]), "callback_at": iso(r["callback_at"]),
                 "promise_id": s(r["promise_id"]), "contact_blocked": r["contact_blocked"],
                 "calling_block_id": s(r["calling_block_id"]),
-                "reviewed_by": user_ref(r["reviewed_by"], r["reviewed_by_name"]), "reviewed_at": iso(r["reviewed_at"])}
+                "reviewed_by": user_ref(r["reviewed_by"], r["reviewed_by_name"]), "reviewed_at": iso(r["reviewed_at"]),
+                "needs_review": bool(r["needs_review"]), "review_reason": r["review_reason"],
+                "deferred_actions": r["deferred_actions"]}
     return {
         "id": s(r["id"]), "mode": r["mode"], "direction": r["direction"], "state": r["state"],
         "case": {"id": s(r["case_id"]), "name": r["case_name"], "account_number": r["account_number"],
@@ -64,7 +68,8 @@ def serialize(r, *, show_numbers: bool) -> dict:
         "reason_code": r["reason_code"], "hangup_cause": r["hangup_cause"],
         "has_transcript": r["has_transcript"],
         "wrapup": wrap,
-        "wrapup_pending": wrap is None and r["mode"] != "manual" and r["state"] in ("ended", "failed"),
+        "wrapup_pending": (wrap is None and r["mode"] != "manual" and r["state"] in ("ended", "failed")
+                           and r["release_source"] != "no_customer_contact"),
         "revision": int(r["revision"]),
     }
 
@@ -93,7 +98,9 @@ def _filters(args, where, params):
         if wr not in ("pending", "done"):
             raise ApiError(422, VALIDATION_FAILED, "wrapup must be pending or done", {"wrapup": "invalid"})
         where.append("w.id IS NOT NULL" if wr == "done" else
-                     "(w.id IS NULL AND a.mode <> 'manual' AND a.state IN ('ended', 'failed'))")
+                     "(w.id IS NULL AND a.mode <> 'manual' AND a.state IN ('ended', 'failed') AND NOT EXISTS ("
+                     "SELECT 1 FROM call_reservations rr WHERE rr.attempt_id = a.id "
+                     "AND rr.release_source = 'no_customer_contact'))")
     first, last = args.get("from"), args.get("to")
     try:
         if first:
@@ -140,6 +147,18 @@ def call_log(args, page, size, offset) -> dict:
     return _list(where, {**params, "me": me()}, args, page, size, offset)
 
 
+def my_active_attempt_id(user_id) -> str | None:
+    r = sess().execute(text("""SELECT attempt_id FROM call_reservations WHERE collector_user_id = CAST(:u AS uuid)
+                                  AND released_at IS NULL ORDER BY reserved_at DESC LIMIT 1"""),
+                       {"u": str(user_id)}).first()
+    return s(r[0]) if r else None
+
+
+def visible_or_404(attempt_id):
+    """404 unless the caller may see the call (case scope, or the caller made it)."""
+    return _visible(attempt_id)
+
+
 def _visible(attempt_id):
     cond, params = scope_sql("c")
     r = sess().execute(text(f"""
@@ -152,18 +171,21 @@ def _visible(attempt_id):
     return r
 
 
-def call_detail(attempt_id) -> dict:
+def call_detail(attempt_id, *, with_evidence: bool = True) -> dict:
     r = _visible(attempt_id)
     show = has_permission("clints_details")
     d = serialize(r, show_numbers=show)
     d["transcript"] = sess().execute(text("SELECT transcript FROM call_attempts WHERE id = CAST(:id AS uuid)"),
                                      {"id": str(attempt_id)}).scalar()
     if d["wrapup"] is not None:
-        note = sess().execute(text('SELECT comment FROM "Comments" WHERE id = CAST(:id AS uuid)'),
-                              {"id": d["wrapup"]["note_id"]}).scalar()
-        d["wrapup"]["note_text"] = note
+        note = None
+        if d["wrapup"]["note_id"] is not None:
+            note = sess().execute(text('SELECT comment FROM "Comments" WHERE id = CAST(:id AS uuid)'),
+                                  {"id": d["wrapup"]["note_id"]}).scalar()
+        d["wrapup"]["note_text"] = note if note is not None else r["wrapup_note_text"]
     d["reservation"] = _reservation(attempt_id)
-    d["evidence"] = evidence(attempt_id, show_numbers=show)
+    if with_evidence:
+        d["evidence"] = evidence(attempt_id, show_numbers=show)
     return d
 
 

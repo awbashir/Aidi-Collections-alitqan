@@ -272,9 +272,13 @@ Issabel writes CDRs to MySQL `asteriskcdrdb.cdr` (cdr_mysql or cdr_adaptive_odbc
 - `recordingfile` = the MixMonitor path;
 - `dst` = the E.164 number and `dcontext` = `collections-human-outbound`.
 
+**`userfield` MUST be logged (required, P1).** On Issabel `asteriskcdrdb.cdr.uniqueid` is `varchar(32)`, so `cawp-<attempt id>` (41 characters) is stored **truncated** (`cawp-` plus the first 27 characters of the id). The `userfield` tag `cawp:<attempt id>` is therefore the only reliable link from a CDR row to its call attempt: the reconciliation CDR lookup (`services/calling/cdr_lookup.py`) and the P4 attribution (`services/calling_cdr.py`) match `userfield` first, and accept a truncated `uniqueid` only when it names exactly one attempt. Every lookup is bounded by a date window around the attempt (`calldate` from 1 h before the attempt to 12 h after), so an index on `calldate` (Issabel has one) keeps it cheap.
+
 Check with `cdr show status`. After the test call, run:
-`SELECT calldate, uniqueid, userfield, recordingfile, disposition, billsec FROM asteriskcdrdb.cdr WHERE uniqueid LIKE 'cawp-%' ORDER BY calldate DESC LIMIT 5;`
-If `userfield` stays empty, enable user-field logging in the CDR backend configuration. The test PBX writes the same records to CSV (`Master.csv`) instead of MySQL.
+`SELECT calldate, uniqueid, userfield, recordingfile, disposition, billsec FROM asteriskcdrdb.cdr WHERE calldate > now() - INTERVAL 1 HOUR AND userfield LIKE 'cawp:%' ORDER BY calldate DESC LIMIT 5;`
+Every row of the test call must show `userfield=cawp:<attempt id>` (the full 36-character id). If `userfield` stays empty, enable user-field logging in the CDR backend before going further: for `cdr_mysql`, `userfield=1` in `cdr_mysql.conf` `[global]`; for `cdr_adaptive_odbc`, map the `userfield` column (`alias userfield => userfield`) in `cdr_adaptive_odbc.conf`; then `module reload cdr_mysql.so` (or the ODBC module). The test PBX writes the same records to CSV (`Master.csv`, `loguserfield = yes`) instead of MySQL.
+
+For reconciliation the calling host reads the CDR with a read-only MySQL account: set `CALLING_CDR_SOURCE=mysql` and the existing `CDR_HOST`, `CDR_DB`, `CDR_USER`, `CDR_PASSWORD` on the calling host (the service refuses `10.10.0.220` until `CALLING_PBX_COMMISSIONED=1`). The account needs `SELECT` on `asteriskcdrdb.cdr` only.
 
 ## 10. TURN/STUN (coturn)
 
@@ -319,10 +323,11 @@ AMI and the plain HTTP port must never be reachable from the internet or the off
 
 ## 12. Application side
 
-1. Apply migrations 0048–0051 (`python manage_db.py up`). This also merges the permission keys `calls`, `calls_make` and `calls_manage`.
+1. Apply migrations 0048–0053 (`python manage_db.py up`). This also merges the permission keys `calls`, `calls_make` and `calls_manage`. 0052 adds the click-to-call dispatch queue, the calling-service heartbeat, the reconciliation log and the review flags; 0053 adds the locked/archived wrap-up review fields.
 2. In the app, assign each test extension to its test user (calling admin, `POST /v2/calling/extensions/<ext>/assign`). `user_extensions` is the source of truth, and `users.extension` is kept in sync as a mirror. Use the legacy-drift list to adopt the existing legacy values one by one.
 3. Save the approved calling windows (`PUT /v2/calling/windows`) with the same hours as the dialplan policy.
 4. Set the calling host environment (see `CAWP-API/DEPLOY.md` §5d): `CALLING_AMI_HOST`, `CALLING_AMI_CA_FILE`, `CALLING_AMI_USERNAME`, `CALLING_AMI_SECRET`, `CALLING_AGI_SECRET`, `CALLING_AGI_ALLOWED_PEERS=<PBX IP>`. **Leave `CALLING_ENABLED=0`** until section 13 passes, apart from the explicit verification runs below.
+5. Click-to-call (P1) settings. On the calling host: `CALLING_DISPATCH_ENABLED=1` (the dispatcher), `CALLING_RECONCILE_SECONDS=10`, `CALLING_CDR_SOURCE=mysql` (section 9). On the API host: `CALLING_CONTEXT` (the policy context, default `collections-human-outbound`), `CALLING_DRIVER` (`PJSIP` or `SIP`), `CALLING_AGENT_RING_SECONDS` (default 30), `CALLING_MAX_CALL_SECONDS` (default 600; it must not exceed the installed dialplan's `max_call_seconds`, or the gate denies every call) and `CALLING_DISPATCH_TTL_SECONDS` (default 30). The API refuses `POST /v2/calls` with 503 `transport_not_connected` unless the calling service reported a connected AMI session within 15 s (table `calling_service_status`).
 
 ## 13. Verification checklist
 
@@ -353,10 +358,12 @@ Then work through the acceptance gates with test extensions and authorized test 
 | 7 | Replay: repeat the same token | AGI deny `token_consumed`; no second customer Dial |
 | 8 | Calling service stopped during a call | the call continues on the PBX, bounded by the limit; the attempt becomes `uncertain` (`calling_service_stopped`); the reservation is kept |
 | 9 | Network drop between the calling host and the PBX | the AMI session ends; the attempt is `uncertain` (`ami_connection_lost`); reconnect with the same epoch |
-| 10 | PBX restart | the new epoch is visible; `pbx_restarted=true`; in-flight attempts `uncertain` (`pbx_epoch_changed`) |
+| 10 | PBX restart | the new epoch is visible; `pbx_restarted=true`; a call that was live when Asterisk was killed is `uncertain` (`ami_connection_lost` / `pbx_epoch_changed`) with its reservation kept, then reconciled (`call_reconciliations`: `bridged_then_lost` when both legs had been bridged, `no_customer_contact` when the gate never allowed it). A graceful `core restart` hangs up the channels first, so the call ends by evidence |
 | 11 | Second browser tab (P3) | only one tab registers |
 | 12 | Recording | the file exists under `monitor/YYYY/MM/DD/cawp-<attempt>.wav` and plays via `/cdr/recording` with the recording keys |
-| 13 | CDR | the row has `uniqueid=cawp-<attempt>`, `userfield=cawp:<attempt>`, `recordingfile` |
+| 13 | CDR | the rows have `userfield=cawp:<attempt>` (full id; **required**), `uniqueid` = `cawp-<attempt>` truncated to 32 characters, `recordingfile` |
+| 16 | Click-to-call from the app (P1) | `POST /v2/calls` -> the attempt goes authorized -> dispatched -> agent_answered -> customer_dialing -> customer_answered -> bridged -> ended in `GET /v2/calls/<id>/live`; the wrap-up releases the reservation |
+| 17 | Agent does not answer | the attempt `failed` (`agent_no_answer`), no AGI decision, the reservation released as `no_customer_contact` |
 | 14 | Outside the calling window | the PBX denies after `authorized`; no customer Dial |
 | 15 | AGI key wrong or calling host unreachable | deny (`agi_key_mismatch`) or `AGISTATUS` FAILURE; no customer Dial |
 
@@ -371,7 +378,7 @@ In order of impact:
 3. Remove the `[cawp-calling]` AMI user and run `manager reload`.
 4. Reverse the endpoint changes (`*_custom_post.conf`) and reload.
 
-Reservations and attempts in the database stay as they are. They are never deleted, and reconciliation (P1) resolves the uncertain ones.
+Reservations and attempts in the database stay as they are. They are never deleted. With the calling service off, queued click-to-calls are never sent (they expire), and uncertain attempts wait for reconciliation or a supervisor (`GET /v2/calling/uncertain`, `POST /v2/calls/<id>/resolve` with a reason).
 
 ## 15. What differs from the test PBX
 
@@ -380,13 +387,14 @@ Reservations and attempts in the database stay as they are. They are never delet
 | Asterisk | 20.11.1 LTS, Alpine 3.22 (pinned by digest) | whatever section 1 finds (often 13 or 16 on Issabel 4), CentOS 7 |
 | Config layout | our own flat files, rendered at start | FreePBX-generated files plus `*_custom.conf` |
 | Customer network | loopback trunk `cawp-test-trunk` to 127.0.0.2; the last digit decides (1 answer, 2 busy, 3 no answer, 4 answer then hang up, 5 congestion, 6 late answer) | the real SIP trunk; authorized test numbers only |
-| Agent phones | 7001–7005 WebRTC, 7101–7102 UDP (7101 = bundled pjsua, auto-answer), 7201–7203 simulated | real extensions and the in-app softphone |
+| Agent phones | 7001–7005 WebRTC, 7101–7102 UDP (7101 = bundled pjsua, auto-answer), 7201–7204 simulated (7201 answers, 7202 busy, 7203 never answers, 7204 answers after 3 s) | real extensions and the in-app softphone |
+| Restart control | TEST-ONLY port 5099 (`<PBX_TEST_CONTROL_KEY> restart` = new epoch + `core restart now`; `crash` = SIGKILL, the entrypoint restarts Asterisk with a new epoch like safe_asterisk) | none: never install anything like it on Issabel |
 | Certificates | self-signed, generated at start (test only) | company CA or public certificate for HTTPS/WSS and AMI TLS |
 | AMI ACL | private ranges | exactly the calling host IP |
 | Secrets | test-only values in `docker-compose.yml` | vault; the calling service refuses the test values for any other PBX |
-| Epoch hook | the entrypoint writes a new UUID on every container start | `pbx-epoch.sh` as a pre-start hook; safe_asterisk crash restarts are covered by the start time |
+| Epoch hook | the entrypoint supervises Asterisk and writes a new UUID before every process start (container start or crash restart) | `pbx-epoch.sh` as a pre-start hook; safe_asterisk crash restarts are covered by the start time |
 | Calling windows | 24/7 in the dialplan (tests must be deterministic) | the approved hours, the same as the app policy |
-| CDR | `cdr_csv` to `Master.csv` (volume `cawp_pbx_test_cdr`) | MySQL `asteriskcdrdb.cdr` |
+| CDR | `cdr_csv` to `Master.csv` (volume `cawp_pbx_test_cdr`, mounted read-only into the calling service); the full `uniqueid` is kept | MySQL `asteriskcdrdb.cdr`; `uniqueid` truncated to 32 characters, so `userfield` must be logged |
 | Recordings | volume `cawp_pbx_test_recordings`; the simulated customers send no audio, so the files hold only the WAV header | real audio under `/var/spool/asterisk/monitor` |
 | Codecs | ulaw/alaw | ulaw/alaw, or opus only with `codec_opus` |
 | Dialplan | generated from `pbx-test/policy.json` (checked equal by the test suite) | generated from the production policy (trunk, windows, limits) |

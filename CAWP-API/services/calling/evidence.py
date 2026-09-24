@@ -15,9 +15,9 @@ as `pbx_ts`; receipt time is never used for ordering.
 
 Projection (call_legs) records facts only: the agent leg is the app-issued channel; a
 customer leg is the destination of a DialBegin whose caller is the agent leg; everything
-else linked to the attempt is `unknown`. The attempt's business state is NOT advanced here
-(P1's projection does that, requiring bridge membership of both legs - two answered legs are
-not a conversation).
+else linked to the attempt is `unknown`. P1: after each stored event the attempt's business
+state is re-projected from its whole evidence (services/calling/projection.py), requiring
+bridge membership of both legs - two answered legs are not a conversation.
 
 Durability: each event commits in its own transaction. If the database is unavailable the
 event is kept in a bounded in-memory buffer and retried on the next event/heartbeat; if the
@@ -199,6 +199,19 @@ def project_leg(session, row: dict, event_id: int, epoch: str) -> None:
                "role": role, "eid": event_id, **cols})
 
 
+def project_attempt(session, attempt_id, event_id) -> dict | None:
+    """P1: advance the attempt from its evidence (services/calling/projection.py). A projection
+    failure never loses the stored event: it runs in a savepoint, is logged, and the
+    reconciler's periodic re-projection catches up."""
+    from services.calling import projection
+    try:
+        with session.begin_nested():
+            return projection.project(session, attempt_id, trigger_event_id=event_id)
+    except Exception:  # noqa: BLE001
+        log.exception("projection of attempt %s failed (event kept; retried by the reconciler)", attempt_id)
+        return None
+
+
 class EvidenceConsumer:
     """Callbacks for services.calling.ami.AmiSupervisor. `app` is a Flask app (db bound)."""
 
@@ -343,6 +356,8 @@ class EvidenceConsumer:
                     eid = insert_event(session, row, source="ami", pbx_session_id=sid, epoch=epoch)
                     if eid is not None:
                         project_leg(session, row, eid, epoch)
+                        if row.get("attempt_id"):
+                            project_attempt(session, row["attempt_id"], eid)
                     return eid
                 eid = self._run(store)
                 if self._failing:

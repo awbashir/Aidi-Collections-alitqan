@@ -16,9 +16,11 @@ RUN apk add --no-cache \
 
 COPY conf/ /opt/pbx-test/conf/
 COPY entrypoint.sh /opt/pbx-test/entrypoint.sh
-RUN chmod 0755 /opt/pbx-test/entrypoint.sh
+COPY control.sh /opt/pbx-test/control.sh
+RUN chmod 0755 /opt/pbx-test/entrypoint.sh /opt/pbx-test/control.sh
 
 ENV TZ=Asia/Riyadh
-# 5038 AMI, 5039 AMI over TLS, 5060/udp SIP, 8089 HTTPS/WSS (WebRTC), 10000-10099/udp RTP
+# 5038 AMI, 5039 AMI over TLS, 5060/udp SIP, 8089 HTTPS/WSS (WebRTC), 10000-10099/udp RTP,
+# 5099 the TEST-ONLY control port (restart with a new epoch; only with PBX_TEST_CONTROL_KEY)
 EXPOSE 5038 5039 5060/udp 8089 10000-10099/udp
 ENTRYPOINT ["/opt/pbx-test/entrypoint.sh"]

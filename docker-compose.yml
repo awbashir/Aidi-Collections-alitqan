@@ -204,7 +204,8 @@ services:
   # Customers by the LAST digit of the E.164 number: 1 answers+echo, 2 busy, 3 no answer,
   # 4 answers then hangs up after PBX_TEST_SHORT_CALL_SECONDS, 5 congestion, 6 late answer.
   # Agents: 7001-7005 WebRTC (wss://localhost:8089/ws), 7101-7102 UDP (7101 = bundled pjsua,
-  # auto-answer), 7201 simulated phone that answers, 7202 busy, 7203 never answers.
+  # auto-answer), 7201 simulated phone that answers, 7202 busy, 7203 never answers,
+  # 7204 answers after ringing 3 s.
   # Recordings (MixMonitor, YYYY/MM/DD/<uniqueid>.wav) and CDR CSV live in the two volumes.
   pbx-test:
     profiles: ["pbx-test"]
@@ -220,6 +221,9 @@ services:
       PBX_TEST_AGI_KEY: pbx-test-agi-only
       PBX_TEST_AGI_URL: agi://calling:4573/collections-authorize
       PBX_TEST_SHORT_CALL_SECONDS: "3"
+      # TEST-ONLY control port 5099 (compose network): "<key> restart" = new epoch + Asterisk restart,
+      # used by the live "PBX restart mid-call" test (tests/test_calling_c2c_live.py).
+      PBX_TEST_CONTROL_KEY: pbx-test-control-only
     ports:
       - "127.0.0.1:8089:8089"        # HTTPS / WSS for WebRTC agents (self-signed, test only)
     volumes:
@@ -241,7 +245,7 @@ services:
   # CALLING_PBX_COMMISSIONED=1 (after docs/issabel-commissioning.md), and refuses the test-only
   # secrets below for any other PBX. Production values come from the deploy environment.
   #   Against the test PBX (writes evidence into the database of CALLING_DATABASE_URL, default
-  #   DATABASE_URL from .env.docker; it needs migrations 0048-0051):
+  #   DATABASE_URL from .env.docker; it needs migrations 0048-0053):
   #   CALLING_ENABLED=1 CALLING_DATABASE_URL=postgresql+psycopg2://postgres:postgres@test-db:5432/cawp_test_call0 \
   #       docker compose --profile pbx-test up -d calling
   #   docker exec cawp-calling python -m calling --healthcheck
@@ -263,12 +267,20 @@ services:
       CALLING_PBX_COMMISSIONED: ${CALLING_PBX_COMMISSIONED:-0}
       CALLING_DATABASE_URL: ${CALLING_DATABASE_URL:-}
       CALLING_HEALTH_FILE: /tmp/cawp-calling.alive
+      # P1: click-to-call dispatcher + reconciliation (CoreShowChannels inventory + CDR lookup).
+      # The test PBX's CDR CSV is mounted read-only; production uses CALLING_CDR_SOURCE=mysql
+      # (the CDR_* settings; refused for 10.10.0.220 until CALLING_PBX_COMMISSIONED=1).
+      CALLING_DISPATCH_ENABLED: ${CALLING_DISPATCH_ENABLED:-1}
+      CALLING_RECONCILE_SECONDS: ${CALLING_RECONCILE_SECONDS:-10}
+      CALLING_CDR_SOURCE: ${CALLING_CDR_SOURCE:-csv}
+      CALLING_CDR_CSV: ${CALLING_CDR_CSV:-/pbx-test-cdr/Master.csv}
     command: ["python", "-m", "calling"]
     stop_signal: SIGTERM
     stop_grace_period: 20s     # AGI answers finish (5 s max), the AMI session closes cleanly
     volumes:
       - ./CAWP-API:/app
       - cawp_pbx_test_keys:/pbx-test-keys:ro      # the test PBX's self-signed certificate (CA for AMI TLS)
+      - cawp_pbx_test_cdr:/pbx-test-cdr:ro        # the test PBX's CDR CSV (reconciliation lookup, read-only)
     mem_limit: 256m
     healthcheck:
       test: ["CMD", "python", "-m", "calling", "--healthcheck"]

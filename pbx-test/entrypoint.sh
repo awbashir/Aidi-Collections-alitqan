@@ -47,15 +47,21 @@ for src in /opt/pbx-test/conf/*; do
 done
 chown -R root:asterisk /etc/asterisk; chmod 0750 /etc/asterisk; chmod 0640 /etc/asterisk/*.conf
 
-# Protected globals: the PBX epoch (new on every start) and the AGI hook address + key.
+# Protected globals: the AGI hook address + key, and the PBX epoch (new on every PROCESS start,
+# written by new_epoch() right before each Asterisk start below - the pre-start hook contract).
 mkdir -p /run/asterisk
-EPOCH=$(cat /proc/sys/kernel/random/uuid)
-printf 'COLLECTIONS_HUMAN_PBX_EPOCH=%s\n' "$EPOCH" > /run/asterisk/collections-pbx-epoch.conf
 printf 'COLLECTIONS_AGI_URL=%s\nCOLLECTIONS_AGI_KEY=%s\nPBX_TEST_SHORT_CALL_SECONDS=%s\n' \
     "$AGI_URL" "$PBX_TEST_AGI_KEY" "$SHORT" > /run/asterisk/collections-globals.conf
 chown -R asterisk:asterisk /run/asterisk
-chmod 0640 /run/asterisk/collections-pbx-epoch.conf /run/asterisk/collections-globals.conf
-echo "pbx-test: PBX epoch $EPOCH"
+chmod 0640 /run/asterisk/collections-globals.conf
+
+new_epoch() {
+    EPOCH=$(cat /proc/sys/kernel/random/uuid)
+    printf 'COLLECTIONS_HUMAN_PBX_EPOCH=%s\n' "$EPOCH" > /run/asterisk/collections-pbx-epoch.conf
+    chown asterisk:asterisk /run/asterisk/collections-pbx-epoch.conf
+    chmod 0640 /run/asterisk/collections-pbx-epoch.conf
+    echo "pbx-test: PBX epoch $EPOCH"
+}
 
 mkdir -p /var/spool/asterisk/monitor /var/log/asterisk/cdr-csv /var/lib/asterisk
 chown -R asterisk:asterisk /var/spool/asterisk /var/log/asterisk /var/lib/asterisk
@@ -71,4 +77,28 @@ if [ "${PBX_TEST_PHONE:-1}" = "1" ]; then
         > /var/log/asterisk/pjsua-7101.log 2>&1 ) &
 fi
 
-exec /usr/sbin/asterisk -f -U asterisk -G asterisk -vvv
+# TEST-ONLY control port (5099, compose network only): `<key> restart` = new epoch + Asterisk
+# restart in place, for the live "PBX restart mid-call" test. Off unless PBX_TEST_CONTROL_KEY is set.
+if [ -n "${PBX_TEST_CONTROL_KEY:-}" ]; then
+    printf '%s' "$PBX_TEST_CONTROL_KEY" | grep -Eq '^[A-Za-z0-9._-]{8,128}$' || die "PBX_TEST_CONTROL_KEY is invalid"
+    export PBX_TEST_CONTROL_KEY
+    ( sleep 2; exec nc -lk -p 5099 -e /opt/pbx-test/control.sh ) > /var/log/asterisk/pbx-control.log 2>&1 &
+fi
+
+# Supervise Asterisk like Issabel's safe_asterisk: a crashed process is restarted after the
+# pre-start hook wrote a NEW epoch. `docker stop` (SIGTERM) stops Asterisk and the loop.
+stopping=0
+pid=
+trap 'stopping=1; [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null' TERM INT
+while :; do
+    new_epoch
+    /usr/sbin/asterisk -f -U asterisk -G asterisk -vvv &
+    pid=$!
+    mkdir -p /run/pbx-test && echo "$pid" > /run/pbx-test/asterisk.pid
+    while kill -0 "$pid" 2>/dev/null; do
+        wait "$pid" 2>/dev/null || true
+    done
+    [ "$stopping" = 1 ] && exit 0
+    echo "pbx-test: Asterisk exited; restarting in 1 s with a new epoch (safe_asterisk behaviour)" >&2
+    sleep 1
+done

@@ -3,8 +3,9 @@
 The generated dialplan (services/calling/dialplan.py) runs `AGI(${GLOBAL(COLLECTIONS_AGI_URL)})`
 on the AGENT channel once the agent answered. This server answers ALLOW only when a one-shot
 dispatch token (call_dispatch_tokens, migration 0049) is consumed for exactly this channel.
-In P0 the decision is the token check only; P1 adds the dispatch rules (scope, do-not-call,
-window, reservation) before it issues tokens.
+P1: the dispatcher issues tokens only after every dispatch rule passed (services/calling/
+rules.py); this hook re-checks the case/contact safety rules (locked, archived, do-not-call,
+a blocking review, a blocked contact) before consuming the token.
 
 Protocol (Asterisk FastAGI over TCP, line based):
     <- agi_network: yes / agi_network_script / agi_request / agi_channel / agi_type /
@@ -276,6 +277,13 @@ def authorize(session, req: AgiRequest) -> Decision:
         raise AgiDeny("epoch_mismatch", token_id=tid)
     if t["attempt_state"] in ("ended", "failed", "cancelled", "uncertain", "prepared"):
         raise AgiDeny("attempt_not_dispatchable", token_id=tid)
+    # P1: the case/contact safety rules can change while the agent's phone rings (a supervisor
+    # locks the case, a wrap-up marks do-not-call or a wrong number): recheck them here, the
+    # last point before the customer is dialled (services/calling/rules.py).
+    from services.calling.rules import agi_recheck
+    refused = agi_recheck(session, req.attempt_id)
+    if refused is not None:
+        raise AgiDeny(refused, token_id=tid)
     session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now() WHERE id = CAST(:id AS uuid)"),
                     {"id": tid})
     record_decision(session, "allow", "allowed", req, token_id=tid, lim=t["max_call_seconds"], exp=t["expires_at"])

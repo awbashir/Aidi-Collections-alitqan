@@ -27,6 +27,12 @@ never contacted by default, from development, tests or a mis-set variable.
     CALLING_HEALTH_AMI_GRACE     seconds the AMI may be down before unhealthy (default 180)
     CALLING_STATUS_PORT          internal JSON status port (default 8791; 0 = off; never published)
     CALLING_DATABASE_URL         optional override of DATABASE_URL (e.g. a test database)
+    CALLING_DISPATCH_ENABLED     1 | 0  click-to-call dispatcher (P1, default 1)
+    CALLING_RECONCILE_SECONDS    reconciliation pass interval (default 10; 0 = off)
+    CALLING_CDR_SOURCE           none | csv | mysql  CDR lookup for reconciliation (default none)
+    CALLING_CDR_CSV              the test PBX's Master.csv (default /pbx-test-cdr/Master.csv)
+  (API side, read by services/calling/dispatch.py: CALLING_CONTEXT, CALLING_DRIVER,
+   CALLING_AGENT_RING_SECONDS, CALLING_MAX_CALL_SECONDS, CALLING_DISPATCH_TTL_SECONDS)
 """
 from __future__ import annotations
 
@@ -94,6 +100,8 @@ class CallingConfig:
     health_max_age: int
     health_ami_grace: int
     status_port: int
+    dispatch_enabled: bool = True
+    reconcile_seconds: int = 10
 
     @property
     def is_test_pbx(self) -> bool:
@@ -132,7 +140,11 @@ def load(env=None) -> CallingConfig:
         health_max_age=_int(env, "CALLING_HEALTH_MAX_AGE", 60, 10, 3600),
         health_ami_grace=_int(env, "CALLING_HEALTH_AMI_GRACE", 180, 10, 86400),
         status_port=_int(env, "CALLING_STATUS_PORT", 8791, 0, 65535),
+        dispatch_enabled=_bool(env, "CALLING_DISPATCH_ENABLED", True),
+        reconcile_seconds=_int(env, "CALLING_RECONCILE_SECONDS", 10, 0, 3600),
     )
+    if (env.get("CALLING_CDR_SOURCE") or "none").strip().lower() not in ("none", "csv", "mysql"):
+        raise ConfigError("CALLING_CDR_SOURCE must be none, csv or mysql")
     if cfg.enabled:
         validate(cfg)
     return cfg

@@ -1,4 +1,4 @@
-"""Phase 5 human calling (stream P0: foundation). See review/phase5-foundation.md.
+"""Phase 5 human calling (P0 foundation + P1 click-to-call). See review/phase5-foundation.md.
 
 Modules:
     windows       calling windows (Asia/Riyadh), pure functions
@@ -13,6 +13,14 @@ Modules:
     evidence      AMI event consumer -> call_events / call_legs / pbx_sessions
     wrapup        manual call log and the reviewed wrap-up transaction
     queries       call log reads (mine, case, scoped log, detail)
+  P1 (click-to-call, review/phase5-click-to-call.md):
+    rules         the dispatch rules (API, dispatcher final recheck, AGI gate recheck)
+    dispatch      POST /v2/calls authorization + queue; the calling service's Dispatcher
+    projection    AMI evidence -> attempt state (bridged only with bridge membership of both legs)
+    reconcile     missing evidence -> uncertain; channel inventory + CDR -> ended/failed/kept
+    cdr_lookup    CDR lookup by attempt id (CSV on the test PBX, MySQL on Issabel)
+    live          the live-call panel view (ETag) and my active attempt
+    review        supervisor lists: uncertain attempts, resolve, review flags
 
 Nothing in this package contacts a PBX by itself. The only process that opens an AMI
 session or listens for FastAGI is the `calling` service (CAWP-API/calling/).

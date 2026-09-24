@@ -2,8 +2,9 @@
 ;
 ;   7001-7005  WebRTC agent extensions (WSS via http.conf :8089/ws, DTLS-SRTP, ICE, AVPF)
 ;   7101-7102  plain UDP agent extensions (7101 is registered by the bundled pjsua client)
-;   7201-7203  simulated agent phones with a static loopback contact:
-;              7201 answers (and stays up), 7202 is busy, 7203 rings and never answers
+;   7201-7204  simulated agent phones with a static loopback contact:
+;              7201 answers (and stays up), 7202 is busy, 7203 rings and never answers,
+;              7204 rings for 3 s, then answers (and stays up)
 ;   cawp-test-trunk  the "customer network": dials loop back to 127.0.0.2:5160, where the
 ;              last digit of the number decides the behaviour (extensions_pbx_test.conf)
 ;
@@ -149,6 +150,15 @@ username = 7203
 [7203]
 type = aor
 contact = sip:agent-7203@127.0.0.2:5160
+
+[7204](sim-agent)
+auth = 7204
+aors = 7204
+[7204](agent-auth)
+username = 7204
+[7204]
+type = aor
+contact = sip:agent-7204@127.0.0.2:5160
 
 ; ---------------------------------------------------------------- customer network (trunk)
 [cawp-test-trunk]

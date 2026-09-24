@@ -467,3 +467,10 @@ ALTER TABLE clints DROP COLUMN last_comment_at, DROP COLUMN last_comment_id;
   roles actually have the keys they need (`branches*`, `contracts*`, `supervisors*`,
   `portfolios_delete`, `clints_delete`, `users_add`, `roles_add`, `roles_edit`) before
   going live, otherwise those screens start returning `403`.
+
+## 5d. Click-to-call settings (Phase 5 P1)
+
+The calling service's click-to-call settings are environment variables that must match the dialplan installed on Issabel. The full list, defaults and the matching dialplan values are in `docs/issabel-commissioning.md` §12. At a minimum:
+* `CALLING_ENABLED=1`, `CALLING_PBX_COMMISSIONED=1`, and the AMI/AGI secrets are set only after the runbook's verification passes;
+* the PBX and database clocks are NTP-synced, because evidence is ordered by PBX time;
+* retention of call events and imported CDR is off by default. See `CALL_EVENTS_RETENTION_DAYS` / `PBX_CDR_IMPORTED_RETENTION_DAYS` (minimum 30).
