@@ -267,7 +267,13 @@ def test_claim_rechecks_the_campaign_and_the_lease(cp_app, client, auth, world, 
     ctx = fake_ctx(epoch=w.transport["epoch"])
 
     def claim():
-        return in_app(cp_app, lambda s: D.claim(s, ctx, "claimer"))
+        # queue rows left by earlier tests carry another PBX epoch: the claimer expires them
+        # first (product behaviour); keep claiming until this campaign's row is decided
+        for _ in range(50):
+            got = in_app(cp_app, lambda s: D.claim(s, ctx, "claimer"))
+            if got != "expired:pbx_epoch_changed":
+                return got
+        return got
     ready(pgc, cid, w.c1)
     a1 = dispatched(tick(cp_app, cid, w))[0]["attempt_id"]
     run(pgc, "UPDATE campaign_readiness SET lease_until = now() - interval '1 second' "
