@@ -1,7 +1,9 @@
 /**
  * Mirror of the NEW permission keys registered in CAWP-API/core/permissions.py
- * (`NEW_PERMISSIONS`): Phase 1, plus Phase 2's `bulk_jobs_all` and the Phase 3
- * keys (requests*, plans*, users_sessions, users_login_history). The file keeps
+ * (`NEW_PERMISSIONS`): Phase 1, plus Phase 2's `bulk_jobs_all`, the Phase 3
+ * keys (requests*, plans*, users_sessions, users_login_history), the Phase 4
+ * report keys (reports_performance, reports_calls) and the Phase 5 calling keys
+ * (calls, calls_make, calls_manage, campaigns, campaigns_manage). The file keeps
  * its Phase 1 name so existing imports stay valid. Keep this list in the same order and with the same
  * labels as the backend registry; the legacy keys stay in the permissions
  * checkbox tree (views/permissions/form/Fields.tsx).
@@ -55,6 +57,15 @@ export const PHASE1_PERMISSIONS: Phase1Permission[] = [
     // Phase 3: sessions
     { key: 'users_sessions', group: 'intelligence_control', label_en: 'Sign users out everywhere', label_ar: 'إنهاء جلسات المستخدمين', admin_default: true },
     { key: 'users_login_history', group: 'intelligence_control', label_en: 'View login history', label_ar: 'عرض سجل الدخول', admin_default: true },
+    // Phase 4: reports without a legacy screen
+    { key: 'reports_performance', group: 'recovery_team', label_en: 'Performance reports', label_ar: 'تقارير الأداء', admin_default: true },
+    { key: 'reports_calls', group: 'recovery_team', label_en: 'Call reports', label_ar: 'تقارير المكالمات', admin_default: true },
+    // Phase 5: human calling
+    { key: 'calls', group: 'daily_operations', label_en: 'Calls and call log', label_ar: 'المكالمات وسجلها', admin_default: true },
+    { key: 'calls_make', group: 'daily_operations', label_en: 'Make calls (click-to-call, softphone)', label_ar: 'إجراء المكالمات', admin_default: true },
+    { key: 'calls_manage', group: 'intelligence_control', label_en: 'Calling administration', label_ar: 'إدارة الاتصال', admin_default: true },
+    { key: 'campaigns', group: 'daily_operations', label_en: 'Calling campaigns', label_ar: 'حملات الاتصال', admin_default: true },
+    { key: 'campaigns_manage', group: 'daily_operations', label_en: 'Run and pause campaigns', label_ar: 'تشغيل وإيقاف الحملات', admin_default: true },
 ]
 
 export const PHASE1_PERMISSION_KEYS: ReadonlySet<string> = new Set(PHASE1_PERMISSIONS.map((p) => p.key))

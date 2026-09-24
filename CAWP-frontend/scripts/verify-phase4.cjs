@@ -117,6 +117,11 @@ async function login(page, user = ADMIN) {
   await settle(page, 600);
 }
 async function setLang(page, lang) {
+  // wait for the app to finish restoring its persisted state first: a switch made before
+  // rehydration is overwritten by the saved language (a test race, not a product path)
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.locator('.header img[src*="/img/countries/"]').first().waitFor({ timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(400);
   const dir = await page.evaluate(() => document.documentElement.dir);
   if ((lang === 'en' && dir === 'ltr') || (lang === 'ar' && dir === 'rtl')) return;
   await page.locator('.header img[src*="/img/countries/"]').first().click();
@@ -285,7 +290,7 @@ async function hub({ newPage }) {
       // sidebar: the new item leads the reports in Recovery & team
       await page.goto(`${FE}/reports`, { waitUntil: 'networkidle' });
       const counts = await groupItemCounts(page);
-      check('hub: aidi.dev sidebar items per group are [6,13,9] (Phase 3 was [6,12,9]; + Reports hub)', JSON.stringify(counts) === '[6,13,9]', JSON.stringify(counts));
+      check('hub: aidi.dev sidebar items per group are [9,13,11] (Phase 3 was [6,12,9]; + Reports hub; Phase 5: + calls, calling workspace, campaigns, call review, calling admin)', JSON.stringify(counts) === '[9,13,11]', JSON.stringify(counts));
       // the card link opens the viewer
       await page.locator('[data-testid="p4-report-card"][data-report="RPT-12"] [data-testid="p4-report-open"]').click();
       await byTest(page, 'p4-viewer').waitFor({ timeout: 30000 });

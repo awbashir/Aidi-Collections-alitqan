@@ -5,6 +5,7 @@ import Spinner from "@/components/ui/Spinner";
 import classNames from "classnames";
 import withHeaderItem from "@/utils/hoc/withHeaderItem";
 import { setLang, useAppSelector, useAppDispatch } from "@/store";
+import { persistor } from "@/store/storeSetup";
 import { dateLocales } from "@/locales";
 import dayjs from "dayjs";
 // eslint-disable-next-line import/no-named-as-default
@@ -54,6 +55,9 @@ const _LanguageSelector = ({ className }: CommonProps) => {
       i18n.changeLanguage(formattedLang);
       dispatch(setLang(lang));
       updateDirection(lang === "ar" ? THEME_ENUM.DIR_RTL : THEME_ENUM.DIR_LTR);
+      // write the persisted store now: its writes are deferred, and a reload right after
+      // the switch would otherwise bring the previous language back
+      void persistor.flush();
       setLoading(false);
     };
 

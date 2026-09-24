@@ -30,6 +30,11 @@ import {
   Target,
   Inbox,
   FileChartColumn,
+  Phone,
+  Headset,
+  Megaphone,
+  ShieldAlert,
+  SlidersHorizontal,
 } from "lucide-react";
 
 
@@ -68,6 +73,12 @@ const navigationIcon: NavigationIcons = {
   requests: <Inbox strokeWidth={2} size={18} />,
   /* Phase 4 */
   reports_hub: <FileChartColumn strokeWidth={2} size={18} />,
+  /* Phase 5 */
+  calls: <Phone strokeWidth={2} size={18} />,
+  calling: <Headset strokeWidth={2} size={18} />,
+  campaigns: <Megaphone strokeWidth={2} size={18} />,
+  call_review: <ShieldAlert strokeWidth={2} size={18} />,
+  calling_admin: <SlidersHorizontal strokeWidth={2} size={18} />,
 };
 
 export default navigationIcon;

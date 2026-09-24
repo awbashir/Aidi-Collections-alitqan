@@ -74,6 +74,12 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     # Phase 4: reports without a legacy screen
     PermissionKey("reports_performance", _RECOVERY, "Performance reports", "تقارير الأداء"),
     PermissionKey("reports_calls", _RECOVERY, "Call reports", "تقارير المكالمات"),
+    # Phase 5: human calling
+    PermissionKey("calls", _DAILY, "Calls and call log", "المكالمات وسجلها"),
+    PermissionKey("calls_make", _DAILY, "Make calls (click-to-call, softphone)", "إجراء المكالمات"),
+    PermissionKey("calls_manage", _CONTROL, "Calling administration", "إدارة الاتصال"),
+    PermissionKey("campaigns", _DAILY, "Calling campaigns", "حملات الاتصال"),
+    PermissionKey("campaigns_manage", _DAILY, "Run and pause campaigns", "تشغيل وإيقاف الحملات"),
 )
 
 

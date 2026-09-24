@@ -1,0 +1,11 @@
+; CAWP WebRTC test PBX (TEST ONLY): read-only connection to the application database.
+; The role holds SELECT on the view pbx_ps_auths only (never the tables, never the password:
+; the view returns HA1 = md5_cred).
+[general]
+dbhost = @@DB_HOST@@
+dbport = 5432
+dbname = @@DB_NAME@@
+dbuser = @@DB_USER@@
+dbpass = @@DB_PASSWORD@@
+dbappname = cawp-pbx-webrtc-test
+requirements = warn

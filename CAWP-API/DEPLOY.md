@@ -293,6 +293,69 @@ required: no new permission key (each report uses its legacy screen's key), no n
 Tooling (read-only, safe on production copies): `python -m core.reports.perf reconcile` (legacy
 `/payments*` vs RPT-06/07/08) and `python -m core.reports.perf timings`.
 
+## 5d. Human calling foundation (Phase 5 P0): `/v2/calls*`, `/v2/calling/*` and the `calling` service
+
+The API routes live in `api/calling.py`: manual call log, reviewed wrap-up, call lists, calling
+settings, and the admin routes for extensions and windows. A separate long-lived process,
+`python -m calling` (docker-compose service `calling`, same image), owns the AMI session to the
+PBX and answers the FastAGI authorization hook. Design and examples: `review/phase5-foundation.md`.
+PBX side: `docs/issabel-commissioning.md`.
+
+**Order:**
+1. Apply migrations `0048`–`0051` (section 3b; new tables only, instant). `up` also merges the
+   permission keys `calls`, `calls_make` and `calls_manage` into every role.
+2. Restart the API. The calling routes work without the calling service; `can_call` stays
+   `false` in P0.
+3. Deploy the `calling` service with **`CALLING_ENABLED=0`** (the default). It then opens no
+   socket to any PBX, needs no secret and reports healthy.
+4. Only after the Issabel commissioning checklist passed: set the variables below and
+   `CALLING_PBX_COMMISSIONED=1`, then restart the service.
+
+* **Refusals by design:** an enabled service refuses any PBX host other than the local test PBX
+  (`pbx-test`) until `CALLING_PBX_COMMISSIONED=1`, including any name that resolves to
+  10.10.0.220. It also refuses the test-only secrets from `docker-compose.yml` for any other PBX,
+  and plaintext AMI except to loopback (use AMI TLS 5039, or an SSH tunnel to 127.0.0.1).
+* **Restarts:** a restart marks the calls that were in flight on the PBX `uncertain`
+  (`calling_service_restarted`). It **never releases a reservation**: only a saved wrap-up, the
+  cancellation of an unsent attempt, or a named reconciliation (P1) can release one. The
+  database enforces this (`calling_reservations_guard`).
+* **Stopping:** `SIGTERM` stops accepting AGI connections, lets in-flight answers finish (5 s at
+  most) and closes the AMI session (recorded as `calling_service_stopped`). Give the container
+  20 s (`stop_grace_period`).
+* **Health:** `python -m calling --healthcheck` (the compose healthcheck) reads the health file
+  and pings the database. It reports unhealthy when the AMI session has been down longer than
+  `CALLING_HEALTH_AMI_GRACE`, or when the FastAGI listener stopped. An internal JSON status is
+  served on `CALLING_STATUS_PORT` (`/status`, `/healthz`). Never publish that port.
+* **Database outage:** evidence stays in a bounded in-memory buffer (5,000 events) and is written
+  in order once the database is back. An overflow records an `EvidenceGap` and marks the affected
+  in-flight calls `uncertain`. The AMI session is not dropped for a database outage.
+* **Commissioning checks** (read-only): `python -m calling.verify` on the calling host, and
+  `calling/issabel/pbx-verify.sh` on the PBX.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CALLING_ENABLED` | `0` | `1` = connect to the PBX and listen for FastAGI |
+| `CALLING_AMI_HOST` | (compose: `pbx-test`) | PBX host (the name in its TLS certificate) |
+| `CALLING_AMI_PORT` | `5039` with TLS, `5038` without | |
+| `CALLING_AMI_TLS` | `1` | `0` only with `CALLING_AMI_HOST=127.0.0.1` (tunnel) or a listed test host |
+| `CALLING_AMI_CA_FILE` | system store | CA bundle that signs the PBX certificate |
+| `CALLING_AMI_SERVER_NAME` | the host | TLS server name, if it differs |
+| `CALLING_AMI_USERNAME` / `CALLING_AMI_SECRET` | — | the dedicated AMI account (vault) |
+| `CALLING_PBX_COMMISSIONED` | `0` | operator assertion after the Issabel runbook |
+| `CALLING_AGI_ENABLED` | `1` | the FastAGI hook |
+| `CALLING_AGI_BIND` / `CALLING_AGI_PORT` | `0.0.0.0` / `4573` | reachable from the PBX only (firewall) |
+| `CALLING_AGI_SECRET` | — | 16+ characters; equals `COLLECTIONS_AGI_KEY` on the PBX (vault) |
+| `CALLING_AGI_ALLOWED_PEERS` | the AMI host | CIDRs or host names allowed to connect |
+| `CALLING_HEARTBEAT_SECONDS` | `10` | AMI Ping interval |
+| `CALLING_HEALTH_FILE` / `_MAX_AGE` / `_AMI_GRACE` | `/tmp/cawp-calling.alive` / `60` / `180` | health check |
+| `CALLING_STATUS_PORT` | `8791` | internal status JSON; `0` = off |
+| `CALLING_DATABASE_URL` | `DATABASE_URL` | override (tests point it at a test database) |
+| `CALLING_DB_POOL_SIZE` | `4` | database pool of the service |
+
+**Local test PBX** (profile `pbx-test`, never production): `docker compose --profile pbx-test up -d pbx-test`,
+then `CALLING_ENABLED=1 CALLING_DATABASE_URL=… docker compose --profile pbx-test up -d calling`.
+See the header of `tests/test_calling_live_pbx.py`.
+
 ## 6. Smoke-check the release
 
 ```bash
@@ -404,3 +467,11 @@ ALTER TABLE clints DROP COLUMN last_comment_at, DROP COLUMN last_comment_id;
   roles actually have the keys they need (`branches*`, `contracts*`, `supervisors*`,
   `portfolios_delete`, `clints_delete`, `users_add`, `roles_add`, `roles_edit`) before
   going live, otherwise those screens start returning `403`.
+
+## 5d. Click-to-call settings (Phase 5 P1)
+
+The calling service's click-to-call settings are environment variables that must match the dialplan installed on Issabel. The full list, defaults and the matching dialplan values are in `docs/issabel-commissioning.md` §12. At a minimum:
+* `CALLING_ENABLED=1`, `CALLING_PBX_COMMISSIONED=1`, and the AMI/AGI secrets are set only after the runbook's verification passes;
+* the PBX and database clocks are NTP-synced, because evidence is ordered by PBX time;
+* retention of call events and imported CDR is off by default. See `CALL_EVENTS_RETENTION_DAYS` / `PBX_CDR_IMPORTED_RETENTION_DAYS` (minimum 30).
+* Campaigns (Phase 5 P2) run as a thread in the `calling` service: `CALLING_CAMPAIGNS_ENABLED` (default 1) and `CALLING_CAMPAIGN_POLL_MS` (default 500). Pause, drain and stop never cut a live call.

@@ -671,6 +671,45 @@ export const protectedRoutes = [
     authority: [],
   },
 
+  /* ── Phase 5: calling. The route key is the permission key (derived keys in
+   *    utils/v2/derivedPermissions: calling_any, campaigns_any). ── */
+  {
+    key: "calls",
+    path: "/calls",
+    component: lazy(() => import("@/views/phase5/calls")),
+    authority: [],
+  },
+  {
+    key: "calling_any",
+    path: "/calling",
+    component: lazy(() => import("@/views/phase5/calling")),
+    authority: [],
+  },
+  {
+    key: "campaigns_any",
+    path: "/campaigns",
+    component: lazy(() => import("@/views/phase5/campaigns")),
+    authority: [],
+  },
+  {
+    key: "campaigns_any",
+    path: "/campaigns/:id",
+    component: lazy(() => import("@/views/phase5/campaigns/CampaignDetail")),
+    authority: [],
+  },
+  {
+    key: "call_review",
+    path: "/call-review",
+    component: lazy(() => import("@/views/phase5/review")),
+    authority: [],
+  },
+  {
+    key: "calling_admin",
+    path: "/calling-admin",
+    component: lazy(() => import("@/views/phase5/admin")),
+    authority: [],
+  },
+
   {
     key: "accessDenied",
     path: "/access-denied",

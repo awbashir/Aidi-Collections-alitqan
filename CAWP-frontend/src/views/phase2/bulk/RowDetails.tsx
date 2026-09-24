@@ -147,6 +147,47 @@ export const RowDetails = ({ kind, row }: { kind: string; row: BulkRow }) => {
                 </span>
             )
         }
+        /* Phase 5: a PBX CDR record and how it was attributed (never changes the attempt). */
+        case 'pbx_cdr_import':
+            return (
+                <span className="text-[12.5px]" data-attribution={s(d.attribution)}>
+                    {d.attribution ? (
+                        <PlainBadge size="row" tone={['attempt_tag', 'phone_time', 'phone'].includes(s(d.attribution)) ? 'success' : 'warning'}>
+                            {t(`p5.cdr.attribution.${s(d.attribution)}`, { defaultValue: s(d.attribution) })}
+                        </PlainBadge>
+                    ) : null}
+                    {d.call_at ? (
+                        <span className="ms-1">
+                            <RiyadhTime iso={s(d.call_at)} />
+                        </span>
+                    ) : null}
+                    {d.call_at_source ? <Ltr className="ms-1 text-gray-600">({s(d.call_at_source)})</Ltr> : null}
+                    <div className="text-gray-600">
+                        {d.disposition ? <span>{s(d.disposition)} · </span> : null}
+                        {t('p5.cdr.duration')}: {d.duration === null || d.duration === undefined || d.duration === '' ? t('p5.duration.unknown') : `${s(d.duration)}s`}
+                        {d.billsec !== undefined && (
+                            <span>
+                                {' '}
+                                · {t('p5.cdr.billsec')}: {d.billsec === null || d.billsec === '' ? t('p5.duration.unknown') : `${s(d.billsec)}s`}
+                            </span>
+                        )}
+                    </div>
+                    {d.attempt_id ? (
+                        <div>
+                            <Link className="font-extrabold text-azure-600 hover:underline" to={`/calls#scope=team&call=${encodeURIComponent(s(d.attempt_id))}`} data-testid="p5-cdr-attempt-link">
+                                {t('p5.cdr.openCall')}
+                            </Link>
+                            {d.attempt_link ? <span className="ms-1 text-gray-600">({t(`p5.pbx.link.${s(d.attempt_link)}`, { defaultValue: s(d.attempt_link) })})</span> : null}
+                        </div>
+                    ) : null}
+                    {Array.isArray(d.conflict_fields) && (d.conflict_fields as string[]).length > 0 && (
+                        <div className="text-danger">
+                            {t('p5.cdr.conflictFields')}: <Ltr>{(d.conflict_fields as string[]).join(', ')}</Ltr>
+                        </div>
+                    )}
+                    {d.first_row_no ? <div className="text-gray-600">{t('p5.cdr.firstRow', { row: s(d.first_row_no) })}</div> : null}
+                </span>
+            )
         default:
             return (
                 <span className="text-[12px] text-gray-600">

@@ -1,0 +1,189 @@
+; CAWP test PBX PJSIP (TEST ONLY). Production WebRTC settings: docs/issabel-commissioning.md.
+;
+;   7001-7005  WebRTC agent extensions (WSS via http.conf :8089/ws, DTLS-SRTP, ICE, AVPF)
+;   7101-7102  plain UDP agent extensions (7101 is registered by the bundled pjsua client)
+;   7201-7204  simulated agent phones with a static loopback contact:
+;              7201 answers (and stays up), 7202 is busy, 7203 rings and never answers,
+;              7204 rings for 3 s, then answers (and stays up)
+;   cawp-test-trunk  the "customer network": dials loop back to 127.0.0.2:5160, where the
+;              last digit of the number decides the behaviour (extensions_pbx_test.conf)
+;
+; Every agent and the trunk have allow_transfer=no (checked by the dialplan before Dial).
+
+[global]
+type = global
+endpoint_identifier_order = ip,username
+user_agent = CAWP test PBX
+max_forwards = 20
+
+[transport-udp]
+type = transport
+protocol = udp
+bind = 0.0.0.0:5060
+
+[transport-wss]
+type = transport
+protocol = wss
+bind = 0.0.0.0
+
+; Loopback-only network for the simulated phones and customers (never leaves the container).
+[transport-sim]
+type = transport
+protocol = udp
+bind = 127.0.0.2:5160
+
+; ---------------------------------------------------------------- templates
+[agent-common](!)
+type = endpoint
+context = cawp-agents
+disallow = all
+allow_transfer = no
+direct_media = no
+allow_subscribe = no
+device_state_busy_at = 1
+max_audio_streams = 1
+
+[webrtc-agent](!,agent-common)
+transport = transport-wss
+; Browsers support PCMU/PCMA natively; add opus only where codec_opus is installed.
+allow = ulaw,alaw
+webrtc = yes
+dtls_auto_generate_cert = yes
+
+[udp-agent](!,agent-common)
+transport = transport-udp
+allow = ulaw,alaw
+rtp_symmetric = yes
+force_rport = yes
+rewrite_contact = yes
+
+[agent-auth](!)
+type = auth
+auth_type = userpass
+password = @@SIP_PASSWORD@@
+
+[agent-aor](!)
+type = aor
+max_contacts = 1
+remove_existing = yes
+qualify_frequency = 0
+
+; ---------------------------------------------------------------- WebRTC agents
+[7001](webrtc-agent)
+auth = 7001
+aors = 7001
+[7001](agent-auth)
+username = 7001
+[7001](agent-aor)
+
+[7002](webrtc-agent)
+auth = 7002
+aors = 7002
+[7002](agent-auth)
+username = 7002
+[7002](agent-aor)
+
+[7003](webrtc-agent)
+auth = 7003
+aors = 7003
+[7003](agent-auth)
+username = 7003
+[7003](agent-aor)
+
+[7004](webrtc-agent)
+auth = 7004
+aors = 7004
+[7004](agent-auth)
+username = 7004
+[7004](agent-aor)
+
+[7005](webrtc-agent)
+auth = 7005
+aors = 7005
+[7005](agent-auth)
+username = 7005
+[7005](agent-aor)
+
+; ---------------------------------------------------------------- UDP agents
+[7101](udp-agent)
+auth = 7101
+aors = 7101
+[7101](agent-auth)
+username = 7101
+[7101](agent-aor)
+
+[7102](udp-agent)
+auth = 7102
+aors = 7102
+[7102](agent-auth)
+username = 7102
+[7102](agent-aor)
+
+; ---------------------------------------------------------------- simulated agent phones
+[sim-agent](!,agent-common)
+transport = transport-sim
+allow = ulaw
+
+[7201](sim-agent)
+auth = 7201
+aors = 7201
+[7201](agent-auth)
+username = 7201
+[7201]
+type = aor
+contact = sip:agent-7201@127.0.0.2:5160
+
+[7202](sim-agent)
+auth = 7202
+aors = 7202
+[7202](agent-auth)
+username = 7202
+[7202]
+type = aor
+contact = sip:agent-7202@127.0.0.2:5160
+
+[7203](sim-agent)
+auth = 7203
+aors = 7203
+[7203](agent-auth)
+username = 7203
+[7203]
+type = aor
+contact = sip:agent-7203@127.0.0.2:5160
+
+[7204](sim-agent)
+auth = 7204
+aors = 7204
+[7204](agent-auth)
+username = 7204
+[7204]
+type = aor
+contact = sip:agent-7204@127.0.0.2:5160
+
+; ---------------------------------------------------------------- customer network (trunk)
+[cawp-test-trunk]
+type = endpoint
+transport = transport-sim
+context = pbx-test-trunk-inbound
+disallow = all
+allow = ulaw
+allow_transfer = no
+direct_media = no
+aors = cawp-test-trunk
+[cawp-test-trunk]
+type = aor
+contact = sip:127.0.0.2:5160
+
+; Everything arriving on the loopback network is a simulated phone or customer.
+[sim-network]
+type = endpoint
+transport = transport-sim
+context = pbx-test-sim-network
+disallow = all
+allow = ulaw
+allow_transfer = no
+direct_media = no
+[sim-network]
+type = identify
+endpoint = sim-network
+match = 127.0.0.2

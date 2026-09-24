@@ -1,0 +1,23 @@
+; CAWP WebRTC test PBX AMI (TEST ONLY). The account has exactly the production privileges
+; (docs/issabel-commissioning.md §3): the softphone test originates the extension-first agent leg
+; with the attempt header (services/calling/sip_tag.py) the same way the calling service does.
+[general]
+enabled = yes
+bindaddr = 0.0.0.0
+port = 5038
+timestampevents = yes
+displayconnects = yes
+authtimeout = 5
+authlimit = 10
+webenabled = no
+
+[@@AMI_USER@@]
+secret = @@AMI_SECRET@@
+deny = 0.0.0.0/0.0.0.0
+permit = 127.0.0.0/255.0.0.0
+permit = 10.0.0.0/255.0.0.0
+permit = 172.16.0.0/255.240.0.0
+permit = 192.168.0.0/255.255.0.0
+read = call,user,system
+write = originate,reporting
+writetimeout = 5000

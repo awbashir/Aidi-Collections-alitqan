@@ -40,6 +40,11 @@ export function paramsValid(kind: string, source: BulkSource | undefined, p: Par
             return has(p.comment) && has(p.comment_status_id) && has(p.contactMethod_id) && (!p.__ui?.cbTime || !!p.__ui?.cbDate)
         case 'attribute_corrections':
             return has(p.reason)
+        /* Phase 5: the reviewed PBX CDR import. */
+        case 'pbx_cdr_import': {
+            const w = str(p.match_window_seconds).trim()
+            return has(p.reason) && (w === '' || (/^\d{1,4}$/.test(w) && Number(w) <= 3600))
+        }
         default:
             return true
     }
@@ -95,6 +100,12 @@ export function buildParams(kind: string, source: BulkSource | undefined, p: Par
             text('reason')
             out.attributes = attributes || {}
             out.blank_cells = p.blank_cells === 'remove' ? 'remove' : 'skip'
+            break
+        case 'pbx_cdr_import':
+            text('reason')
+            text('source_name')
+            text('timezone')
+            if (has(p.match_window_seconds)) out.match_window_seconds = Number(str(p.match_window_seconds).trim())
             break
         default:
             Object.entries(p).forEach(([k, v]) => {

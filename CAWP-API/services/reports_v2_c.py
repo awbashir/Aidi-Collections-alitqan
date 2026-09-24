@@ -42,6 +42,7 @@ from core.api_response import ApiError
 from core.reports import Built, Column, DateRange, Enum, Ids, ReportDefinition, Sort, Text, Total
 from core.reports.definition import FieldError, FilterSpec, TimestampRange, label
 from services import reports_v2_cdr as cdrsrc
+from services.calling_cdr import ATTEMPT_LINKS as _ATTEMPT_LINKS
 
 # =========================================================================== shared pieces
 _APPROVED = ("p.approval_status = true AND p.is_deleted = false "
@@ -1349,10 +1350,12 @@ class CallDetailRecords(ReportDefinition):
     description_en = ("PBX call records (Asterisk CDR and the call center) for the chosen days, each attributed to the "
                       "one matching case in your scope (by the contact number, like the case call-records tab) and to "
                       "the agent by current extension. Records are source rows, not unique conversations. Unknown "
-                      "durations stay unknown. The recording link needs the download or play permission.")
+                      "durations stay unknown. The recording link needs the download or play permission. A record "
+                      "tagged with a call attempt (cawp:<attempt>) is linked to that attempt and its case exactly.")
     description_ar = ("سجلات مكالمات المقسم (سجل Asterisk ومركز الاتصال) للأيام المختارة، منسوبة إلى العميل المطابق ضمن نطاقك "
                       "(برقم التواصل كما في تبويب سجلات المكالمات) وإلى الموظف حسب التحويلة الحالية. السجلات صفوف مصدر "
-                      "وليست محادثات فريدة. المدة غير المعروفة تبقى غير معروفة. رابط التسجيل يتطلب صلاحية التحميل أو التشغيل.")
+                      "وليست محادثات فريدة. المدة غير المعروفة تبقى غير معروفة. رابط التسجيل يتطلب صلاحية التحميل أو التشغيل. "
+                      "السجل الموسوم بمحاولة اتصال يُربط بتلك المحاولة وعميلها مباشرة.")
     permissions = ("clints_callsRecords", "reports_calls")
     legacy = {"endpoint": "GET /cdr_by_date, GET /cdr", "screen": "case detail, call records tab (CallsRecordClientTable.tsx)",
               "key": "clints_callsRecords"}
@@ -1394,6 +1397,10 @@ class CallDetailRecords(ReportDefinition):
         Column("portfolio_name", "Portfolio", "المحفظة", "text", "mpf.name"),
         Column("owner_id", "Owner ID", "معرف المحصل", "uuid", "mc.user_id", hidden=True),
         Column("owner_name", "Current case owner", "المحصل الحالي للعميل", "text", _name("ou"), role="owner"),
+        # Phase 5 P4: the call attempt named by the record's cawp tag (exact), when known
+        Column("attempt_id", "Call attempt", "محاولة الاتصال", "uuid", "cdr.attempt_id"),
+        Column("attempt_link", "Call attempt link", "ربط محاولة الاتصال", "enum", "cdr.attempt_link",
+               enum=_enum(_ATTEMPT_LINKS)),
         Column("has_recording", "Recording exists", "يوجد تسجيل", "bool", "cdr.recording_file IS NOT NULL"),
         Column("recording_file", "Recording file", "ملف التسجيل", "text",
                "CASE WHEN CAST(:r25_rec AS boolean) THEN cdr.recording_file END"),
@@ -1411,6 +1418,9 @@ class CallDetailRecords(ReportDefinition):
              predicates={"known": "cdr.duration IS NOT NULL", "unknown": "cdr.duration IS NULL"}),
         Enum("recording", "Recording", "التسجيل", {"yes": ("With recording", "بتسجيل"), "no": ("Without", "بدون تسجيل")},
              predicates={"yes": "cdr.recording_file IS NOT NULL", "no": "cdr.recording_file IS NULL"}),
+        Enum("attempt", "Call attempt", "محاولة الاتصال",
+             {"linked": ("Linked to a call attempt", "مرتبطة بمحاولة اتصال"), "unlinked": ("Not linked", "غير مرتبطة")},
+             predicates={"linked": "cdr.attempt_id IS NOT NULL", "unlinked": "cdr.attempt_id IS NULL"}),
         Ids("agent", "Agent", "الموظف", "user", "cdr.agent_user_id", depends_on=("call_date",)),
         Ids("owner", "Current case owner", "المحصل الحالي", "user", "mc.user_id", depends_on=("call_date",)),
         Ids("contract", "Contract", "العقد", "contract", "mpf.contract_id", depends_on=("call_date",)),

@@ -1,0 +1,94 @@
+; CAWP WebRTC test PBX PJSIP (TEST ONLY). Production WebRTC settings: docs/issabel-commissioning.md.
+;
+;   7001-7005  WebRTC agent extensions (WSS via http.conf :8089/ws, DTLS-SRTP, ICE, AVPF, rtcp-mux),
+;              exactly the pbx-test / Issabel settings. Their digest credentials are NOT here:
+;              sorcery.conf maps `auth` objects to the application database first (the view
+;              pbx_ps_auths: HA1 of the short-lived credential POST /v2/me/sip-credentials issued),
+;              then to the "locked" auth objects below, whose HA1 is random per start.
+;   7005       also used by the backend's live digest probe (UDP REGISTER with Expires: 0).
+;
+; Every agent has allow_transfer=no, as on pbx-test and Issabel (the extension-first dialplan
+; refuses to dial a customer from an endpoint that can transfer).
+
+[global]
+type = global
+endpoint_identifier_order = ip,username
+user_agent = CAWP WebRTC test PBX
+default_realm = @@REALM@@
+max_forwards = 20
+
+[transport-wss]
+type = transport
+protocol = wss
+bind = 0.0.0.0
+
+; Only for the backend's live digest probe (tests/test_calling_sip.py) on the compose network.
+[transport-udp]
+type = transport
+protocol = udp
+bind = 0.0.0.0:5060
+
+; ---------------------------------------------------------------- templates
+[webrtc-agent](!)
+type = endpoint
+context = cawp-agents
+transport = transport-wss
+disallow = all
+; Browsers support PCMU/PCMA natively; add opus only where codec_opus is installed.
+allow = ulaw,alaw
+webrtc = yes
+dtls_auto_generate_cert = yes
+allow_transfer = no
+direct_media = no
+allow_subscribe = no
+device_state_busy_at = 1
+max_audio_streams = 1
+
+[agent-aor](!)
+type = aor
+max_contacts = 1
+remove_existing = yes
+qualify_frequency = 0
+
+; Fallback when the database has no current credential for the extension: nobody knows a
+; password for this HA1, so the challenge fails cleanly (401) instead of an auth lookup error.
+[locked-auth](!)
+type = auth
+auth_type = md5
+realm = @@REALM@@
+md5_cred = @@LOCKED_HA1@@
+
+[7001](webrtc-agent)
+auth = 7001
+aors = 7001
+[7001](locked-auth)
+username = 7001
+[7001](agent-aor)
+
+[7002](webrtc-agent)
+auth = 7002
+aors = 7002
+[7002](locked-auth)
+username = 7002
+[7002](agent-aor)
+
+[7003](webrtc-agent)
+auth = 7003
+aors = 7003
+[7003](locked-auth)
+username = 7003
+[7003](agent-aor)
+
+[7004](webrtc-agent)
+auth = 7004
+aors = 7004
+[7004](locked-auth)
+username = 7004
+[7004](agent-aor)
+
+[7005](webrtc-agent)
+auth = 7005
+aors = 7005
+[7005](locked-auth)
+username = 7005
+[7005](agent-aor)

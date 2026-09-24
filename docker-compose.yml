@@ -195,7 +195,211 @@ services:
       timeout: 3s
       retries: 40
 
+  # --- Test PBX (profile "pbx-test", Phase 5 P0): a local Asterisk 20 LTS standing in for the
+  # Issabel PBX. The real PBX (10.10.0.220) and any external SIP or phone network are NEVER
+  # contacted: the "customer network" is a loopback inside this container (pbx-test/conf).
+  # Config and design: pbx-test/, docs/issabel-commissioning.md, review/phase5-foundation.md.
+  #   docker compose --profile pbx-test up -d pbx-test
+  #   docker exec cawp-pbx-test asterisk -rx "pjsip show contacts"
+  # Customers by the LAST digit of the E.164 number: 1 answers+echo, 2 busy, 3 no answer,
+  # 4 answers then hangs up after PBX_TEST_SHORT_CALL_SECONDS, 5 congestion, 6 late answer.
+  # Agents: 7001-7005 WebRTC (wss://localhost:8089/ws), 7101-7102 UDP (7101 = bundled pjsua,
+  # auto-answer), 7201 simulated phone that answers, 7202 busy, 7203 never answers,
+  # 7204 answers after ringing 3 s.
+  # Recordings (MixMonitor, YYYY/MM/DD/<uniqueid>.wav) and CDR CSV live in the two volumes.
+  pbx-test:
+    profiles: ["pbx-test"]
+    build: ./pbx-test
+    image: cawp-pbx-test:20.11.1
+    container_name: cawp-pbx-test
+    init: true
+    environment:
+      # TEST-ONLY secrets for the local test PBX. Never reuse them anywhere else.
+      PBX_TEST_AMI_USER: cawp-calling
+      PBX_TEST_AMI_SECRET: pbx-test-ami-only
+      PBX_TEST_SIP_PASSWORD: pbx-test-sip-only
+      PBX_TEST_AGI_KEY: pbx-test-agi-only
+      PBX_TEST_AGI_URL: agi://calling:4573/collections-authorize
+      PBX_TEST_SHORT_CALL_SECONDS: "3"
+      # TEST-ONLY control port 5099 (compose network): "<key> restart" = new epoch + Asterisk restart,
+      # used by the live "PBX restart mid-call" test (tests/test_calling_c2c_live.py).
+      PBX_TEST_CONTROL_KEY: pbx-test-control-only
+    ports:
+      - "127.0.0.1:8089:8089"        # HTTPS / WSS for WebRTC agents (self-signed, test only)
+    volumes:
+      - cawp_pbx_test_recordings:/var/spool/asterisk/monitor
+      - cawp_pbx_test_cdr:/var/log/asterisk/cdr-csv
+      - cawp_pbx_test_keys:/etc/asterisk/keys
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "asterisk -rx 'core waitfullybooted' | grep -q 'fully booted'"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 6
+
+  # --- Calling service (Phase 5): the long-lived AMI owner (events -> call evidence rows) and
+  # the FastAGI authorization hook the restricted dialplan asks before dialling a customer.
+  # Same image as the API. OFF by default: with CALLING_ENABLED unset it opens no socket to any
+  # PBX and stays healthy. It refuses any PBX other than the local test PBX until
+  # CALLING_PBX_COMMISSIONED=1 (after docs/issabel-commissioning.md), and refuses the test-only
+  # secrets below for any other PBX. Production values come from the deploy environment.
+  #   Against the test PBX (writes evidence into the database of CALLING_DATABASE_URL, default
+  #   DATABASE_URL from .env.docker; it needs migrations 0048-0053):
+  #   CALLING_ENABLED=1 CALLING_DATABASE_URL=postgresql+psycopg2://postgres:postgres@test-db:5432/cawp_test_call0 \
+  #       docker compose --profile pbx-test up -d calling
+  #   docker exec cawp-calling python -m calling --healthcheck
+  # Drop the `profiles` line at the production cutover (Phase 5 integration).
+  calling:
+    profiles: ["calling", "pbx-test"]
+    build: ./CAWP-API
+    container_name: cawp-calling
+    env_file: ./CAWP-API/.env.docker
+    environment:
+      CALLING_ENABLED: ${CALLING_ENABLED:-0}
+      CALLING_AMI_HOST: ${CALLING_AMI_HOST:-pbx-test}
+      CALLING_AMI_TLS: ${CALLING_AMI_TLS:-1}
+      CALLING_AMI_CA_FILE: ${CALLING_AMI_CA_FILE:-/pbx-test-keys/pbx-test.crt}
+      CALLING_AMI_USERNAME: ${CALLING_AMI_USERNAME:-cawp-calling}
+      CALLING_AMI_SECRET: ${CALLING_AMI_SECRET:-pbx-test-ami-only}      # TEST-ONLY default (pbx-test)
+      CALLING_AGI_SECRET: ${CALLING_AGI_SECRET:-pbx-test-agi-only}      # TEST-ONLY default (pbx-test)
+      CALLING_AGI_ALLOWED_PEERS: ${CALLING_AGI_ALLOWED_PEERS:-pbx-test}
+      CALLING_PBX_COMMISSIONED: ${CALLING_PBX_COMMISSIONED:-0}
+      CALLING_DATABASE_URL: ${CALLING_DATABASE_URL:-}
+      CALLING_HEALTH_FILE: /tmp/cawp-calling.alive
+      # P1: click-to-call dispatcher + reconciliation (CoreShowChannels inventory + CDR lookup).
+      # The test PBX's CDR CSV is mounted read-only; production uses CALLING_CDR_SOURCE=mysql
+      # (the CDR_* settings; refused for 10.10.0.220 until CALLING_PBX_COMMISSIONED=1).
+      CALLING_DISPATCH_ENABLED: ${CALLING_DISPATCH_ENABLED:-1}
+      CALLING_RECONCILE_SECONDS: ${CALLING_RECONCILE_SECONDS:-10}
+      CALLING_CDR_SOURCE: ${CALLING_CDR_SOURCE:-csv}
+      CALLING_CDR_CSV: ${CALLING_CDR_CSV:-/pbx-test-cdr/Master.csv}
+    command: ["python", "-m", "calling"]
+    stop_signal: SIGTERM
+    stop_grace_period: 20s     # AGI answers finish (5 s max), the AMI session closes cleanly
+    volumes:
+      - ./CAWP-API:/app
+      - cawp_pbx_test_keys:/pbx-test-keys:ro      # the test PBX's self-signed certificate (CA for AMI TLS)
+      - cawp_pbx_test_cdr:/pbx-test-cdr:ro        # the test PBX's CDR CSV (reconciliation lookup, read-only)
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-m", "calling", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  # --- WebRTC test PBX + softphone end-to-end runners (profile "pbx-webrtc-test", Phase 5 P3) --
+  # A copy of pbx-test adapted for browser media: WebRTC extensions 7001-7005 whose digest
+  # credentials come from the application database (realtime PJSIP auths -> view pbx_ps_auths,
+  # migration 0056), so the short-lived credentials of POST /v2/me/sip-credentials are real.
+  # TEST ONLY; never a trunk. Design and evidence: review/phase5-softphone.md.
+  # Media never leaves the compose network: the browser runs in `softphone-e2e-browser` (Chromium
+  # with fake media devices) and talks ICE host candidates to Asterisk directly, which is the
+  # reliable path on Docker Desktop for macOS (no published RTP range, no external_media_address).
+  # Needs `test-db` (profile "test") up. Run everything with the script:
+  #   node CAWP-frontend/scripts/verify-phase5-softphone.cjs
+  # or by hand:
+  #   docker compose --profile test up -d test-db
+  #   docker compose --profile pbx-webrtc-test run --rm softphone-e2e-api python /e2e/setup_db.py
+  #   docker compose --profile pbx-webrtc-test up -d pbx-webrtc-test softphone-e2e-api softphone-e2e-browser
+  # The backend's live digest probe instead points the PBX at the pytest database:
+  #   PBX_WEBRTC_DB_NAME=cawp_test_call3 docker compose --profile pbx-webrtc-test up -d pbx-webrtc-test
+  #   docker compose --profile test run --rm -e TEST_DB_PREFIX=cawp_test_call3 \
+  #       -e PBX_WEBRTC_TEST_DB=cawp_test_call3 api-test tests/test_calling_sip.py
+  pbx-webrtc-test:
+    profiles: ["pbx-webrtc-test"]
+    build: ./pbx-webrtc-test
+    image: cawp-pbx-webrtc-test:20.11.1
+    container_name: cawp-pbx-webrtc-test
+    # A valid host name: Asterisk puts it in the Contact of WSS requests, and JsSIP rejects the
+    # default container id (a label starting with a digit) as an invalid host.
+    hostname: pbx-webrtc-test
+    init: true
+    environment:
+      # TEST-ONLY secrets. Never reuse them anywhere else.
+      PBX_WEBRTC_AMI_USER: cawp-webrtc-test
+      PBX_WEBRTC_AMI_SECRET: pbx-webrtc-ami-only
+      PBX_WEBRTC_DB_HOST: test-db
+      PBX_WEBRTC_DB_NAME: ${PBX_WEBRTC_DB_NAME:-cawp_test_call3_e2e}
+      PBX_WEBRTC_DB_USER: cawp_pbx_realtime
+      PBX_WEBRTC_DB_PASSWORD: pbx-realtime-test-only
+      PBX_WEBRTC_REALM: cawp-webrtc-test
+    ports:
+      - "127.0.0.1:15038:5038"       # AMI for the host-side test script (test account, loopback only)
+    volumes:
+      - cawp_pbx_webrtc_test_keys:/etc/asterisk/keys
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "asterisk -rx 'core waitfullybooted' | grep -q 'fully booted'"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 6
+
+  # The API for the softphone end-to-end run: the real app (app.py + api.calling_sip, see
+  # pbx-webrtc-test/e2e/softphone_e2e_wsgi.py) on a throwaway test-db database built by
+  # setup_db.py (baseline + every migration + synthetic users/extensions). Never cawp-db.
+  softphone-e2e-api:
+    profiles: ["pbx-webrtc-test"]
+    build: ./CAWP-API
+    image: cawp-softphone-e2e-api:local
+    container_name: cawp-softphone-e2e-api
+    env_file: ./CAWP-API/.env.docker
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@test-db:5432/cawp_test_call3_e2e
+      TEST_ADMIN_URL: postgresql://postgres:postgres@test-db:5432/postgres
+      CAWP_DB_DIR: /db
+      PYTHONPATH: /app:/e2e
+      REDIS_DB: "7"                                      # its own cache, never the dev API's keys
+      SECRET_KEY: softphone-e2e-secret-test-only-0123456789abcdef
+      JWT_SECRET_KEY: softphone-e2e-secret-test-only-0123456789abcdef
+      CDR_ENABLED: "0"
+      SIP_WSS_URL: wss://pbx-webrtc-test:8089/ws
+      SIP_REALM: cawp-webrtc-test
+      SIP_CREDENTIAL_TTL_SECONDS: ${SOFTPHONE_E2E_TTL:-90}
+      SIP_REGISTER_EXPIRES: "60"
+      SIP_INTERNAL_DIAL_PATTERN: "^(7[0-9]{3}|600)$"
+      SIP_ECHO_TEST_EXTENSION: "600"
+    command: ["gunicorn", "--worker-class", "gthread", "--workers", "1", "--threads", "8",
+              "--bind", "0.0.0.0:9796", "--access-logfile", "-", "--error-logfile", "-", "softphone_e2e_wsgi:app"]
+    ports:
+      - "127.0.0.1:9796:9796"
+    volumes:
+      - ./CAWP-API:/app
+      - ./db:/db:ro
+      - ./pbx-webrtc-test/e2e:/e2e:ro
+    mem_limit: 384m
+
+  # Chromium for the softphone end-to-end run, inside the compose network (fake microphone and
+  # permission prompt). The host script connects to its Playwright server (127.0.0.1:3310);
+  # inside, localhost:5178 (the e2e Vite dev server on the host) and localhost:9796 (the e2e API)
+  # are forwarded, so the app runs on a secure http://localhost origin (getUserMedia, Web Locks).
+  softphone-e2e-browser:
+    profiles: ["pbx-webrtc-test"]
+    image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    container_name: cawp-softphone-e2e-browser
+    init: true
+    command: ["node", "/e2e/browser-server.cjs"]
+    environment:
+      FE_PORT: "5178"
+      API_HOST: softphone-e2e-api
+      API_PORT: "9796"
+    ports:
+      - "127.0.0.1:3310:3000"
+    volumes:
+      - ./pbx-webrtc-test/e2e:/e2e:ro
+      - ./tools/node_modules/playwright-core:/opt/pw/playwright-core:ro   # 1.63.0 = the image's browsers
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    shm_size: 256m
+    mem_limit: 1g
+
 volumes:
   cawp_pgdata:
   cawp_uploads:
   cawp_node_modules:
+  cawp_pbx_test_recordings:
+  cawp_pbx_test_cdr:
+  cawp_pbx_test_keys:
+  cawp_pbx_webrtc_test_keys:

@@ -16,6 +16,9 @@
  * - With `clints_history`: the contact history.
  * `onChanged()` runs after every mutation so the legacy contact list (used by
  * the note form) refreshes; this panel also reloads whenever that list does.
+ * - Phase 5, with `calls_make`: a "Call" action per phone contact (click-to-call through
+ *   the API; the docked live-call panel follows it) and the reason a contact cannot be
+ *   called, in the API's refusal codes (views/phase5/case/CallContactAction.tsx).
  */
 import { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
@@ -49,6 +52,14 @@ import { Banner, buildWhatsAppLink } from './parts'
 import { BlockDialog, ContactFormDialog, SetDefaultDialog, UnblockDialog } from './ContactDialogs'
 import ContactHistoryDialog from './ContactHistoryDialog'
 import type { ReactNode } from 'react'
+import { refusalText } from '@/services/v2'
+import { CallContactButton, CallRefusalLine } from '@/views/phase5/case/CallContactAction'
+import { useCallability } from '@/views/phase5/case/callability'
+import type { Refusal } from '@/views/phase5/case/callability'
+
+/* Phase 5: refusals that belong to one contact (shown under its row); the others
+ * (case / my calling state) are shown once above the list. */
+const CONTACT_LEVEL = new Set(['contact_blocked', 'destination_invalid', 'contact_deleted', 'contact_not_found'])
 
 export type ContactsPanelLegacy = {
     canLegacyDefault: boolean
@@ -121,7 +132,17 @@ const ContactsPanel = ({ caseData, onChanged, legacy }: ContactsPanelProps) => {
     const perms = usePermissions()
     const canEdit = !!perms.clints_contacts_edit
     const canHistory = !!perms.clints_history
+    const canCall = !!perms.calls_make
     const identity = (caseData.identityNumber || '').trim() ? caseData.identityNumber : ''
+    const calling = useCallability(caseData.id, { isLocked: !!caseData.is_locked, isArchived: !!caseData.is_archive }, canCall)
+    const [refused, setRefused] = useState<Record<string, { r: Refusal; message?: string }>>({})
+    const onRefused = (contactId: string, r: Refusal | null, message?: string) =>
+        setRefused((prev) => {
+            const next = { ...prev }
+            if (r) next[contactId] = { r, message }
+            else delete next[contactId]
+            return next
+        })
 
     const query = useV2Query(identity ? (signal) => historyApi.contacts(identity, signal) : null, [identity])
     const [local, setLocal] = useState<DebtorContacts | null>(null)
@@ -174,6 +195,10 @@ const ContactsPanel = ({ caseData, onChanged, legacy }: ContactsPanelProps) => {
 
     const contacts = data?.contacts || []
     const eligibleCount = contacts.filter((c) => c.eligible).length
+    /* The first case/user-level reason (the same for every contact), shown once. */
+    const firstPhone = contacts.find((c) => c.contact_type?.name !== 'email')
+    const firstReason = canCall && firstPhone && !calling.loading ? calling.reasonFor({ ...firstPhone, is_blocked: false, contact: '966500000000' }) : null
+    const panelRefusal = firstReason && !CONTACT_LEVEL.has(firstReason.code) ? firstReason : null
 
     return (
         <div
@@ -215,6 +240,13 @@ const ContactsPanel = ({ caseData, onChanged, legacy }: ContactsPanelProps) => {
                 <SkeletonLines rows={3} />
             ) : (
                 <>
+                    {canCall && panelRefusal && (
+                        <Banner tone="warning" className="mb-3" testId="p5-call-panel-refusal">
+                            <span data-code={panelRefusal.code}>
+                                {t('p5.call.cannotCall')} {refusalText(panelRefusal.code, panelRefusal.detail, t)}
+                            </span>
+                        </Banner>
+                    )}
                     {data.needs_default && eligibleCount > 0 && (
                         <Banner tone="warning" className="mb-3" testId="p1-contacts-needs-default">
                             {canEdit ? t('p1.contacts.needsDefaultEdit') : t('p1.contacts.needsDefault')}
@@ -287,10 +319,25 @@ const ContactsPanel = ({ caseData, onChanged, legacy }: ContactsPanelProps) => {
                                                         {t('p1.contacts.duplicateRows', { count: c.duplicate_rows })}
                                                     </div>
                                                 )}
+                                                {canCall && c.contact_type?.name !== 'email' && (() => {
+                                                    const known = calling.loading ? null : calling.reasonFor(c)
+                                                    const shown = refused[c.id] || (known && CONTACT_LEVEL.has(known.code) ? { r: known } : null)
+                                                    return shown ? <CallRefusalLine refusal={shown.r} message={shown.message} /> : null
+                                                })()}
                                             </div>
                                         </div>
 
                                         <div className="flex items-center gap-0.5">
+                                            {canCall && c.contact_type?.name !== 'email' && (
+                                                <CallContactButton
+                                                    caseId={caseData.id}
+                                                    contact={c}
+                                                    known={calling.loading ? null : calling.reasonFor(c)}
+                                                    pending={calling.loading}
+                                                    onRefused={onRefused}
+                                                    onPlaced={calling.reload}
+                                                />
+                                            )}
                                             {wa && !c.is_blocked && (
                                                 <Tooltip title={t('openWhatsapp')}>
                                                     <a
