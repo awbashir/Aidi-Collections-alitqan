@@ -135,3 +135,13 @@ def test_unknown_class_is_refused():
     from services.ai.masking import Masker
     with pytest.raises(ValueError):
         Masker({"name", "email"})
+
+
+def test_dates_with_hours_are_not_identity_numbers():
+    from services.ai.masking import Masker
+    m = Masker(classes={"identity_number", "phone", "account"})
+    text = "Promise due 2026-09-01 10:00, callback ٢٠٢٦-٠٩-٠٢ ١١:٣٠; ID 1012345678 and 2098765432."
+    out = m.mask(text)
+    masked = out.text if hasattr(out, "text") else out
+    assert "2026-09-01 10:00" in masked and "٢٠٢٦-٠٩-٠٢ ١١:٣٠" in masked
+    assert "1012345678" not in masked and "2098765432" not in masked

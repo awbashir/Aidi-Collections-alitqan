@@ -468,6 +468,19 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* ── Phase 6 Q3: voice training lab (fictional training, key `voice_lab`). ── */
+  {
+    key: "voice_lab",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/voice-lab",
+    title: "Voice training lab",
+    translateKey: "p6vl.nav",
+    icon: "voice_lab",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  /* ── end Phase 6 Q3 ── */
   {
     key: "users",
     group: NAV_GROUP_INTELLIGENCE_CONTROL,

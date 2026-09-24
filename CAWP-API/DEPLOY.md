@@ -534,3 +534,9 @@ The calling service's click-to-call settings are environment variables that must
 * the PBX and database clocks are NTP-synced, because evidence is ordered by PBX time;
 * retention of call events and imported CDR is off by default. See `CALL_EVENTS_RETENTION_DAYS` / `PBX_CDR_IMPORTED_RETENTION_DAYS` (minimum 30).
 * Campaigns (Phase 5 P2) run as a thread in the `calling` service: `CALLING_CAMPAIGNS_ENABLED` (default 1) and `CALLING_CAMPAIGN_POLL_MS` (default 500). Pause, drain and stop never cut a live call.
+
+### AI quotas, quality storage and the voice lab (Phase 6)
+
+* `AI_DAILY_CALLS_PER_USER` (default 50) and `AI_DAILY_CALLS_TOTAL` (default 1000) cap provider calls per Asia/Riyadh day, for every AI capability. Over the cap: `429 ai_quota_exceeded`.
+* `QUALITY_STORAGE_DIR` (default `<UPLOAD_DIR>/private/quality`): private QC audio, mode 0600. **Include it in backups** together with the database. Retention follows the AI data policy.
+* `VOICE_LAB_*` limits (6 sessions per hour, 20 per day by default). The 5-minute session limit is fixed. The browser connects to the provider with a short-lived secret only.

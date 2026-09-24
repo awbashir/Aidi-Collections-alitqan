@@ -4056,5 +4056,153 @@
       "conflictFields": "Differs in",
       "firstRow": "Same record as row {{row}}"
     }
+  },
+  "p6vl": {
+    "nav": "Voice training lab",
+    "title": "Voice training lab",
+    "subtitle": "Practise collection calls with an AI playing a fictional customer. Five minutes per session.",
+    "banner": {
+      "title": "Fictional training — not a real debt call",
+      "body": "Every person, company and amount here is invented. No customer is called, no case is opened and nothing you say changes a record. Do not say real names, identity numbers, card or bank details. While a session runs, your microphone audio goes to the AI provider; this system does not record or store the audio or the conversation."
+    },
+    "unconfigured": {
+      "title": "The voice lab cannot start",
+      "hint": "An administrator must configure the AI provider and approve an AI data policy. There is no demo or simulated conversation."
+    },
+    "reason": {
+      "ai_not_configured": "AI is not configured on the server (no provider key).",
+      "model_not_set": "No Realtime voice model is configured.",
+      "ai_policy_required": "No approved AI data policy for the provider.",
+      "ai_policy_category_denied": "The AI data policy does not allow this.",
+      "ai_quota_exceeded": "Today's AI usage limit is reached."
+    },
+    "open": {
+      "title": "A session is still open",
+      "body": "You have an open voice lab session (another tab, or a tab that closed before it ended). Only one session can be open at a time. It ends by itself within a few minutes, or you can end it now.",
+      "end": "End the open session"
+    },
+    "picker": {
+      "title": "Scenario",
+      "language": "Conversation language",
+      "persona": "Persona: {{name}}"
+    },
+    "lang": {
+      "ar": "Arabic",
+      "en": "English"
+    },
+    "difficulty": {
+      "easy": "Easy",
+      "medium": "Medium",
+      "hard": "Hard"
+    },
+    "session": {
+      "title": "Training session",
+      "brief": "Before you call",
+      "goals": "A good call",
+      "persona": "You are talking to {{name}} (fictional AI persona)",
+      "connecting": "Connecting to the AI provider…",
+      "micNote": "Your browser asks for the microphone only after you press Start. It is released as soon as the session ends.",
+      "recorded": "Recorded duration: {{time}}.",
+      "notRecorded": "The end could not be recorded; the server closes the session by itself and keeps its duration as unknown.",
+      "pick": "Choose a scenario to start."
+    },
+    "phase": {
+      "idle": "Ready",
+      "mic": "Microphone permission",
+      "minting": "Preparing",
+      "connecting": "Connecting",
+      "live": "Live",
+      "ended": "Ended",
+      "failed": "Failed"
+    },
+    "mic": {
+      "on": "Microphone on",
+      "muted": "Microphone muted",
+      "off": "Microphone off"
+    },
+    "timer": {
+      "remaining": "{{time}} left",
+      "limit": "limit {{time}}",
+      "aria": "Session time used"
+    },
+    "outcome": {
+      "user_ended": "You ended the session.",
+      "time_limit": "The 5-minute limit ended the session.",
+      "connection_failed": "The connection to the AI provider was lost.",
+      "setup_failed": "The connection to the AI provider could not be set up.",
+      "navigated_away": "The session ended when the page was left.",
+      "error": "The session ended after an error.",
+      "expired": "Expired (nobody ended it).",
+      "mint_refused": "Not started (refused).",
+      "mint_failed": "Not started (provider error)."
+    },
+    "state": {
+      "minting": "Preparing",
+      "active": "Open",
+      "ended": "Ended",
+      "failed": "Failed",
+      "expired": "Expired"
+    },
+    "action": {
+      "start": "Start",
+      "startAgain": "Start again",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "end": "End"
+    },
+    "blocked": {
+      "notReady": "Start is disabled until the AI provider is configured and a data policy is approved.",
+      "noCatalogue": "The scenario catalogue is not available.",
+      "openSession": "End the open session first."
+    },
+    "history": {
+      "title": "My recent sessions",
+      "started": "Started",
+      "scenario": "Scenario",
+      "language": "Language",
+      "duration": "Duration",
+      "outcome": "Outcome",
+      "unknown": "Unknown",
+      "unknownHint": "The session was not ended from the page, so its length is not known.",
+      "empty": "No sessions yet.",
+      "usage": "This hour: {{hour}} of {{perHour}} · today: {{today}} of {{perDay}}",
+      "privacy": "Only the scenario, language, times, duration and outcome are kept. No audio, transcript or instructions are stored."
+    },
+    "err": {
+      "ai_not_configured": "AI is not configured on the server.",
+      "model_not_set": "No Realtime voice model is configured.",
+      "ai_policy_required": "An administrator must approve an AI data policy first.",
+      "ai_policy_category_denied": "The AI data policy does not allow this.",
+      "ai_quota_exceeded": "Today's AI usage limit is reached. Try again tomorrow.",
+      "ai_audit_unavailable": "The session could not be audited, so it was not started. Try again.",
+      "ai_provider_timeout": "The AI provider did not answer in time. Try again.",
+      "ai_provider_unreachable": "The AI provider could not be reached. Try again.",
+      "ai_provider_unavailable": "The AI provider is unavailable right now. Try again later.",
+      "ai_provider_rejected": "The AI provider rejected the session request.",
+      "ai_provider_invalid_response": "The AI provider sent an unusable answer.",
+      "ai_provider_rate_limited": "The AI provider is busy. Try again in a minute.",
+      "ai_provider_quota_exceeded": "The organisation's AI provider account has no remaining quota.",
+      "ai_provider_auth_failed": "The server's AI provider key was refused. Tell an administrator.",
+      "voice_lab_session_active": "You already have an open session (maybe in another tab). End it first.",
+      "voice_lab_rate_limited_hour": "You reached the hourly number of training sessions. Try again in about {{minutes}} min.",
+      "voice_lab_rate_limited_day": "You reached today's number of training sessions. Try again in about {{minutes}} min.",
+      "voice_lab_session_expired": "The session expired before it could start. Start again.",
+      "not_deployed": "The voice lab service is not available on this server yet (or it could not be reached).",
+      "mic_unavailable": "The microphone is not available here. Browsers allow it only on a secure (https) address.",
+      "mic_denied": "Microphone access was blocked. Allow it in the browser's site settings, then start again.",
+      "mic_missing": "No microphone was found.",
+      "mic_busy": "The microphone is in use by another application or could not be opened.",
+      "mic_lost": "The microphone was disconnected.",
+      "mic_error": "The microphone could not be opened.",
+      "webrtc_unsupported": "This browser does not support WebRTC voice.",
+      "webrtc_url_invalid": "The server did not give a valid AI provider address.",
+      "provider_sdp_failed": "The AI provider refused the connection (HTTP {{status}}).",
+      "provider_unreachable": "The AI provider could not be reached from this browser.",
+      "sdp_invalid": "The AI provider sent an invalid answer.",
+      "connection_failed": "The voice connection failed or was lost.",
+      "connect_timeout": "The voice connection could not be established in time.",
+      "provider_event": "The AI provider reported an error ({{code}}).",
+      "unknown": "Something went wrong."
+    }
   }
 }

@@ -710,6 +710,15 @@ export const protectedRoutes = [
     authority: [],
   },
 
+  /* ── Phase 6 Q3: voice training lab (fictional training; key `voice_lab`). ── */
+  {
+    key: "voice_lab",
+    path: "/voice-lab",
+    component: lazy(() => import("@/views/phase6/voiceLab")),
+    authority: [],
+  },
+  /* ── end Phase 6 Q3 ── */
+
   {
     key: "accessDenied",
     path: "/access-denied",

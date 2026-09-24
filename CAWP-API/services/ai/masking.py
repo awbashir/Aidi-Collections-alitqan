@@ -97,6 +97,15 @@ def _iban_ok(value: str) -> bool:
     return int(number) % 97 == 1
 
 
+_DATETIME_LIKE = re.compile(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}[\sT]+\d{1,2}")
+
+
+def _not_datetime(value: str) -> bool:
+    """A Saudi-ID-shaped match that is really a date followed by an hour
+    ("2026-09-01 10:00" -> 2 + 9 digits) is not an identity number."""
+    return not _DATETIME_LIKE.fullmatch(ascii_digits(value).strip())
+
+
 # ---------------------------------------------------------------------------- patterns
 _IBAN_SA = re.compile(rf"(?<!{_ALNUM})[Ss][Aa]{SEP}(?:{D}{SEP}){{21}}{D}(?!{_ALNUM})")
 _IBAN_ANY = re.compile(rf"(?<!{_ALNUM})[A-Z]{{2}}{SEP}{D}{D}(?:{SEP}[A-Z0-9\u0660-\u0669\u06F0-\u06F9]){{11,30}}(?!{_ALNUM})")
@@ -116,7 +125,7 @@ _LONG_DIGITS = re.compile(rf"{_NOT_DIGIT_BEFORE}{D}{{9,}}{_NOT_DIGIT_AFTER}")
 _DETECTORS = (
     ("account", _IBAN_SA, 1, lambda m: ascii_digits(re.sub(r"[\s\-]", "", m)).upper(), None),
     ("account", _IBAN_ANY, 1, lambda m: ascii_digits(re.sub(r"[\s\-]", "", m)).upper(), _iban_ok),
-    ("identity_number", _SAUDI_ID, 2, digits_only, None),
+    ("identity_number", _SAUDI_ID, 2, digits_only, _not_datetime),
     ("phone", _SA_MOBILE, 3, phone_key, None),
     ("phone", _SA_LANDLINE, 3, phone_key, None),
     ("phone", _INTL_PHONE, 4, phone_key, None),

@@ -8,6 +8,11 @@ Every call goes through the same steps, in this order:
    every data category the call sends allowed (`ai_policy_category_denied`) -> 409.
    A refusal is recorded as a `refused` ai_provider_calls row and raised as `AIRefused`
    (an ApiError, so a route needs no try/except). Nothing is fabricated or simulated.
+2b. **Spend control** (every capability): a per-user and a global daily cap on provider calls
+   (Asia/Riyadh day; `AI_DAILY_CALLS_PER_USER`, default 50; `AI_DAILY_CALLS_TOTAL`, default
+   1000). Checked and the `started` row written under one advisory lock, so parallel requests
+   cannot overshoot. Over the cap -> 429 `ai_quota_exceeded` with `resets_at`, recorded as a
+   `refused` row. Refused rows do not count; started, succeeded, failed and interrupted do.
 3. **Masking** (structured generation): customer identifiers in the messages are replaced by
    per-request placeholders as the policy says; the answer is mapped back (`data`), the raw
    masked answer is kept too (`raw_data`). Employee names are masked unless the call declares,
@@ -74,6 +79,8 @@ PROVIDER_ERRORS = {
     "input_too_large": (413, "ai_input_too_large"),
     "audio_too_large": (413, "ai_audio_too_large"),
 }
+QUOTA_CODE = "ai_quota_exceeded"
+QUOTA_LOCK_KEY = 7_236_406_061          # pg advisory lock: quota check + `started` row, serialised
 _IDENT = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 _UNSET = object()
 
@@ -90,6 +97,23 @@ class AIRefused(ApiError):
             error["call_id"] = call_id
         super().__init__(REFUSAL_STATUS[code], code, REFUSAL_MESSAGES[code], error)
         self.reasons = list(reasons)
+
+
+class AIQuotaExceeded(ApiError):
+    """429: the per-user or the global daily cap on provider calls is used up (until `resets_at`)."""
+
+    def __init__(self, capability: str, usage: "QuotaUsage", scope: str, call_id=None):
+        limit = usage.user_limit if scope == "user" else usage.total_limit
+        used = usage.user_used if scope == "user" else usage.total_used
+        error = {"capability": capability, "reasons": [QUOTA_CODE], "scope": scope, "limit": limit, "used": used,
+                 "resets_at": usage.resets_at.isoformat()}
+        if call_id:
+            error["call_id"] = call_id
+        who = "your" if scope == "user" else "the organisation's"
+        super().__init__(429, QUOTA_CODE, f"{who} daily limit of AI provider calls is reached; it resets at "
+                                          f"{usage.resets_at.isoformat()}", error)
+        self.reasons = [QUOTA_CODE]
+        self.scope = scope
 
 
 class AIProviderFailed(ApiError):
@@ -137,6 +161,10 @@ def ensure_ready(capability: str, categories=()) -> Readiness:
     r = readiness(capability, categories)
     if r.reasons:
         raise AIRefused(capability, r.reasons, r.denied_categories)
+    actor, _rid = _request_context(None, None)
+    usage = quota_usage(actor)
+    if usage.exceeded():
+        raise AIQuotaExceeded(capability, usage, usage.exceeded())
     return r
 
 
@@ -161,10 +189,88 @@ def status(*, details: bool) -> dict:
                    "allowed_categories": list(pol.allowed_categories) if pol else [],
                    "masking": dict(pol.masking) if pol else None},
     }
+    actor, _rid = _request_context(None, None)
+    out["quota"] = quota_usage(actor).as_dict()
     if details:
         out["configuration"] = cfg.public_details()
         out["policy"] = dict(pol.as_dict(), state=pol.state) if pol else out["policy"]
     return out
+
+
+# ------------------------------------------------------------------------------ spend control
+@dataclasses.dataclass(frozen=True)
+class QuotaUsage:
+    user_limit: int
+    user_used: int | None          # None when there is no actor (e.g. a worker task): no per-user cap
+    total_limit: int
+    total_used: int
+    day: object                    # the Asia/Riyadh civil date counted
+    resets_at: object              # next Riyadh midnight (aware datetime, UTC)
+
+    def exceeded(self) -> str | None:
+        """'user' / 'total' when that cap is used up, else None (the user cap is reported first)."""
+        if self.user_used is not None and self.user_used >= self.user_limit:
+            return "user"
+        if self.total_used >= self.total_limit:
+            return "total"
+        return None
+
+    def as_dict(self) -> dict:
+        user = None if self.user_used is None else {
+            "limit": self.user_limit, "used": self.user_used, "remaining": max(self.user_limit - self.user_used, 0)}
+        return {"day": self.day.isoformat(), "resets_at": self.resets_at.isoformat(), "user": user,
+                "total": {"limit": self.total_limit, "used": self.total_used,
+                          "remaining": max(self.total_limit - self.total_used, 0)},
+                "exceeded": self.exceeded()}
+
+
+def quota_limits() -> tuple[int, int]:
+    """(per user, total) provider calls per Asia/Riyadh day. 0 allows no call at all."""
+    from services.ai.config import _num_env
+    return (_num_env("AI_DAILY_CALLS_PER_USER", 50, 0, 1_000_000, int),
+            _num_env("AI_DAILY_CALLS_TOTAL", 1000, 0, 100_000_000, int))
+
+
+def quota_usage(actor_user_id, conn=None) -> QuotaUsage:
+    """Today's (Riyadh) provider calls: every row except `refused` ones counts."""
+    import datetime as _dt
+
+    from sqlalchemy import text
+
+    from core import riyadh
+    day = riyadh.today()
+    start, end = riyadh.day_bounds(day)
+    sql = text("""
+        SELECT count(*) FILTER (WHERE actor_user_id = CAST(:actor AS uuid)) AS user_used, count(*) AS total_used
+          FROM ai_provider_calls
+         WHERE started_at >= :start AND started_at < :end AND outcome <> 'refused'""")
+    params = {"actor": actor_user_id, "start": start, "end": end}
+    if conn is None:
+        from extensions import db
+        row = db.session.execute(sql, params).mappings().one()
+    else:
+        row = conn.execute(sql, params).mappings().one()
+    user_limit, total_limit = quota_limits()
+    return QuotaUsage(user_limit, int(row["user_used"]) if actor_user_id else None, total_limit,
+                      int(row["total_used"]), day, end.astimezone(_dt.timezone.utc))
+
+
+def _start_within_quota(ctx: "_Ctx", cfg, r: "Readiness", start):
+    """Check the daily caps and write the `started` row under one advisory lock (a transaction on
+    its own connection, held until the row is committed), so parallel calls cannot overshoot."""
+    from extensions import db
+    from sqlalchemy import text
+    with db.engine.begin() as conn:
+        conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": QUOTA_LOCK_KEY})
+        usage = quota_usage(ctx.actor_user_id, conn)
+        scope = usage.exceeded()
+        if scope is None:
+            return start()
+    call_id = calls.refused(purpose=ctx.purpose, capability=ctx.capability, provider=cfg.provider, model=r.model,
+                            policy_revision=r.policy.revision if r.policy else None, categories=ctx.categories,
+                            error_code=QUOTA_CODE, actor_user_id=ctx.actor_user_id, entity_type=ctx.entity_type,
+                            entity_id=ctx.entity_id, case_id=ctx.case_id, request_id=ctx.request_id)
+    raise AIQuotaExceeded(ctx.capability, usage, scope, call_id)
 
 
 # ------------------------------------------------------------------------------ plumbing
@@ -249,13 +355,17 @@ def _prepare(capability, purpose, categories, actor_user_id, request_id, entity_
 
 
 def _run(ctx: _Ctx, cfg, r: Readiness, invoke, *, masked=False, masked_count=None, input_bytes=None):
-    """Audit start -> provider call -> audit finish. Returns (result, call_id)."""
+    """Daily caps -> audit start -> provider call -> audit finish. Returns (result, call_id)."""
+    def start():
+        return calls.start(purpose=ctx.purpose, capability=ctx.capability, provider=cfg.provider,
+                           model=r.model, policy_revision=r.policy.revision, categories=ctx.categories,
+                           masked=masked, masked_count=masked_count, actor_user_id=ctx.actor_user_id,
+                           entity_type=ctx.entity_type, entity_id=ctx.entity_id, case_id=ctx.case_id,
+                           request_id=ctx.request_id, input_bytes=input_bytes)
     try:
-        call_id = calls.start(purpose=ctx.purpose, capability=ctx.capability, provider=cfg.provider,
-                              model=r.model, policy_revision=r.policy.revision, categories=ctx.categories,
-                              masked=masked, masked_count=masked_count, actor_user_id=ctx.actor_user_id,
-                              entity_type=ctx.entity_type, entity_id=ctx.entity_id, case_id=ctx.case_id,
-                              request_id=ctx.request_id, input_bytes=input_bytes)
+        call_id = _start_within_quota(ctx, cfg, r, start)
+    except AIQuotaExceeded:
+        raise
     except Exception:  # noqa: BLE001 - no audit, no call
         raise ApiError(503, "ai_audit_unavailable", "the AI call could not be audited, so it was not made") from None
     provider = provider_for(cfg)
