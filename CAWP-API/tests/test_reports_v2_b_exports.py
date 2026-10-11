@@ -157,7 +157,7 @@ def test_arabic_xlsx_is_rtl_with_arabic_headers_and_values(rb, rep_app, db, rid,
     assert row.get("اسم العميل") == "عميل عربي"
     summary = {r[0].value: r[1].value for r in wb.worksheets[1].iter_rows()}
     assert summary["عدد السجلات"] == 1 and summary["التقرير"].startswith(rid)
-    assert summary["الجهة"] == "فنيه الاتقان لتحصيل الديون"
+    assert summary["الجهة"] == "برنامج التحصيل الذكي"
 
 
 def test_arabic_xlsx_for_portfolios(rb, rep_app, db):

@@ -102,7 +102,7 @@ FormItem labels at once — no call sites touched.
   on `#FAFCFD`, headings retuned to the 30/24/20/17/15/13.5 scale at weight 800 in navy,
   `[dir="rtl"] { letter-spacing: 0 }`, plus `.text-num` / `.text-link` / `.text-eyebrow` utilities.
 - `src/assets/aidi/aidi-enterprise.css` — three surgical edits (see §6).
-- `index.html` — `lang="ar" dir="rtl"`, title `Aidi Collections — فنية الاتقان`, Arabic meta
+- `index.html` — `lang="ar" dir="rtl"`, title `Aidi Collections — برنامج التحصيل الذكي`, Arabic meta
   description, favicon → `/aidi/aidi-mark-navy.svg`, **font-awesome CDN `<link>` removed**
   (`grep "fa fa-"` over `src/` → 0 survivors).
 - `src/configs/theme.config.ts` — `themeColor: "lime" → "navy"`.
@@ -110,7 +110,7 @@ FormItem labels at once — no call sites touched.
   (`themeSlice.ts` derives from `themeConfig`, so no duplicate to change.)
 - `src/constants/theme.constant.ts` — `SIDE_NAV_WIDTH 290 → 230`, collapsed `80 → 64`,
   `HEADER_HEIGHT_CLASS h-16 → h-14`, `SIDE_NAV_CONTENT_GUTTER px-4 → px-2.5`, `LOGO_X_GUTTER px-6 → px-4`.
-- `src/constants/app.constant.ts` — `APP_NAME = "Aidi Collections"`, new `TENANT_NAME = "فنية الاتقان"`.
+- `src/constants/app.constant.ts` — `APP_NAME = "Aidi Collections"`, new `TENANT_NAME = "برنامج التحصيل الذكي"`.
 - `public/aidi/` — added `aidi-mark-orange.svg`, `aidi-mark-white.svg`, `aidi-wordmark-{navy,white}.svg`.
 
 ### Component stylesheets (`src/assets/styles/components/`)

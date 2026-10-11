@@ -89,7 +89,7 @@ const Simple = ({ children, content, ...rest }: SimpleProps) => {
             التحصيل بذكاء. والقرار بوضوح.
           </h2>
           <p className="text-[17px] leading-[1.7] text-night-body max-w-[44ch]">
-            منصة فنية الاتقان لإدارة محافظ التحصيل — من إسناد الحسابات إلى
+            برنامج التحصيل الذكي لإدارة محافظ التحصيل — من إسناد الحسابات إلى
             المتابعة والتقارير، في مكان واحد.
           </p>
           <div className="flex gap-9 flex-wrap pt-4 mt-2 border-t border-white/[.14]">
