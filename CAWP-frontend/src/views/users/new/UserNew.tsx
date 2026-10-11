@@ -64,11 +64,21 @@ const UserNew = () => {
     setSubmitting(true);
     //delete id from values
     delete values.id;
-    const success = await newUser(values);
+    // The form has no active switch; a new account must be able to sign in.
+    values.is_active = true;
+    const result = await newUser<{ status?: boolean; message?: string }, FormModel>(values);
     setSubmitting(false);
-    if (success) {
-      popNotification("New");
+    // Legacy errors come back as HTTP 201 with status:false (core/http.error_response).
+    if (result?.status === false) {
+      toast.push(
+        <Notification title={t("users.addNew")} type="danger" duration={4000}>
+          {result.message}
+        </Notification>,
+        { placement: "top-center" }
+      );
+      return;
     }
+    popNotification("New");
   };
 
   const popNotification = (keyword: string) => {
@@ -86,7 +96,7 @@ const UserNew = () => {
   return (
     <Container className="h-full">
       <UserForm
-        type="New"
+        type="new"
         nationalities={naionalityOptions}
         roles={roleOptions}
         contracts={contractOptions}

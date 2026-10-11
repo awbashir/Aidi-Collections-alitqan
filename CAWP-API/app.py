@@ -796,6 +796,14 @@ def create_user():
    
     try:
         data = request.get_json()
+        # The new-user form sends "" for numeric targets it did not fill and for an unset
+        # contract; Postgres rejects "" for a float/uuid column and the insert failed.
+        # Blank = not sent: the column defaults apply (targets 0, no contract).
+        for key in ('target_amount', 'target_percent', 'contract_id'):
+            if data.get(key) in ('', None):
+                data.pop(key, None)
+        if not data.get('password'):
+            return jsonify({"message": "كلمة المرور مطلوبة", "status": False, "error": "password required"}), 201
         #hash password
         data['password'] = generate_password_hash(data['password'], method='pbkdf2:sha256')
         user = User(**data)

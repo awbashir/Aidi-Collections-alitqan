@@ -1,0 +1,45 @@
+# Production override for a single-server install (see deploy/README.md).
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
+#       --env-file deploy/prod.env --profile prod up -d --build
+# Differences from the dev stack:
+#   * no host ports for db / redis / api: only the proxy (80/443) is published;
+#   * the code is baked into the images (no source bind mounts, no dump mount);
+#   * the Postgres password comes from deploy/prod.env, and Postgres gets more memory.
+# Paths here are relative to the project directory (the first -f file's directory).
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/prod.env}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=4GB
+      - -c
+      - effective_cache_size=16GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=1GB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - max_connections=200
+      - -c
+      - jit=off
+    ports: !reset []
+    volumes: !override
+      - cawp_pgdata:/var/lib/postgresql/data
+      - ./db:/db:ro
+
+  redis:
+    ports: !reset []
+
+  api:
+    ports: !reset []
+    volumes: !override
+      - cawp_uploads:/app/uploads
+      - ./db:/db:ro
+
+  worker:
+    volumes: !override
+      - cawp_uploads:/app/uploads

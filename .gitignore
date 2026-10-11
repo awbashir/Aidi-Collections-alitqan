@@ -42,3 +42,8 @@ backups/
 dump-*.sql
 *.dump
 *.tgz
+
+# Production install secrets (deploy/README.md): never committed
+deploy/certs/
+deploy/prod.env
+deploy/out/

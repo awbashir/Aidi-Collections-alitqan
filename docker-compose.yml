@@ -124,6 +124,29 @@ services:
     depends_on:
       - api
 
+  # --- Production edge (profile "prod"): the built SPA on nginx with TLS, /api -> api:9797.
+  # Used with the production override, which also closes the db/redis/api host ports:
+  #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
+  #       --env-file deploy/prod.env --profile prod up -d --build
+  # Certificates: deploy/certs/{fullchain,privkey}.pem (never committed). See deploy/README.md.
+  proxy:
+    profiles: ["prod"]
+    build:
+      context: ./CAWP-frontend
+      args:
+        VITE_API_URL: /api
+    image: cawp-proxy:local
+    container_name: cawp-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/cawp.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+
   # --- tests (profile "test"): small, throwaway Postgres; never the 2.2 GB dump -------------
   # docker compose --profile test run --rm api-test          # whole pytest suite
   # docker compose --profile test run --rm api-test tests/test_riyadh.py -k boundary
