@@ -132,7 +132,7 @@ class XlsxWriter:
         title = self.report.label_ar if ar else self.report.label_en
         row(L("Report", "التقرير"), f"{self.report.id} — {title}")
         if ar:
-            row("الجهة", "فنيه الاتقان لتحصيل الديون")
+            row("الجهة", "برنامج التحصيل الذكي")
         if summary.get("cutoff") is not None:
             row(L("Data as of (Asia/Riyadh)", "البيانات حتى (توقيت الرياض)"), local(summary["cutoff"]))
         if self.meta.get("requested_at") is not None:

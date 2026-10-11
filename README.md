@@ -1,6 +1,6 @@
 # Aidi Collections (CAWP) — local stack
 
-Debt-collection CRM for فنية الاتقان. Two apps + a database dump.
+برنامج التحصيل الذكي — debt-collection CRM. Two apps + a database dump.
 
 > **Important:** read [`docs/PROJECT-NOTES.md`](docs/PROJECT-NOTES.md) first. It holds the target feature catalogue, the "extend, don't replace" rule, and the Issabel / in-app browser softphone plan.
 
@@ -10,7 +10,28 @@ Debt-collection CRM for فنية الاتقان. Two apps + a database dump.
 | `CAWP-frontend/` | React 18 + Vite 4 + Tailwind 3 (Aidi AI Enterprise design system) | `CAWP-frontend/README.md` |
 | `dump-mydata-202609151932.sql` | `pg_dump` custom-format dump (2.2 GB restored) | `db/README.md` |
 
-## Run everything with Docker
+## Quick start (one command)
+
+```bash
+tools/dev-up.sh          # db (restored from the dump on first run) + migrations + dev admin + api + worker
+tools/dev-up.sh --web    # + frontend dev server in Docker on http://localhost:5177
+tools/dev-up.sh --tailnet  # --web, reachable from your other Tailscale devices
+```
+
+`--tailnet` runs the frontend with `VITE_API_URL=/api`, so the browser calls the dev server on
+whatever host it opened, and `vite.config.ts` proxies `/api` to the API. Open
+`http://<this-machine>.<tailnet>.ts.net:5177` (or its `100.x` IP) from any device on the tailnet.
+Browsers allow the microphone only on HTTPS or localhost, so the softphone and voice lab need
+HTTPS: turn on *HTTPS Certificates* in the Tailscale admin console (DNS page) and re-run. The
+script then adds `tailscale serve` and prints the `https://` URL.
+
+Safe to re-run. It never drops anything; the dump is restored only into an empty database.
+It ends by logging in as the dev admin to prove the account works. The admin is created
+or repaired by `CAWP-API/dev_seed.py` (ADMIN role, supervisor scope over every active
+contract, password reset to the configured value). It refuses to run against a non-local
+database host. Override with `DEV_ADMIN_USER` / `DEV_ADMIN_PASSWORD`.
+
+## Run everything with Docker (step by step)
 
 ```bash
 docker compose up -d db redis          # Postgres 16 (:5433) + Redis 8 (:6379, in-memory only, LRU)
@@ -31,7 +52,7 @@ Or run the frontend on the host: `cd CAWP-frontend && npm ci && npx vite --port 
 | API | `cawp-api` | 9797 (+9798 scratch) | gunicorn gthread 1×32, `.env.docker`; source bind-mounted at `/app` |
 | Frontend | `cawp-web` (profile `web`) | 5177 | Vite dev server |
 
-Local-only dev admin (exists only in this Docker DB, not in the dump): **`aidi.dev` / `Aidi@2026`** (role ADMIN, supervisor scope over all contracts).
+Local-only dev admin (exists only in this Docker DB, not in the dump): **`aidi.dev` / `Aidi@2026`** (role ADMIN, supervisor scope over all contracts). `tools/dev-up.sh` creates it, or run `docker exec cawp-api python dev_seed.py` on its own.
 
 ## Tooling
 
