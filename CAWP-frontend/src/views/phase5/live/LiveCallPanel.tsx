@@ -4,18 +4,24 @@
  * the evidence events, and the actions the API allows right now (cancel while still
  * queued, wrap up once ended). Used by the docked panel and the calls screen.
  *
+ * Hang up: the server cannot end a call (the AMI account has no `call` write), so the button
+ * ends the agent's own leg in THIS tab's browser softphone (the line linked to the attempt).
+ * Desk-phone calls, or a tab that only mirrors the phone, keep the "hang up on your phone" hint.
+ *
  * Wording rules: an accepted Originate is "submitted", never "connected"; the agent's own
  * answer proves only the agent leg; only both legs in one bridge is a conversation;
  * `uncertain` is unknown, not ended.
  */
 import classNames from 'classnames'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronDown, ChevronUp, CircleDashed, Minus } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, CircleDashed, Minus, PhoneOff } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import ActionDialog, { DialogField } from '@/components/v2/ActionDialog'
 import { Ltr } from '@/components/v2/Display'
+import { softphoneEngine, useSoftphoneSnapshot } from '@/services/softphone'
+import { btnDanger } from '@/components/softphone/LineCard'
 import { callsApi, describeDispatchError } from '@/services/v2'
 import type { CallState, LiveCall } from '@/services/v2'
 import { CaseCell, CallStateBadge, DurationText, ModeLabel, Notice, OutcomeBadge } from '../parts'
@@ -231,6 +237,12 @@ const LiveCallPanel = ({
     const { t } = useTranslation()
     const [cancelling, setCancelling] = useState(false)
     const final = !view.live && view.state !== 'uncertain'
+    const engine = useMemo(() => softphoneEngine(), [])
+    const phone = useSoftphoneSnapshot(engine)
+    const myLine =
+        view.live && phone.role !== 'follower'
+            ? phone.lines.find((l) => l.state !== 'ended' && (l.attemptId === view.id || l.attemptTag === view.id))
+            : undefined
     return (
         <div className="flex flex-col gap-3" data-testid="p5-live" data-state={view.state} data-attempt={view.id} data-evidenced={view.conversation.evidenced ? '1' : '0'}>
             <div className="flex items-start justify-between gap-2">
@@ -326,7 +338,13 @@ const LiveCallPanel = ({
                         {t('p5.live.cancel')}
                     </Button>
                 )}
-                {!view.actions.can_cancel && view.live && (
+                {myLine && (
+                    <button type="button" className={btnDanger} onClick={() => engine.hangup(myLine.id)} data-testid="p5-live-hangup">
+                        <PhoneOff size={15} aria-hidden />
+                        {t('p5.live.hangup')}
+                    </button>
+                )}
+                {!view.actions.can_cancel && view.live && !myLine && (
                     <span className="text-[11.5px] text-gray-500" data-testid="p5-live-no-hangup">
                         {t('p5.live.noServerHangup')}
                     </span>

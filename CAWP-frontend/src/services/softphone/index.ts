@@ -7,7 +7,7 @@ import type { SoftphoneEngine } from './engine'
 
 export { SoftphoneEngine, SoftphoneError, MAX_LINES, softphoneEngine, disposeSoftphoneEngine } from './engine'
 export { softphoneApi, fetchLiveAttempt } from './api'
-export { autoAnswerDecision, internalDialRegex, isInternalTarget, parseAttemptTag, DTMF_KEYS, isDtmf } from './policy'
+export { autoAnswerDecision, internalDialRegex, isExternalTarget, isInternalTarget, parseAttemptTag, DTMF_KEYS, isDtmf } from './policy'
 export { listAudioDevices, playTestTone, canSelectOutput, MicMeter } from './audio'
 export type { AudioDevice } from './audio'
 export * from './types'

@@ -28,12 +28,12 @@ import type { CaseFacts } from './caseFacts'
 import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields } from './fields'
 import {
     callbackValid,
+    wrapupNoteBody,
+    wrapupNoteValid,
     callbackValue,
     emptyCallback,
     emptyNote,
     emptyPromise,
-    noteBody,
-    noteValid,
     promiseValid,
     promiseValue,
 } from './draft'
@@ -114,7 +114,7 @@ const WrapupDialog = ({
         !!view &&
         view.actions.can_wrapup &&
         !!outcome &&
-        noteValid(note) &&
+        wrapupNoteValid(note, callback) &&
         callbackValid(callback) &&
         promiseValid(promise, outcome) &&
         (candidates === null || !!replacement)
@@ -127,7 +127,7 @@ const WrapupDialog = ({
                 {
                     expected_revision: view.revision,
                     outcome,
-                    note: noteBody(note),
+                    ...(wrapupNoteBody(note) ? { note: wrapupNoteBody(note) } : {}),
                     ...(callbackValue(callback) ? { callback_at: callbackValue(callback) } : {}),
                     ...(promiseValue(promise, outcome) ? { promise: promiseValue(promise, outcome) } : {}),
                     ...(outcome === 'wrong_number' && wrongReason.trim() ? { wrong_number_reason: wrongReason.trim() } : {}),
@@ -258,9 +258,14 @@ const WrapupDialog = ({
                             onUseText={(text) => setNote({ ...note, text })}
                         />
                     )}
-                    <NoteFields value={note} onChange={setNote} contractId={facts?.contractId || null} active={isOpen} />
+                    <NoteFields value={note} onChange={setNote} contractId={facts?.contractId || null} active={isOpen} optional />
                     <div className="text-eyebrow mb-2">{t('p5.wrapup.callbackSection')}</div>
                     <CallbackFields value={callback} onChange={setCallback} />
+                    {callback.date && !note.status && (
+                        <div className="-mt-2 mb-3 text-[12px] text-danger" data-testid="p5-wrapup-callback-needs-status">
+                            {t('p5.wrapup.callbackNeedsStatus')}
+                        </div>
+                    )}
                 </>
             )}
         </ActionDialog>

@@ -22,7 +22,7 @@ export type SipCredential = {
     refresh_after_seconds: number
     register_expires: number
     auto_answer: { header: string; enabled: boolean }
-    dial_policy: { internal_pattern: string; echo_test_extension: string | null; external: string }
+    dial_policy: { internal_pattern: string; echo_test_extension: string | null; external: string; external_pattern?: string }
     storage: 'memory_only'
 }
 
@@ -156,6 +156,8 @@ export type Snapshot = {
     openRequest: number
     /** Dialing rules from the credential (never the credential itself). */
     dialPattern: string | null
+    /** Opt-in (server SIP_EXTERNAL_DIAL_PATTERN): outside numbers the dialpad may call; null = none. */
+    externalDialPattern: string | null
     echoTestExtension: string | null
     autoAnswerEnabled: boolean
     updatedAt: number

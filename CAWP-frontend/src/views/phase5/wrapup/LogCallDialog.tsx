@@ -23,12 +23,12 @@ import { announceWrapped } from '../live/callDock'
 import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields } from './fields'
 import {
     callbackValid,
+    wrapupNoteBody,
+    wrapupNoteValid,
     callbackValue,
     emptyCallback,
     emptyNote,
     emptyPromise,
-    noteBody,
-    noteValid,
     promiseValid,
     promiseValue,
 } from './draft'
@@ -129,7 +129,7 @@ const LogCallDialog = ({
         durationOk &&
         !!outcome &&
         (outcome !== 'wrong_number' || !!contactId) &&
-        noteValid(note) &&
+        wrapupNoteValid(note, callback) &&
         callbackValid(callback) &&
         promiseValid(promise, outcome)
 
@@ -143,7 +143,7 @@ const LogCallDialog = ({
                 ...(duration !== undefined ? { duration_seconds: duration } : {}),
                 direction,
                 outcome,
-                note: noteBody(note),
+                ...(wrapupNoteBody(note) ? { note: wrapupNoteBody(note) } : {}),
                 ...(callbackValue(callback) ? { callback_at: callbackValue(callback) } : {}),
                 ...(promiseValue(promise, outcome) ? { promise: promiseValue(promise, outcome) } : {}),
                 ...(outcome === 'wrong_number' && wrongReason.trim() ? { wrong_number_reason: wrongReason.trim() } : {}),
@@ -228,9 +228,14 @@ const LogCallDialog = ({
             <BlockingOutcomeFields outcome={outcome} wrongReason={wrongReason} dncReason={dncReason} onWrongReason={setWrongReason} onDncReason={setDncReason} />
             {outcome === 'wrong_number' && !contactId && <div className="mb-3 text-[12px] text-danger">{t('p5.log.wrongNeedsContact')}</div>}
             <div className="text-eyebrow mb-2 mt-2">{t('p5.wrapup.noteSection')}</div>
-            <NoteFields value={note} onChange={setNote} contractId={caseInfo.contractId || null} active={isOpen} testId="p5-log-note" />
+            <NoteFields value={note} onChange={setNote} contractId={caseInfo.contractId || null} active={isOpen} testId="p5-log-note" optional />
             <div className="text-eyebrow mb-2">{t('p5.wrapup.callbackSection')}</div>
             <CallbackFields value={callback} onChange={setCallback} testId="p5-log-callback" />
+            {callback.date && !note.status && (
+                <div className="-mt-2 mb-3 text-[12px] text-danger" data-testid="p5-log-callback-needs-status">
+                    {t('p5.wrapup.callbackNeedsStatus')}
+                </div>
+            )}
             <DialogField label={t('p5.log.transcript')} hint={t('p5.log.transcriptHint')}>
                 <Input textArea value={transcript} maxLength={100000} onChange={(e) => setTranscript(e.target.value)} data-testid="p5-log-transcript" />
             </DialogField>

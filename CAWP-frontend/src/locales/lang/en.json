@@ -2885,6 +2885,7 @@
       "input": "Extension",
       "placeholder": "e.g. 7002",
       "call": "Call",
+      "anyNumber": "Extensions and outside numbers (e.g. 05XXXXXXXX, 00 + country code). These calls are not linked to a case.",
       "internalOnly": "Internal extensions only.",
       "externalRefused": "External numbers cannot be dialled here. Call a customer from a case contact (click-to-call)."
     },
@@ -3173,6 +3174,7 @@
       "cancelHint": "Only possible while it is still queued: nothing was sent to the PBX. Once it is sent it cannot be cancelled from here; hang up on your phone.",
       "cancelReason": "Reason (optional)",
       "cancelConfirm": "Cancel the call",
+      "hangup": "Hang up",
       "noServerHangup": "To end the call, hang up on your phone. The system cannot hang up a call.",
       "wrapupByOwner": "Waiting for its wrap-up by the collector who made it."
     },
@@ -3255,6 +3257,8 @@
       "noteSection": "Note",
       "noteText": "Note",
       "noteHint": "Saved as a case note linked to this call.",
+      "statusOptionalHint": "Optional. Choose a status to save this as a case note (needed for a callback). Without one, the note stays on this call.",
+      "callbackNeedsStatus": "A callback is saved on the case note: choose a note status, or clear the callback.",
       "callbackSection": "Callback (optional)",
       "callbackDate": "Callback date",
       "callbackTime": "Time",

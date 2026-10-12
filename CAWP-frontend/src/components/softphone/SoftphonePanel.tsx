@@ -118,7 +118,12 @@ const SoftphonePanel = ({ engine, snap, onClose }: { engine: SoftphoneEngine; sn
                             !blocked && <div className="text-[12.5px] text-gray-500">{t('sp.noCalls')}</div>
                         )}
                         {!blocked && !follower && (
-                            <Dialpad engine={engine} pattern={snap.dialPattern} enabled={snap.status === 'registered'} />
+                            <Dialpad
+                                engine={engine}
+                                pattern={snap.dialPattern}
+                                externalPattern={snap.externalDialPattern}
+                                enabled={snap.status === 'registered'}
+                            />
                         )}
                         <div className="text-[11.5px] text-gray-500">{t('sp.outboundNote')}</div>
                     </div>
