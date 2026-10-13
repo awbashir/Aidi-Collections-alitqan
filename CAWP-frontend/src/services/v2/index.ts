@@ -25,7 +25,7 @@ export {
     P4_EXPORT_FAILURES,
 } from './p4Errors'
 export * from './p5Types'
-export { callsApi, callReviewApi, callingAdminApi, campaignsApi, fetchLiveCall } from './p5Api'
+export { callsApi, callReviewApi, callingAdminApi, callMonitorApi, campaignsApi, fetchLiveCall } from './p5Api'
 export {
     describeP5Error,
     describeDispatchError,

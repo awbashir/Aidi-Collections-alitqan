@@ -91,6 +91,14 @@ def database_label() -> str:
         return "unknown"
 
 
+
+def _float_env(name: str, default: float) -> float:
+    import os
+    try:
+        return float(os.getenv(name) or default)
+    except ValueError:
+        return default
+
 class CallingService:
     def __init__(self, cfg, app=None):
         self.cfg = cfg
@@ -107,6 +115,7 @@ class CallingService:
         self.dispatcher = None
         self.reconciler = None
         self.campaigns = None
+        self.live = None
         self._status_failing = False
 
     # ---- lifecycle ------------------------------------------------------------------
@@ -148,6 +157,11 @@ class CallingService:
             self.campaigns = CampaignDispatcher(self.app, self.campaign_transport, self.worker_id,
                                                 poll=self.cfg.campaign_poll_ms / 1000.0)
             self.campaigns.start()
+        live_seconds = _float_env("CALLING_LIVE_SNAPSHOT_SECONDS", 3.0)
+        if live_seconds > 0:                 # the call monitor's live channel list (migration 0067)
+            from services.calling.live_monitor import LiveSnapshot
+            self.live = LiveSnapshot(self.app, self.current_ctx, interval=max(1.0, live_seconds))
+            self.live.start()
         self._start_status()
         log.info("calling service started (%s, PBX %s:%s, TLS %s, database %s)", self.worker_id,
                  self.cfg.ami_host, self.cfg.ami_port, "on" if self.cfg.ami_tls else "off", database_label())
@@ -209,6 +223,8 @@ class CallingService:
         log.info("calling service stopping")
         if self.consumer is not None:
             self.consumer.stopping = True
+        if self.live is not None:
+            self.live.stop()
         if self.campaigns is not None:
             self.campaigns.stop()
         if self.dispatcher is not None:

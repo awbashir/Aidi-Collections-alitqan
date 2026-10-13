@@ -468,6 +468,19 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* Call monitor: live calls and calls by user over time (`call_monitor` = reports_calls |
+   * calls_manage, derived; the API scopes it to the user's team). */
+  {
+    key: "call_monitor",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/call-monitor",
+    title: "Call monitor",
+    translateKey: "nav.p5.monitor",
+    icon: "call_monitor",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* ── Phase 6: AI administration (readiness, data policy, provider-call audit; key
    *    `ai_admin`) and the quality workspace (`quality_any` = quality_review |
    *    quality_approve, derived: utils/v2/derivedPermissions). ── */

@@ -13,7 +13,8 @@
  * Phase 5 adds `calling_any` (the calling workspace: calls_make | campaigns) and
  * `campaigns_any` (the campaigns screen: campaigns | campaigns_manage), mirroring the
  * keys their endpoints accept (`GET /v2/me/calling`, `GET /v2/campaigns`), plus
- * `call_review` and `calling_admin` (both = calls_manage).
+ * `call_review` and `calling_admin` (both = calls_manage), and `call_monitor` (the call monitor:
+ * reports_calls | calls_manage, as `GET /v2/calling/monitor/*` accepts).
  * Phase 6 adds `quality_any` (the quality workspace: quality_review | quality_approve).
  */
 
@@ -106,6 +107,7 @@ export const DERIVED_KEYS = {
     /* Phase 5: two screens of `calls_manage` (a nav item needs a key of its own). */
     call_review: (p: Record<string, unknown>) => p.calls_manage === true,
     calling_admin: (p: Record<string, unknown>) => p.calls_manage === true,
+    call_monitor: (p: Record<string, unknown>) => p.reports_calls === true || p.calls_manage === true,
     /* Phase 6: the quality workspace (quality_review | quality_approve). */
     quality_any: (p: Record<string, unknown>) => QUALITY_KEYS.some((k) => p[k] === true),
 }

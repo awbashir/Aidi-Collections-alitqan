@@ -20,6 +20,7 @@ import { IoSettingsOutline } from "react-icons/io5";
 import { GrSecure } from "react-icons/gr";
 import { BsSearch } from "react-icons/bs";
 import {
+  Activity,
   CircleAlert,
   CalendarClock,
   Handshake,
@@ -82,6 +83,7 @@ const navigationIcon: NavigationIcons = {
   campaigns: <Megaphone strokeWidth={2} size={18} />,
   call_review: <ShieldAlert strokeWidth={2} size={18} />,
   calling_admin: <SlidersHorizontal strokeWidth={2} size={18} />,
+  call_monitor: <Activity strokeWidth={2} size={18} />,
   /* Phase 6 Q3 (voice training lab) */
   voice_lab: <Mic strokeWidth={2} size={18} />,
   /* Phase 6: AI administration and the quality workspace */

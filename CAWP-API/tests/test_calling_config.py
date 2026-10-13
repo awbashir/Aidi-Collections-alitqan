@@ -116,7 +116,7 @@ def test_dialplan_empty_windows_deny_everything_and_sip_variant():
 @pytest.mark.parametrize("bad", [
     {"context": "from-internal"}, {"driver": "Local"}, {"trunk": "bad trunk"}, {"max_call_seconds": 10},
     {"ring_seconds": 0}, {"record": "yes"}, {"calling_windows": [{"days": [9], "start": "09:00", "end": "10:00"}]},
-    {"extra": 1}, {"caller_id_gosub": "Bad Context"}, {"caller_id_gosub": 3},
+    {"extra": 1}, {"caller_id_gosub": "Bad Context"}, {"caller_id_gosub": 3}, {"post_call_context": "bad^ctx"},
 ])
 def test_dialplan_policy_validation(bad):
     with pytest.raises(dialplan.DialplanPolicyError):
@@ -134,6 +134,16 @@ def test_dialplan_optional_caller_id_gosub():
     # only the comment and the Gosub line are added; every other line is unchanged
     added = [l for l in lines if l not in plain.splitlines()]
     assert len(added) == 2 and added[0].startswith("; Caller ID: Gosub(cawp-cid-rotate")
+
+
+def test_dialplan_optional_post_call_context():
+    plain = dialplan.render(POLICY)
+    assert "F(" not in plain
+    text = dialplan.render({**POLICY, "post_call_context": "cawp-survey"})
+    dial = next(l for l in text.splitlines() if ",Dial(" in l)
+    assert dial.endswith("L($[${COLLECTIONS_GATE_LIMIT} * 1000])F(cawp-survey^s^1))")
+    changed = [l for l in text.splitlines() if l not in plain.splitlines()]
+    assert len(changed) == 2 and changed[0].startswith("; Post-call: the customer goes to cawp-survey")
 
 
 def test_test_pbx_dialplan_matches_the_generator():

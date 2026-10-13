@@ -411,6 +411,85 @@ export type DriftRow = {
 export type CallingWindow = { days: number[]; start: string; end: string }
 export type CallingHoliday = { date: string; label?: string }
 
+/** Call monitor (`/v2/calling/monitor/*`, migration 0067). Scope is decided by the API. */
+export type MonitorScope = 'all' | 'team' | 'own'
+export type MonitorAgent = { extension: string; user_id: string | null; name: string | null }
+
+export type MonitorLive = {
+    scope: MonitorScope
+    snapshot: { captured_at: Iso | null; ok: boolean; error: string | null; age_seconds: number | null; stale: boolean }
+    summary: { active_calls: number; talking: number; ringing: number; in_ivr: number; agents_on_call: number; agents: number }
+    calls: Array<{
+        id: string
+        direction: 'inbound' | 'outbound' | 'internal'
+        state: 'talking' | 'ringing' | 'ivr' | 'connecting'
+        external_number: string | null
+        agents: MonitorAgent[]
+        ringing: string[]
+        duration_seconds: number
+        where: string | null
+    }>
+    agents: Array<MonitorAgent & { status: 'on_call' | 'ringing' | 'free' }>
+}
+
+export type MonitorUserStats = MonitorAgent & {
+    outbound: number
+    outbound_answered: number
+    inbound_answered: number
+    inbound_missed: number
+    internal: number
+    talk_seconds: number
+    handled: number
+}
+
+export type MonitorStats = {
+    scope: MonitorScope
+    from: string
+    to: string
+    granularity: 'hour' | 'day'
+    truncated: boolean
+    users: MonitorUserStats[]
+    series: Array<{ bucket: string; total: number; by_extension: Record<string, number> }>
+    totals: { handled: number; outbound: number; outbound_answered: number; inbound_answered: number; inbound_missed: number; talk_seconds: number }
+}
+
+/** Post-call IVR survey (`/v2/calling/surveys*`, migration 0066). */
+export type SurveySetting = {
+    contract_id: string
+    name: string
+    is_active: boolean
+    post_call_survey: boolean
+    revision: number
+    updated_at: Iso | null
+    updated_by: UserRef
+    reason: string | null
+}
+
+export type SurveyGroupRow = { name: string | null; offered: number; answered: number; avg_score: number | null }
+
+export type SurveyResults = {
+    from: string
+    to: string
+    contract_id: string | null
+    summary: { offered: number; answered: number; no_input: number; invalid: number; avg_score: number | null; distribution: Record<string, number> }
+    by_agent: Array<SurveyGroupRow & { user_id: string | null }>
+    by_contract: Array<SurveyGroupRow & { contract_id: string | null }>
+    items: Array<{
+        id: string
+        source: 'click_to_call' | 'inbound'
+        status: 'offered' | 'answered' | 'no_input' | 'invalid'
+        score: number | null
+        language: 'ar' | 'en'
+        offered_at: Iso
+        completed_at: Iso | null
+        case_id: string
+        attempt_id: string | null
+        agent_extension: string | null
+        agent: UserRef
+        contract_name: string | null
+    }>
+}
+
 export type WindowsView = {
     policy: {
         windows: CallingWindow[]

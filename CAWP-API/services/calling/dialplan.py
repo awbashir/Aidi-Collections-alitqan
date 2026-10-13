@@ -23,6 +23,10 @@ Optional:
     caller_id_gosub   a dialplan context the PBX operator maintains (e.g. "cawp-cid-rotate") that
                       sets the outgoing caller ID; called with Gosub(<context>,s,1) on the agent
                       channel right before the customer Dial. Absent = no call, output unchanged.
+    post_call_context a dialplan context (e.g. "cawp-survey") the customer leg goes to when the AGENT
+                      hangs up first (Dial option F(<context>^s^1)): the post-call survey. The
+                      context decides itself (FastAGI collections-survey-offer) and hangs up when the
+                      call is not eligible. Absent = no F option, output unchanged.
 
 How a call flows (extension-first):
 
@@ -50,7 +54,7 @@ import sys
 from services.calling.windows import WindowError, dialplan_time_ranges, validate_windows
 
 KEYS = {"context", "driver", "trunk", "max_call_seconds", "ring_seconds", "record", "calling_windows"}
-OPTIONAL_KEYS = {"caller_id_gosub"}
+OPTIONAL_KEYS = {"caller_id_gosub", "post_call_context"}
 GOSUB_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 CONTEXT_RE = re.compile(r"^collections-human-[a-z0-9_-]{1,50}$")
 TRUNK_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -74,6 +78,9 @@ def validate_policy(policy) -> dict:
     if "caller_id_gosub" in policy and (not isinstance(policy["caller_id_gosub"], str)
                                         or not GOSUB_RE.match(policy["caller_id_gosub"])):
         raise DialplanPolicyError("caller_id_gosub must match [a-z][a-z0-9_-]{0,63}")
+    if "post_call_context" in policy and (not isinstance(policy["post_call_context"], str)
+                                          or not GOSUB_RE.match(policy["post_call_context"])):
+        raise DialplanPolicyError("post_call_context must match [a-z][a-z0-9_-]{0,63}")
     if not isinstance(policy["context"], str) or not CONTEXT_RE.match(policy["context"]):
         raise DialplanPolicyError("context must match collections-human-[a-z0-9_-]{1,50}")
     if policy["driver"] not in ("PJSIP", "SIP"):
@@ -117,6 +124,8 @@ def render(policy) -> str:
         ";   COLLECTIONS_HUMAN_PBX_EPOCH  UUID written by the pre-start hook on every PBX process start",
         *([f"; Caller ID: Gosub({p['caller_id_gosub']},s,1) before the customer Dial (operator-maintained context)"]
           if p.get("caller_id_gosub") else []),
+        *([f"; Post-call: the customer goes to {p['post_call_context']},s,1 when the agent hangs up first (Dial F)"]
+          if p.get("post_call_context") else []),
         "",
         f"[{ctx}]",
         "exten => _+X.,1,Set(COLLECTIONS_GATE=)",
@@ -164,7 +173,8 @@ def render(policy) -> str:
         lines.append(_event("customer_dialing"))
     lines += [
         f" same => n,Dial({dial_target},{p['ring_seconds']},ib(collections-customer-created^s^1)"
-        "U(collections-customer-answered)L($[${COLLECTIONS_GATE_LIMIT} * 1000]))",
+        "U(collections-customer-answered)L($[${COLLECTIONS_GATE_LIMIT} * 1000])"
+        + (f"F({p['post_call_context']}^s^1)" if p.get("post_call_context") else "") + ")",
         _event("dial_end", ",DialStatus: ${DIALSTATUS}"),
         " same => n,Hangup()",
         " same => n(deny),UserEvent(CollectionsCall,AttemptId: ${COLLECTIONS_ATTEMPT},State: denied)",

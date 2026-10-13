@@ -41,6 +41,7 @@ from sqlalchemy import text
 log = logging.getLogger("cawp.calling.agi")
 
 SCRIPT = "collections-authorize"
+SURVEY_SCRIPTS = ("collections-survey-offer", "collections-survey-result")
 MAX_LINE = 4096
 MAX_HEADERS = 64
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -366,6 +367,9 @@ class FastAgiServer(threading.Thread):
                 if not self.allowed.allows(peer):
                     raise AgiDeny("peer_not_allowed")
                 env = read_environment(ch)
+                script = (env.get("agi_network_script") or "").strip("/")
+                if script in SURVEY_SCRIPTS:                     # post-call survey (services/calling/survey.py)
+                    return self._survey(ch, env, peer, script)
                 validate_environment(env, req)
                 for name in GATE_VARS:                           # clear every output first
                     ch.set_var(name, "")
@@ -415,3 +419,45 @@ class FastAgiServer(threading.Thread):
                 return Decision(False, deny.reason)
             finally:
                 db.session.remove()
+
+    def _survey(self, ch: AgiChannel, env: dict, peer: str, script: str) -> Decision:
+        """collections-survey-offer / -result: same peer allowlist and shared key as the gate."""
+        from extensions import db
+        from services.calling import survey
+        try:
+            if env.get("agi_network") != "yes":
+                raise AgiDeny("not_fastagi")
+            channel_id = (env.get("agi_uniqueid") or "").strip()
+            if script == survey.OFFER_SCRIPT:
+                ch.set_var("COLLECTIONS_SURVEY", "0")
+                ch.set_var("COLLECTIONS_SURVEY_ID", "")
+            key = ch.get_global("COLLECTIONS_AGI_KEY") or ""
+            if not hmac.compare_digest(key.encode(), self.secret.encode()):
+                raise AgiDeny("agi_key_mismatch")
+            if script == survey.OFFER_SCRIPT:
+                sid, reason = survey.offer(
+                    db.session, channel_id=channel_id,
+                    attempt_id=(ch.get_var("COLLECTIONS_ATTEMPT") or "").strip().lower() or None,
+                    caller=(ch.get_var("CAWP_SURVEY_CALLER") or "").strip() or None,
+                    agent_extension=(ch.get_var("CAWP_SURVEY_AGENT") or "").strip() or None,
+                    language=ch.get_var("CAWP_LANG"))
+                db.session.commit()
+                if sid:
+                    ch.set_var("COLLECTIONS_SURVEY_ID", sid)
+                    ch.set_var("COLLECTIONS_SURVEY", "1")
+                log.info("AGI survey offer reason=%s peer=%s", reason, peer)
+                return Decision(bool(sid), reason)
+            status = survey.record_result(db.session, channel_id=channel_id,
+                                          survey_id=(ch.get_var("COLLECTIONS_SURVEY_ID") or "").strip().lower() or None,
+                                          digits=ch.get_var("CAWP_SURVEY_SCORE"))
+            db.session.commit()
+            log.info("AGI survey result status=%s peer=%s", status, peer)
+            return Decision(status in ("answered", "no_input", "invalid"), status)
+        except AgiDeny as deny:
+            db.session.rollback()
+            log.info("AGI survey deny reason=%s peer=%s", deny.reason, peer)
+            return Decision(False, deny.reason)
+        except Exception:  # noqa: BLE001 - never let a survey break the call
+            db.session.rollback()
+            log.exception("AGI survey failed")
+            return Decision(False, "agi_internal_error")

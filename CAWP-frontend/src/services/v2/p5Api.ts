@@ -38,6 +38,10 @@ import type {
     RosterItem,
     UncertainList,
     WindowsView,
+    SurveySetting,
+    SurveyResults,
+    MonitorLive,
+    MonitorStats,
     WrapupBody,
 } from './p5Types'
 import type { Paged } from './types'
@@ -177,6 +181,21 @@ export const callingAdminApi = {
         body: { expected_revision: number; reason: string; windows: CallingWindow[]; holidays: CallingHoliday[] },
         key: string
     ) => v2Put<WindowsView>('/v2/calling/windows', body, key),
+
+    surveySettings: (signal?: AbortSignal) => v2Get<{ items: SurveySetting[] }>('/v2/calling/surveys/settings', undefined, signal),
+
+    saveSurveySetting: (contractId: string, body: { post_call_survey: boolean; expected_revision: number; reason?: string }, key: string) =>
+        v2Put<SurveySetting>(`/v2/calling/surveys/settings/${enc(contractId)}`, body, key),
+
+    surveyResults: (q: { from?: string; to?: string; contract_id?: string }, signal?: AbortSignal) =>
+        v2Get<SurveyResults>('/v2/calling/surveys', q, signal),
+}
+
+/** Call monitor: live calls and calls by user over time (scope decided by the API). */
+export const callMonitorApi = {
+    live: (signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', undefined, signal),
+    stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day' }, signal?: AbortSignal) =>
+        v2Get<MonitorStats>('/v2/calling/monitor/stats', q, signal),
 }
 
 /* ---------------------------------------------------------------- campaigns */

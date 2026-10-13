@@ -14,6 +14,8 @@
  *   overnight ranges, holidays), saved with a reason and the loaded revision.
  * - Do-not-call blocks: the scoped calls wrapped up "do not call", each case's block and
  *   "lift" (reason). The API has no global block list (reported).
+ * - Post-call survey (`/v2/calling/surveys*`): the per-contract switch (reason, revision) and
+ *   the 1-5 answers the customers pressed, by agent and by contract.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -32,14 +34,14 @@ import { Segmented } from '@/views/phase1/followUps/parts'
 import useHashState, { hashCodec } from '@/utils/hooks/useHashState'
 import type { HashSchema } from '@/utils/hooks/useHashState'
 import { callingAdminApi, callsApi, describeP5Error, newIdempotencyKey } from '@/services/v2'
-import type { CallingHoliday, CallingUser, CallingWindow, DriftRow, ExtensionRow, Option, Translate } from '@/services/v2'
+import type { CallingHoliday, CallingUser, CallingWindow, DriftRow, ExtensionRow, Option, SurveyGroupRow, SurveySetting, Translate } from '@/services/v2'
 import { useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { Card, CaseCell, Fact, Notice } from '../parts'
 
 const { THead, TBody, Tr, Th, Td } = Table
-type Tab = 'status' | 'extensions' | 'drift' | 'windows' | 'blocks'
-const TABS: Tab[] = ['status', 'extensions', 'drift', 'windows', 'blocks']
+type Tab = 'status' | 'extensions' | 'drift' | 'windows' | 'blocks' | 'surveys'
+const TABS: Tab[] = ['status', 'extensions', 'drift', 'windows', 'blocks', 'surveys']
 type ExtState = 'active' | 'released' | 'all'
 type HashState = { tab: Tab; est: ExtState; q: string | undefined; page: number }
 const schema: HashSchema<HashState> = {
@@ -725,6 +727,220 @@ const BlocksTab = () => {
     )
 }
 
+/* ------------------------------------------------------------------ post-call survey */
+
+const SurveyGroupTable = ({ rows, label, testId }: { rows: SurveyGroupRow[]; label: string; testId: string }) => {
+    const { t } = useTranslation()
+    return (
+        <Table data-testid={testId}>
+            <THead>
+                <Tr>
+                    <Th>{label}</Th>
+                    <Th>{t('p5.survey.offered')}</Th>
+                    <Th>{t('p5.survey.answered')}</Th>
+                    <Th>{t('p5.survey.avg')}</Th>
+                </Tr>
+            </THead>
+            <TBody>
+                {rows.length ? (
+                    rows.map((r, i) => (
+                        <Tr key={i}>
+                            <Td dir="auto">{r.name || t('p5.survey.unknown')}</Td>
+                            <Td>
+                                <Ltr>{formatCount(r.offered)}</Ltr>
+                            </Td>
+                            <Td>
+                                <Ltr>{formatCount(r.answered)}</Ltr>
+                            </Td>
+                            <Td className="font-extrabold">
+                                <Ltr>{r.avg_score === null ? '—' : r.avg_score.toFixed(2)}</Ltr>
+                            </Td>
+                        </Tr>
+                    ))
+                ) : (
+                    <tr>
+                        <td colSpan={4}>
+                            <EmptyState title={t('p5.survey.noResults')} />
+                        </td>
+                    </tr>
+                )}
+            </TBody>
+        </Table>
+    )
+}
+
+const SurveysTab = () => {
+    const { t } = useTranslation()
+    const settings = useV2Query((signal) => callingAdminApi.surveySettings(signal), [])
+    const [from, setFrom] = useState('')
+    const [to, setTo] = useState('')
+    const [contract, setContract] = useState('')
+    const results = useV2Query(
+        (signal) => callingAdminApi.surveyResults({ from: from || undefined, to: to || undefined, contract_id: contract || undefined }, signal),
+        [from, to, contract]
+    )
+    const [toggling, setToggling] = useState<SurveySetting | null>(null)
+    const items = settings.data?.items || []
+    const sum = results.data?.summary
+    const maxBar = sum ? Math.max(1, ...Object.values(sum.distribution)) : 1
+    const contractOptions: Option[] = [{ value: '', label: t('p5.survey.allContracts') }, ...items.map((c) => ({ value: c.contract_id, label: c.name }))]
+    return (
+        <div data-testid="p5-admin-surveys">
+            <Notice tone="info" className="mb-3">
+                {t('p5.survey.intro')}
+            </Notice>
+            <Card lead title={t('p5.survey.settingsTitle')}>
+                <TableFrame>
+                    {settings.error && !settings.data ? (
+                        <ErrorState error={settings.error} onRetry={settings.reload} describe={describe} />
+                    ) : (
+                        <Table>
+                            <THead>
+                                <Tr>
+                                    <Th>{t('p5.survey.contract')}</Th>
+                                    <Th>{t('p5.survey.state')}</Th>
+                                    <Th>{t('p5.survey.lastChange')}</Th>
+                                    <Th />
+                                </Tr>
+                            </THead>
+                            <TBody>
+                                {settings.loading && !settings.data ? (
+                                    <SkeletonRows cols={4} rows={3} />
+                                ) : items.length ? (
+                                    items.map((c) => (
+                                        <Tr key={c.contract_id} data-testid="p5-survey-contract" data-on={c.post_call_survey ? '1' : '0'}>
+                                            <Td dir="auto">
+                                                {c.name}
+                                                {!c.is_active && <span className="ms-2 text-[12px] text-gray-600">{t('p5.survey.inactiveContract')}</span>}
+                                            </Td>
+                                            <Td>
+                                                {c.post_call_survey ? (
+                                                    <span className="font-extrabold text-success">{t('p5.survey.on')}</span>
+                                                ) : (
+                                                    <span className="text-gray-600">{t('p5.survey.off')}</span>
+                                                )}
+                                            </Td>
+                                            <Td className="text-[12.5px]">
+                                                {c.updated_at ? (
+                                                    <>
+                                                        <RiyadhTime iso={c.updated_at} />
+                                                        {c.updated_by?.name && <span className="text-gray-600"> — {c.updated_by.name}</span>}
+                                                        {c.reason && (
+                                                            <div className="text-gray-600" dir="auto">
+                                                                {c.reason}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    '—'
+                                                )}
+                                            </Td>
+                                            <Td>
+                                                <Button size="xs" variant={c.post_call_survey ? 'default' : 'solid'} onClick={() => setToggling(c)} data-testid="p5-survey-toggle">
+                                                    {c.post_call_survey ? t('p5.survey.turnOff') : t('p5.survey.turnOn')}
+                                                </Button>
+                                            </Td>
+                                        </Tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={4}>
+                                            <EmptyState title={t('p5.survey.noContracts')} />
+                                        </td>
+                                    </tr>
+                                )}
+                            </TBody>
+                        </Table>
+                    )}
+                </TableFrame>
+            </Card>
+
+            <Card
+                title={t('p5.survey.resultsTitle')}
+                actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Input size="sm" type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label={t('p5.survey.from') as string} className="w-[150px]" />
+                        <Input size="sm" type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label={t('p5.survey.to') as string} className="w-[150px]" />
+                        <div className="w-[200px]">
+                            <Select size="sm" options={contractOptions} value={contractOptions.find((o) => o.value === contract) || contractOptions[0]} onChange={(o) => setContract((o as Option | null)?.value || '')} />
+                        </div>
+                    </div>
+                }
+            >
+                {results.error && !results.data ? (
+                    <ErrorState error={results.error} onRetry={results.reload} describe={describe} />
+                ) : !sum ? (
+                    <SkeletonLines rows={4} />
+                ) : (
+                    <div className="flex flex-col gap-4" data-testid="p5-survey-results">
+                        <div className="text-[12.5px] text-gray-600">
+                            {t('p5.survey.period', { from: results.data?.from, to: results.data?.to })}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                            <Fact label={t('p5.survey.offered')}>
+                                <Ltr>{formatCount(sum.offered)}</Ltr>
+                            </Fact>
+                            <Fact label={t('p5.survey.answered')}>
+                                <Ltr>{formatCount(sum.answered)}</Ltr>
+                            </Fact>
+                            <Fact label={t('p5.survey.responseRate')}>
+                                <Ltr>{sum.offered ? `${Math.round((sum.answered / sum.offered) * 100)}%` : '—'}</Ltr>
+                            </Fact>
+                            <Fact label={t('p5.survey.avg')}>
+                                <Ltr>{sum.avg_score === null ? '—' : `${sum.avg_score.toFixed(2)} / 5`}</Ltr>
+                            </Fact>
+                        </div>
+                        <div className="flex flex-col gap-2" data-testid="p5-survey-distribution">
+                            {['5', '4', '3', '2', '1'].map((k) => {
+                                const n = sum.distribution[k] || 0
+                                return (
+                                    <div key={k} className="grid grid-cols-[3.5rem_minmax(0,1fr)_3rem] items-center gap-3 text-[12.5px]">
+                                        <span className="font-extrabold">{t('p5.survey.scoreN', { n: k })}</span>
+                                        <div className="h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-night-page">
+                                            <div className="h-full rounded-full bg-navy-600" style={{ width: `${(n / maxBar) * 100}%` }} />
+                                        </div>
+                                        <Ltr>{formatCount(n)}</Ltr>
+                                    </div>
+                                )
+                            })}
+                            <div className="text-[12px] text-gray-600">
+                                {t('p5.survey.noInput', { n: sum.no_input })} — {t('p5.survey.invalid', { n: sum.invalid })}
+                            </div>
+                        </div>
+                        <div className="grid gap-4 lg:grid-cols-2">
+                            <TableFrame>
+                                <SurveyGroupTable rows={results.data?.by_agent || []} label={t('p5.survey.agent')} testId="p5-survey-by-agent" />
+                            </TableFrame>
+                            <TableFrame>
+                                <SurveyGroupTable rows={results.data?.by_contract || []} label={t('p5.survey.contract')} testId="p5-survey-by-contract" />
+                            </TableFrame>
+                        </div>
+                    </div>
+                )}
+            </Card>
+
+            <ReasonDialog
+                isOpen={!!toggling}
+                title={toggling?.post_call_survey ? t('p5.survey.offTitle', { name: toggling?.name }) : t('p5.survey.onTitle', { name: toggling?.name || '' })}
+                description={t('p5.survey.toggleHint')}
+                confirmLabel={toggling?.post_call_survey ? t('p5.survey.turnOff') : t('p5.survey.turnOn')}
+                testId="p5-survey-toggle-dialog"
+                describeError={describe}
+                onClose={() => setToggling(null)}
+                onSubmit={async (reason, key) => {
+                    if (!toggling) return
+                    await callingAdminApi.saveSurveySetting(
+                        toggling.contract_id,
+                        { post_call_survey: !toggling.post_call_survey, expected_revision: toggling.revision, reason },
+                        key
+                    )
+                    settings.reload()
+                }}
+            />
+        </div>
+    )
+}
+
 /* ------------------------------------------------------------------ page */
 
 const CallingAdmin = () => {
@@ -741,6 +957,7 @@ const CallingAdmin = () => {
             {state.tab === 'drift' && <DriftTab page={state.page} onPage={(page) => setState({ page })} />}
             {state.tab === 'windows' && <WindowsTab />}
             {state.tab === 'blocks' && <BlocksTab />}
+            {state.tab === 'surveys' && <SurveysTab />}
         </div>
     )
 }

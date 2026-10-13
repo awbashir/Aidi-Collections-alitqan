@@ -709,6 +709,12 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/phase5/admin")),
     authority: [],
   },
+  {
+    key: "call_monitor",
+    path: "/call-monitor",
+    component: lazy(() => import("@/views/phase5/monitor")),
+    authority: [],
+  },
 
   /* ── Phase 6: AI administration (`ai_admin`) and the quality workspace
    *    (`quality_any` = quality_review | quality_approve, derived). ── */
