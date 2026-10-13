@@ -7,10 +7,13 @@ One wrap-up per attempt, saved in ONE transaction (the @idempotent route commits
    (an `uncertain` one needs reconciliation first, P1);
 2. the case must be in the caller's scope (404 otherwise), not locked and not archived
    (the legacy note rule: notes are blocked on locked cases);
-3. the NOTE is a legacy `"Comments"` row, so every existing trigger fires: last-comment,
-   the callback -> follow-up trigger (0010), note history (0013). `call_id` = the attempt id;
+3. the NOTE is optional (customer decision 2026-10-11, migration 0065). With a note STATUS it
+   is a legacy `"Comments"` row, so every existing trigger fires: last-comment, the callback ->
+   follow-up trigger (0010), note history (0013); `call_id` = the attempt id; its text may be
+   empty. Without a status no legacy row can exist (Comments.comment_status_id is NOT NULL):
+   the text, if any, is kept in call_wrapups.note_text and a reachability is not recorded;
 4. an optional CALLBACK is that note's `next_contact_date` (a Riyadh date means 09:00 Riyadh;
-   never before Riyadh today);
+   never before Riyadh today), so it needs a note status (422 `callback_needs_note_status`);
 5. an optional PROMISE is created through the Phase 1 promise service, only when
    `promise.agreed` is exactly true and the outcome is `connected`. `promise_discussed`
    NEVER creates a promise (422 if one is sent with it);
@@ -77,32 +80,46 @@ def validate_wrapup(body: dict, case: dict) -> dict:
     if outcome not in OUTCOMES:
         _bad("outcome", f"outcome must be one of {', '.join(OUTCOMES)}", "required" if outcome is None else "invalid")
     note = body.get("note")
+    if note is None:
+        note = {}
     if not isinstance(note, dict):
-        _bad("note", "note is required: {text, comment_status_id, contact_method_id}", "required")
-    text_ = required_text(note, "text", max_len=NOTE_MAX)
-    status_id = parse_uuid(note.get("comment_status_id"), "note.comment_status_id")
-    method_id = parse_uuid(note.get("contact_method_id", note.get("contactMethod_id")), "note.contact_method_id")
+        _bad("note", "note must be an object: {text?, comment_status_id?, contact_method_id?, comment_reachability_id?}")
+    text_ = optional_text(note, "text", max_len=NOTE_MAX)
+    raw_status = note.get("comment_status_id")
+    status_id = parse_uuid(raw_status, "note.comment_status_id") if raw_status not in (None, "") else None
+    raw_method = note.get("contact_method_id", note.get("contactMethod_id"))
+    method_id = parse_uuid(raw_method, "note.contact_method_id") if raw_method not in (None, "") else None
     reach = note.get("comment_reachability_id")
     reach = parse_uuid(reach, "note.comment_reachability_id") if reach not in (None, "") else None
 
-    st = sess().execute(text("""
-        SELECT s.id, s.contract_id::text AS contract_id, s."CommentReachability_id"::text AS reach
-          FROM "CommentStatuses" s WHERE s.id = CAST(:id AS uuid)"""), {"id": status_id}).mappings().first()
-    if st is None:
-        _bad("note.comment_status_id", "unknown comment status", "unknown")
-    if sess().execute(text('SELECT 1 FROM "ContactMethods" WHERE id = CAST(:id AS uuid)'), {"id": method_id}).first() is None:
-        _bad("note.contact_method_id", "unknown contact method", "unknown")
-    if reach is not None:
-        r = sess().execute(text("SELECT is_deleted FROM comment_reachability WHERE id = CAST(:id AS uuid)"),
-                           {"id": reach}).first()
-        if r is None or r[0]:
-            _bad("note.comment_reachability_id", "unknown or inactive reachability", "unknown")
-        if st["reach"] is not None and st["reach"] != reach:
-            _bad("note.comment_reachability_id", "the reachability does not match the status", "status_mismatch")
+    if status_id is None:
+        # No legacy note row (it needs a status): the text stays on the wrap-up; reachability is
+        # only recorded on a note; a callback lives on the note, so it needs a status.
+        if body.get("callback_at") not in (None, ""):
+            _bad("callback_at", "a callback is saved on the case note, so it needs a note status",
+                 "needs_note_status", code="callback_needs_note_status")
+        status_id = method_id = reach = None
     else:
-        reach = st["reach"]
-    if st["contract_id"] is not None and st["contract_id"] != case.get("contract_id"):
-        _bad("note.comment_status_id", "the note status belongs to another contract", "status_not_for_contract")
+        st = sess().execute(text("""
+            SELECT s.id, s.contract_id::text AS contract_id, s."CommentReachability_id"::text AS reach
+              FROM "CommentStatuses" s WHERE s.id = CAST(:id AS uuid)"""), {"id": status_id}).mappings().first()
+        if st is None:
+            _bad("note.comment_status_id", "unknown comment status", "unknown")
+        if method_id is None:
+            _bad("note.contact_method_id", "a note with a status needs a contact method", "required")
+        if sess().execute(text('SELECT 1 FROM "ContactMethods" WHERE id = CAST(:id AS uuid)'), {"id": method_id}).first() is None:
+            _bad("note.contact_method_id", "unknown contact method", "unknown")
+        if reach is not None:
+            r = sess().execute(text("SELECT is_deleted FROM comment_reachability WHERE id = CAST(:id AS uuid)"),
+                               {"id": reach}).first()
+            if r is None or r[0]:
+                _bad("note.comment_reachability_id", "unknown or inactive reachability", "unknown")
+            if st["reach"] is not None and st["reach"] != reach:
+                _bad("note.comment_reachability_id", "the reachability does not match the status", "status_mismatch")
+        else:
+            reach = st["reach"]
+        if st["contract_id"] is not None and st["contract_id"] != case.get("contract_id"):
+            _bad("note.comment_status_id", "the note status belongs to another contract", "status_not_for_contract")
 
     callback = None
     if body.get("callback_at") not in (None, ""):
@@ -236,6 +253,20 @@ def _do_not_call(case_id, attempt_id, v) -> str:
     return str(bid)
 
 
+def _insert_note(attempt_id, case_id, actor, contact, attempt, v) -> str:
+    """The wrap-up's legacy "Comments" row (only with a note status; its text may be empty)."""
+    note_id = str(uuid.uuid4())
+    sess().execute(text("""
+        INSERT INTO "Comments" (id, clint_id, user_id, "contactMethod_id", comment, comment_status_id,
+                                comment_reachability_id, next_contact_date, "contactNumber", call_id)
+        VALUES (CAST(:id AS uuid), CAST(:case AS uuid), CAST(:actor AS uuid), CAST(:method AS uuid), :text,
+                CAST(:status AS uuid), CAST(:reach AS uuid), :due, :number, :call)"""),
+        {"id": note_id, "case": case_id, "actor": actor, "method": v["method_id"], "text": v["note_text"] or "",
+         "status": v["status_id"], "reach": v["reach_id"], "due": v["callback"],
+         "number": (contact or {}).get("contact") or attempt.get("destination"), "call": attempt_id})
+    return note_id
+
+
 def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
     actor, attempt_id, case_id = me(), str(attempt["id"]), str(case["id"])
     _lock_case(case_id)
@@ -243,25 +274,18 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
         _bad("contact_id", "a wrong number needs the contact that was called", "required",
              code="contact_required")
 
-    note_id = str(uuid.uuid4())
-    sess().execute(text("""
-        INSERT INTO "Comments" (id, clint_id, user_id, "contactMethod_id", comment, comment_status_id,
-                                comment_reachability_id, next_contact_date, "contactNumber", call_id)
-        VALUES (CAST(:id AS uuid), CAST(:case AS uuid), CAST(:actor AS uuid), CAST(:method AS uuid), :text,
-                CAST(:status AS uuid), CAST(:reach AS uuid), :due, :number, :call)"""),
-        {"id": note_id, "case": case_id, "actor": actor, "method": v["method_id"], "text": v["note_text"],
-         "status": v["status_id"], "reach": v["reach_id"], "due": v["callback"],
-         "number": (contact or {}).get("contact") or attempt.get("destination"), "call": attempt_id})
-    follow_up_id = None
-    if v["callback"] is not None:                                  # opened by comments_follow_up_trg
-        follow_up_id = sess().execute(text("""
-            SELECT id::text FROM follow_ups WHERE source_comment_id = CAST(:n AS uuid) AND status = 'open'"""),
-            {"n": note_id}).scalar()
-    audit.record("note.create", "comment", note_id, case_id=case_id,
-                 after={"comment": v["note_text"], "comment_status_id": v["status_id"],
-                        "contactMethod_id": v["method_id"], "comment_reachability_id": v["reach_id"],
-                        "next_contact_date": iso(v["callback"]), "call_id": attempt_id,
-                        "follow_up_id": follow_up_id}, reason="call wrap-up")
+    note_id = follow_up_id = None
+    if v["status_id"] is not None:
+        note_id = _insert_note(attempt_id, case_id, actor, contact, attempt, v)
+        if v["callback"] is not None:                              # opened by comments_follow_up_trg
+            follow_up_id = sess().execute(text("""
+                SELECT id::text FROM follow_ups WHERE source_comment_id = CAST(:n AS uuid) AND status = 'open'"""),
+                {"n": note_id}).scalar()
+        audit.record("note.create", "comment", note_id, case_id=case_id,
+                     after={"comment": v["note_text"] or "", "comment_status_id": v["status_id"],
+                            "contactMethod_id": v["method_id"], "comment_reachability_id": v["reach_id"],
+                            "next_contact_date": iso(v["callback"]), "call_id": attempt_id,
+                            "follow_up_id": follow_up_id}, reason="call wrap-up")
 
     promise = None
     if v["promise"] is not None:
@@ -277,14 +301,15 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
 
     from flask import request
     wid = sess().execute(text("""
-        INSERT INTO call_wrapups (attempt_id, case_id, outcome, note_id, follow_up_id, callback_at, promise_id,
-                                  contact_id, contact_blocked, calling_block_id, reviewed_by, request_id,
+        INSERT INTO call_wrapups (attempt_id, case_id, outcome, note_id, note_text, follow_up_id, callback_at,
+                                  promise_id, contact_id, contact_blocked, calling_block_id, reviewed_by, request_id,
                                   idempotency_key)
-        VALUES (CAST(:a AS uuid), CAST(:c AS uuid), :outcome, CAST(:note AS uuid), CAST(:fu AS uuid), :cb,
+        VALUES (CAST(:a AS uuid), CAST(:c AS uuid), :outcome, CAST(:note AS uuid), :note_text, CAST(:fu AS uuid), :cb,
                 CAST(:promise AS uuid), CAST(:contact AS uuid), :blocked, CAST(:block AS uuid), CAST(:by AS uuid),
                 :req, :idem)
         RETURNING id"""), {
-        "a": attempt_id, "c": case_id, "outcome": v["outcome"], "note": note_id, "fu": follow_up_id,
+        "a": attempt_id, "c": case_id, "outcome": v["outcome"], "note": note_id,
+        "note_text": v["note_text"] if note_id is None else None, "fu": follow_up_id,
         "cb": v["callback"], "promise": promise["id"] if promise else None,
         "contact": str(contact["id"]) if contact else None, "blocked": contact_blocked, "block": block_id,
         "by": actor, "req": request.headers.get("X-Request-ID"), "idem": request.headers.get("Idempotency-Key")}).scalar()

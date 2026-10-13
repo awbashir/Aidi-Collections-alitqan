@@ -22,7 +22,7 @@ import type { IncomingRTCSessionEvent, RTCSessionEvent } from 'jssip/lib/UA'
 import { isV2Error } from '../v2/http'
 import { softphoneApi } from './api'
 import { MicMeter, Ringer, micConstraints, microphonePermission, routeTo, supportedCodecs } from './audio'
-import { autoAnswerDecision, isDtmf, isInternalTarget, parseAttemptTag } from './policy'
+import { autoAnswerDecision, isDtmf, isExternalTarget, isInternalTarget, parseAttemptTag } from './policy'
 import { TabCoordinator } from './tabs'
 import type { AutoAnswerReason, CallingDevices, Diagnostics, Line, LiveAttempt, PhoneStatus, Snapshot } from './types'
 
@@ -109,6 +109,7 @@ export class SoftphoneEngine {
             leaderTabId: null,
             openRequest: 0,
             dialPattern: null,
+            externalDialPattern: null,
             echoTestExtension: null,
             autoAnswerEnabled: true,
             updatedAt: Date.now(),
@@ -354,6 +355,7 @@ export class SoftphoneEngine {
             this.set({
                 extension: cred.extension,
                 dialPattern: cred.dial_policy?.internal_pattern || null,
+                externalDialPattern: cred.dial_policy?.external_pattern || null,
                 echoTestExtension: cred.dial_policy?.echo_test_extension || null,
                 autoAnswerEnabled: this.prefs.autoAnswer && cred.auto_answer?.enabled !== false,
             })
@@ -720,8 +722,19 @@ export class SoftphoneEngine {
 
     /** Call another internal extension (or the echo test). Never an external number. */
     async callInternal(target: string) {
-        if (!this.ua || !this.ua.isRegistered()) throw new SoftphoneError('not_registered')
         if (!isInternalTarget(target, this.snapshot.dialPattern)) throw new SoftphoneError('not_internal')
+        return this.place(target)
+    }
+
+    /** Dialpad: an internal extension, or an outside number when the server opted in (external_pattern). */
+    async callNumber(target: string) {
+        if (isInternalTarget(target, this.snapshot.dialPattern)) return this.place(target)
+        if (!isExternalTarget(target, this.snapshot.externalDialPattern)) throw new SoftphoneError('not_internal')
+        return this.place(target)
+    }
+
+    private async place(target: string) {
+        if (!this.ua || !this.ua.isRegistered()) throw new SoftphoneError('not_registered')
         if (this.liveLines().length >= MAX_LINES) throw new SoftphoneError('too_many_lines')
         try {
             await this.refreshCredential(false)

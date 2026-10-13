@@ -6,9 +6,10 @@
  * value is the caller's own live attempt on this extension (`GET /v2/me/calls/active`) is
  * answered automatically. Everything else rings normally with answer/reject.
  *
- * Dialing: only internal extensions that match the server's `dial_policy.internal_pattern`
- * (an external number never matches; the server refuses patterns that would). Outbound calls
- * to customers go through click-to-call on a case contact, never the dialpad.
+ * Dialing: internal extensions that match the server's `dial_policy.internal_pattern` (an
+ * external number never matches; the server refuses patterns that would). Outside numbers only
+ * when the server opts in with `dial_policy.external_pattern` (dialpad calls are not case-linked
+ * attempts); otherwise customers are called through click-to-call on a case contact.
  */
 import type { AutoAnswerReason, LiveAttempt } from './types'
 
@@ -54,6 +55,16 @@ export function internalDialRegex(pattern: string | null | undefined): RegExp {
 
 export const isInternalTarget = (value: string, pattern: string | null | undefined): boolean =>
     /^[0-9]{2,6}$/.test(value) && internalDialRegex(pattern).test(value)
+
+/** An outside number the server's opt-in `external_pattern` allows (never without that pattern). */
+export function isExternalTarget(value: string, pattern: string | null | undefined): boolean {
+    if (!pattern || !/^[0-9]{7,17}$/.test(value)) return false
+    try {
+        return new RegExp(pattern).test(value)
+    } catch {
+        return false
+    }
+}
 
 export const DTMF_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'] as const
 export const isDtmf = (key: string) => (DTMF_KEYS as readonly string[]).includes(key)

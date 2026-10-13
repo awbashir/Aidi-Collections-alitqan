@@ -197,9 +197,9 @@ def test_the_evidence_rule_still_applies_on_a_locked_case(cl_client, hdr, c2c, p
 def test_the_database_refuses_an_inconsistent_review_wrapup(pgc, c2c):
     import pytest
     a = ended_pbx_call(pgc, c2c)
-    with pytest.raises(Exception):                                        # no note and not flagged
-        run(pgc, "INSERT INTO call_wrapups (attempt_id, case_id, outcome, reviewed_by) VALUES (%s, %s, 'busy', %s)",
-            a, c2c.case, c2c.c1)
+    with pytest.raises(Exception):                                        # blank note text (0065)
+        run(pgc, "INSERT INTO call_wrapups (attempt_id, case_id, outcome, reviewed_by, note_text) "
+                 "VALUES (%s, %s, 'busy', %s, '   ')", a, c2c.case, c2c.c1)
     with pytest.raises(Exception):                                        # flagged but a protected change applied
         run(pgc, "INSERT INTO call_wrapups (attempt_id, case_id, outcome, reviewed_by, needs_review, review_reason, "
                  "note_text, deferred_actions, contact_blocked) VALUES (%s, %s, 'wrong_number', %s, true, "

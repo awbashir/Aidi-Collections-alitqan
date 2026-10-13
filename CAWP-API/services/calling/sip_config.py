@@ -15,6 +15,10 @@ leaves the server: browsers only get short-lived TURN credentials derived from i
     SIP_INTERNAL_DIAL_PATTERN    what the dialpad and transfer accept (default ^[0-9]{3,6}$: internal
                                  extensions only; an E.164 or national number never matches)
     SIP_ECHO_TEST_EXTENSION      an echo-test extension for the diagnostics panel (optional)
+    SIP_EXTERNAL_DIAL_PATTERN    opt-in: outside numbers the dialpad may call directly through the PBX's
+                                 outbound routes (unset = click-to-call only, the default). Such calls
+                                 are not case-linked attempts: no calling-window check, no wrap-up;
+                                 the PBX still records them. A pattern that does not compile is ignored.
 """
 from __future__ import annotations
 
@@ -45,6 +49,7 @@ class SipSettings:
     turn_secret: str | None
     internal_dial_pattern: str
     echo_test_extension: str | None
+    external_dial_pattern: str | None = None
 
 
 def _int(name: str, default: int, lo: int, hi: int) -> int:
@@ -95,8 +100,14 @@ def load() -> SipSettings:
     if echo is not None and not _EXT_RE.match(echo):
         echo = None
     turn_secret = os.getenv("SIP_TURN_SECRET") or None
+    external_pattern = (os.getenv("SIP_EXTERNAL_DIAL_PATTERN") or "").strip() or None
+    if external_pattern is not None:
+        try:
+            re.compile(external_pattern)
+        except re.error:
+            external_pattern = None
     return SipSettings(
         wss_url=wss, domain=domain, realm=realm, ttl_seconds=ttl, register_expires=register_expires,
         issue_limit=_int("SIP_ISSUE_LIMIT", 30, 1, 1000), stun_urls=_urls("SIP_STUN_URLS"),
         turn_urls=_urls("SIP_TURN_URLS") if turn_secret else (), turn_secret=turn_secret,
-        internal_dial_pattern=pattern, echo_test_extension=echo)
+        internal_dial_pattern=pattern, echo_test_extension=echo, external_dial_pattern=external_pattern)

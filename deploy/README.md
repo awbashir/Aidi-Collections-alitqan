@@ -51,10 +51,36 @@ $C up -d
 The current `*.a-alaoula.com` certificate expires on 2027-01-16. Replace the two files in
 `deploy/certs/` and run `docker exec cawp-proxy nginx -s reload`.
 
+## Calling: Issabel 10.0.40.7 (commissioned 2026-10-11)
+
+Issabel 5 / Asterisk 18.19 (Rocky 8). Agents are PJSIP WebRTC extensions; the carrier trunks
+`ITC_SIP_Trunk` / `ITC_SIP_Trunk_Backup` are chan_sip. Runbook: `docs/issabel-commissioning.md`.
+
+| Piece | Where |
+| --- | --- |
+| Extensions 100–135, one per app user (Excel order; aidi = 100) | IssabelPBX (created with its core functions); assigned in the app (`user_extensions`) |
+| WebRTC settings, `allow_transfer=no`, realtime `auth=<ext>` + locked fallback auth | PBX `/etc/asterisk/pjsip_custom_post.conf` |
+| Softphone passwords (10 min) read from the app DB | PBX `sorcery.conf`, `extconfig.conf`, `res_odbc_custom.conf`, `/etc/odbc.ini` DSN `cawp` → view `pbx_ps_auths` as `cawp_pbx_realtime` over TLS; app `pg_hba.conf` admits that role from 10.0.40.7 only |
+| Browser signalling | `wss://aicollection.a-alaoula.com/pbx-ws` → nginx → `http://10.0.40.7:8088/ws` (`nginx/cawp.conf`) |
+| AMI | TLS 5039 with the wildcard cert (`/etc/asterisk/keys/cawp-pbx.*`), user `cawp-calling` (originate + reporting, from 10.0.40.6 only) in `manager_custom.conf`; client verifies the name `pbx.a-alaoula.com` |
+| PBX epoch | `/usr/local/sbin/cawp-pbx-epoch.sh` as systemd `ExecStartPre` (`asterisk.service.d/cawp-epoch.conf`) |
+| AGI hook + key | PBX `collections-globals.conf` (included from `globals_custom.conf`) → `agi://10.0.40.6:4573` (the `calling` service) |
+| Restricted dialplan | PBX `collections-human.conf` (included from `extensions_custom.conf`), generated from driver `SIP`, trunk `ITC_SIP_Trunk`, 24/7, 3600 s, recording on |
+| Calling window (app) | every day 00:00–24:00 (customer decision) |
+| Inbound | every trunk call → ring group 600 (supervisors 103–107, 30 s) |
+| Dialpad outside numbers (customer decision) | app `SIP_EXTERNAL_DIAL_PATTERN` (`.env.docker`, `$$` = `$`); PBX outbound route 1 patterns `0.`, `966XXXXXXXXX`, `800XXXXXXX`, `920XXXXXX` (plus the original `9` + number). Not case-linked: no calling-window check, no wrap-up; Issabel records them |
+| Call records | read-only MySQL `cawp_cdr`@10.0.40.6 (`SELECT` on `asteriskcdrdb.cdr`) → `CDR_*` in `.env.docker`, `CALLING_CDR_SOURCE=mysql` |
+| NTP | chrony → time.google.com, time.cloudflare.com |
+
+Secrets live only in `deploy/prod.env` / `CAWP-API/.env.docker` (app server) and root:asterisk
+0640 files on the PBX. Backups taken before the change: `/root/cawp-backup-asterisk-*.tgz`
+and `/root/cawp-backup-asterisk-db-*.sql.gz` on the PBX. Checks: `python -m calling.verify`
+(app server, `calling` image) and `/usr/local/sbin/cawp-pbx-verify.sh` (PBX).
+
 ## Not configured yet
 
-* Calling: no PBX settings (`CALLING_*`, `SIP_*`, `CDR_*`), no extensions, no calling window
-  policy. The `calling` service is not started.
+* Recordings download (`RECORDINGS_SSH_*`) is off: the app cannot play Issabel recordings yet.
+* Issabel's firewall is off: restrict 5038/5039/8088 to 10.0.40.6.
 * AI: no provider key and no AI data policy, so AI features refuse.
 * Contracts, portfolios and comment statuses: create them in the app, then link supervisors and
   collectors to their contracts.

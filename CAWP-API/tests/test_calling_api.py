@@ -100,7 +100,7 @@ def test_manual_log_duration_unknown_stays_null(cl_client, hdr, team):
 
 def test_manual_log_validation(cl_client, hdr, team, pgc):
     c = (cl_client, hdr, team["c1"], team["case1"])
-    for over, field in (({"outcome": "maybe"}, "outcome"), ({"note": None}, "note"),
+    for over, field in (({"outcome": "maybe"}, "outcome"), ({"note": "text"}, "note"),
                         ({"started_at": "2026-09-24T10:00:00"}, "started_at"),
                         ({"started_at": now_iso(24 * 60)}, "started_at"),
                         ({"duration_seconds": -1}, "duration_seconds"),
@@ -114,6 +114,31 @@ def test_manual_log_validation(cl_client, hdr, team, pgc):
     other = add_contact(pgc, team["case2"], "966599000002")
     st, body = manual(*c, contact_id=other)
     assert (st, body["code"]) == (404, "contact_not_found")
+
+
+def test_wrapup_note_is_optional(cl_client, hdr, team, pgc):
+    # no note at all: the wrap-up is saved without a legacy "Comments" row
+    st, body = manual(cl_client, hdr, team["c1"], team["case1"], note=None)
+    assert st == 201, body
+    w = body["data"]["wrapup"]
+    assert w["note_id"] is None and w["note_text"] is None
+    # text without a status: kept on the wrap-up, still no legacy row
+    st, body = manual(cl_client, hdr, team["c1"], team["case1"], note={"text": "left a message"})
+    assert st == 201, body
+    w = body["data"]["wrapup"]
+    assert w["note_id"] is None and w["note_text"] == "left a message"
+    assert q1(pgc, 'SELECT count(*) FROM "Comments" WHERE call_id = %s', body["data"]["id"])[0] == 0
+    # a reachability without a status is not recorded (it only exists on a note)
+    st, body = manual(cl_client, hdr, team["c1"], team["case1"], note={"comment_reachability_id": CL.reach})
+    assert st == 201 and body["data"]["wrapup"]["note_id"] is None, body
+    # a status without text: the legacy note row is written with an empty comment
+    st, body = manual(cl_client, hdr, team["c1"], team["case1"], note=note_body(text=""))
+    assert st == 201, body
+    nid = body["data"]["wrapup"]["note_id"]
+    assert nid is not None and q1(pgc, 'SELECT comment FROM "Comments" WHERE id = %s', nid)[0] == ""
+    # a callback lives on the note, so it needs a status
+    st, body = manual(cl_client, hdr, team["c1"], team["case1"], note={"text": "x"}, callback_at=tomorrow())
+    assert (st, body["code"]) == (422, "callback_needs_note_status"), body
 
 
 def test_manual_log_scope_and_case_state(cl_client, hdr, team, pgc):

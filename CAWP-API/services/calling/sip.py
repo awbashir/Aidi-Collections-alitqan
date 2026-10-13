@@ -64,6 +64,15 @@ def turn_credentials(settings: SipSettings, user_id: str, now: float | None = No
     return servers
 
 
+def _dial_policy(settings: SipSettings) -> dict:
+    policy = {"internal_pattern": settings.internal_dial_pattern,
+              "echo_test_extension": settings.echo_test_extension,
+              "external": "click_to_call_only"}
+    if settings.external_dial_pattern:   # opt-in (SIP_EXTERNAL_DIAL_PATTERN): dialpad may call outside numbers
+        policy.update(external="dialpad", external_pattern=settings.external_dial_pattern)
+    return policy
+
+
 def _current_row(user_id):
     return sess().execute(text("""
         SELECT id, extension, issued_at, expires_at, (expires_at > now()) AS unexpired
@@ -160,9 +169,7 @@ def issue(user_id) -> dict:
         "refresh_after_seconds": max(30, int(settings.ttl_seconds * 0.7)),
         "register_expires": settings.register_expires,
         "auto_answer": {"header": ATTEMPT_HEADER, "enabled": bool(prefs["auto_answer_attempts"])},
-        "dial_policy": {"internal_pattern": settings.internal_dial_pattern,
-                        "echo_test_extension": settings.echo_test_extension,
-                        "external": "click_to_call_only"},
+        "dial_policy": _dial_policy(settings),
         "storage": "memory_only",
     }
 

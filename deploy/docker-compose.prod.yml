@@ -26,7 +26,11 @@ services:
       - max_connections=200
       - -c
       - jit=off
-    ports: !reset []
+    # Published only for the PBX's realtime SIP-auth lookup (view pbx_ps_auths, role
+    # cawp_pbx_realtime, TLS). pg_hba.conf in the volume admits that role from the PBX IP only
+    # and refuses every other remote client. Default: loopback (not reachable from the LAN).
+    ports: !override
+      - "${CAWP_DB_PUBLISH:-127.0.0.1:5432}:5432"
     volumes: !override
       - cawp_pgdata:/var/lib/postgresql/data
       - ./db:/db:ro
@@ -43,3 +47,17 @@ services:
   worker:
     volumes: !override
       - cawp_uploads:/app/uploads
+
+  # Calling service against the real Issabel (docs/issabel-commissioning.md). Values come from
+  # deploy/prod.env (CALLING_*); it stays refused until CALLING_PBX_COMMISSIONED=1.
+  calling:
+    profiles: !override ["prod"]
+    restart: unless-stopped
+    environment:
+      CALLING_AMI_CA_FILE: ""                                  # the PBX uses a public certificate
+      CALLING_AMI_SERVER_NAME: ${CALLING_AMI_SERVER_NAME:-}    # name in that certificate
+      CALLING_CDR_CSV: ""
+    ports:
+      # FastAGI hook: the PBX connects here (CALLING_AGI_ALLOWED_PEERS + the shared key decide).
+      - "${CAWP_AGI_PUBLISH:-127.0.0.1:4573}:4573"
+    volumes: !reset []

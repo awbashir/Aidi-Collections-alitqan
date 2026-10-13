@@ -84,6 +84,7 @@ export const NoteFields = ({
     testId = 'p5-note',
     textHint,
     activeOnly,
+    optional,
 }: {
     value: NoteDraft
     onChange: (v: NoteDraft) => void
@@ -95,6 +96,8 @@ export const NoteFields = ({
     textHint?: React.ReactNode
     /** Phase 6: offer only statuses whose legacy `is_active` is true (AI save-as-note refuses the others). */
     activeOnly?: boolean
+    /** Wrap-up / manual log: text, reachability and status are optional (a status writes the case note). */
+    optional?: boolean
 }) => {
     const { t } = useTranslation()
     const lk = useNoteLookups(active)
@@ -118,7 +121,7 @@ export const NoteFields = ({
     }, [statusOptions])
     return (
         <div data-testid={testId}>
-            <DialogField label={t('p5.wrapup.noteText')} required hint={textHint ?? t('p5.wrapup.noteHint')}>
+            <DialogField label={t('p5.wrapup.noteText')} required={!optional} hint={textHint ?? t('p5.wrapup.noteHint')}>
                 <Input
                     textArea
                     value={value.text}
@@ -142,8 +145,8 @@ export const NoteFields = ({
                 </DialogField>
                 <DialogField
                     label={t('p1.followUps.complete.status')}
-                    required
-                    hint={!value.reach ? t('p1.followUps.complete.statusHint') : undefined}
+                    required={!optional}
+                    hint={optional ? t('p5.wrapup.statusOptionalHint') : !value.reach ? t('p1.followUps.complete.statusHint') : undefined}
                 >
                     <div data-testid={`${testId}-status`}>
                         <Select
@@ -157,7 +160,7 @@ export const NoteFields = ({
                         />
                     </div>
                 </DialogField>
-                <DialogField label={t('p1.followUps.complete.method')} required>
+                <DialogField label={t('p1.followUps.complete.method')} required={!optional || !!value.status}>
                     <div data-testid={`${testId}-method`}>
                         <Select
                             {...selectProps}

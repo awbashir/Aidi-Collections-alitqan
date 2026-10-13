@@ -388,6 +388,19 @@ def test_dial_policy_never_allows_external_numbers(client, hdr, pgc, monkeypatch
                           "external": "click_to_call_only"}, pattern
 
 
+def test_external_dialpad_is_opt_in(client, hdr, pgc, monkeypatch):
+    monkeypatch.setenv("SIP_EXTERNAL_DIAL_PATTERN", "^(0[0-9]{8,15}|966[0-9]{9})$")
+    uid, _, _ = owner(pgc)
+    policy = issue(client, hdr, uid)[1]["data"]["dial_policy"]
+    assert policy["external"] == "dialpad"
+    assert policy["external_pattern"] == "^(0[0-9]{8,15}|966[0-9]{9})$"
+    assert policy["internal_pattern"] == "^[0-9]{3,6}$"          # the internal rule is unchanged
+    monkeypatch.setenv("SIP_EXTERNAL_DIAL_PATTERN", "[")        # does not compile: ignored, default kept
+    uid, _, _ = owner(pgc)
+    policy = issue(client, hdr, uid)[1]["data"]["dial_policy"]
+    assert policy["external"] == "click_to_call_only" and "external_pattern" not in policy
+
+
 # --------------------------------------------------------------------------- database guards
 def test_database_guards(client, hdr, pgc):
     uid, ext, xid = owner(pgc)

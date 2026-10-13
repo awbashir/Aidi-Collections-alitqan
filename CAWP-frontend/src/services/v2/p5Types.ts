@@ -310,17 +310,18 @@ export type CaseBlocks = {
 
 /* ------------------------------------------------------------------ bodies */
 
+/** Every field is optional in a wrap-up / manual log; a status writes the case note (and needs a method). */
 export type WrapupNote = {
-    text: string
-    comment_status_id: string
-    contact_method_id: string
+    text?: string
+    comment_status_id?: string
+    contact_method_id?: string
     comment_reachability_id?: string
 }
 
 export type WrapupBody = {
     expected_revision?: number
     outcome: Outcome
-    note: WrapupNote
+    note?: WrapupNote
     callback_at?: string
     promise?: { agreed: true; amount: string; due_date: string }
     replacement_default_id?: string
