@@ -18,6 +18,12 @@ Policy (JSON object, exactly these keys):
     record            true | false  MixMonitor under the monitor dir as YYYY/MM/DD/<uniqueid>.wav
     calling_windows   Riyadh windows (services/calling/windows.py); [] denies everything
 
+Optional:
+
+    caller_id_gosub   a dialplan context the PBX operator maintains (e.g. "cawp-cid-rotate") that
+                      sets the outgoing caller ID; called with Gosub(<context>,s,1) on the agent
+                      channel right before the customer Dial. Absent = no call, output unchanged.
+
 How a call flows (extension-first):
 
 1. The server originates `PJSIP/<agent extension>` with ChannelId `cawp-<attempt id>`,
@@ -44,6 +50,8 @@ import sys
 from services.calling.windows import WindowError, dialplan_time_ranges, validate_windows
 
 KEYS = {"context", "driver", "trunk", "max_call_seconds", "ring_seconds", "record", "calling_windows"}
+OPTIONAL_KEYS = {"caller_id_gosub"}
+GOSUB_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 CONTEXT_RE = re.compile(r"^collections-human-[a-z0-9_-]{1,50}$")
 TRUNK_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -60,8 +68,12 @@ def _int(policy, key, lo, hi):
 
 
 def validate_policy(policy) -> dict:
-    if not isinstance(policy, dict) or set(policy) != KEYS:
-        raise DialplanPolicyError("policy must be an object with exactly: " + ", ".join(sorted(KEYS)))
+    if not isinstance(policy, dict) or not KEYS <= set(policy) or set(policy) - KEYS - OPTIONAL_KEYS:
+        raise DialplanPolicyError("policy must be an object with exactly: " + ", ".join(sorted(KEYS))
+                                  + " (optional: " + ", ".join(sorted(OPTIONAL_KEYS)) + ")")
+    if "caller_id_gosub" in policy and (not isinstance(policy["caller_id_gosub"], str)
+                                        or not GOSUB_RE.match(policy["caller_id_gosub"])):
+        raise DialplanPolicyError("caller_id_gosub must match [a-z][a-z0-9_-]{0,63}")
     if not isinstance(policy["context"], str) or not CONTEXT_RE.match(policy["context"]):
         raise DialplanPolicyError("context must match collections-human-[a-z0-9_-]{1,50}")
     if policy["driver"] not in ("PJSIP", "SIP"):
@@ -103,6 +115,8 @@ def render(policy) -> str:
         ";   COLLECTIONS_AGI_URL          agi://<calling host>:4573/collections-authorize",
         ";   COLLECTIONS_AGI_KEY          shared secret the AGI server checks (CALLING_AGI_SECRET)",
         ";   COLLECTIONS_HUMAN_PBX_EPOCH  UUID written by the pre-start hook on every PBX process start",
+        *([f"; Caller ID: Gosub({p['caller_id_gosub']},s,1) before the customer Dial (operator-maintained context)"]
+          if p.get("caller_id_gosub") else []),
         "",
         f"[{ctx}]",
         "exten => _+X.,1,Set(COLLECTIONS_GATE=)",
@@ -137,6 +151,8 @@ def render(policy) -> str:
         " same => n,Set(TIMEOUT(absolute)=${COLLECTIONS_GATE_LIMIT})",
         " same => n,Set(CDR(userfield)=cawp:${COLLECTIONS_ATTEMPT})",
     ]
+    if p.get("caller_id_gosub"):
+        lines.append(f" same => n,Gosub({p['caller_id_gosub']},s,1)")
     if p["record"]:
         lines += [
             " same => n,Set(COLLECTIONS_RECORDING=${STRFTIME(${EPOCH},Asia/Riyadh,%Y/%m/%d)}/${UNIQUEID}.wav)",

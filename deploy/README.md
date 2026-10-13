@@ -65,8 +65,9 @@ Issabel 5 / Asterisk 18.19 (Rocky 8). Agents are PJSIP WebRTC extensions; the ca
 | AMI | TLS 5039 with the wildcard cert (`/etc/asterisk/keys/cawp-pbx.*`), user `cawp-calling` (originate + reporting, from 10.0.40.6 only) in `manager_custom.conf`; client verifies the name `pbx.a-alaoula.com` |
 | PBX epoch | `/usr/local/sbin/cawp-pbx-epoch.sh` as systemd `ExecStartPre` (`asterisk.service.d/cawp-epoch.conf`) |
 | AGI hook + key | PBX `collections-globals.conf` (included from `globals_custom.conf`) → `agi://10.0.40.6:4573` (the `calling` service) |
-| Restricted dialplan | PBX `collections-human.conf` (included from `extensions_custom.conf`), generated from driver `SIP`, trunk `ITC_SIP_Trunk`, 24/7, 3600 s, recording on |
+| Restricted dialplan | PBX `collections-human.conf` (included from `extensions_custom.conf`), generated from driver `SIP`, trunk `ITC_SIP_Trunk`, 24/7, 3600 s, recording on, `caller_id_gosub: cawp-cid-rotate` |
 | Calling window (app) | every day 00:00–24:00 (customer decision) |
+| Outgoing caller ID | rotates through the 28 ITC numbers (966125123077–100, 966125148577–579, 966125148660): pool in PBX `cawp-cid-pool.conf` (`CAWP_CID_POOL`), counter AstDB `CAWP/cid_rr`; dial pad via the ITC pre-dial hook in `extensions_override_issabelpbx.conf`, click-to-call via `cawp-cid-rotate.conf` (policy `caller_id_gosub`). The trunks no longer force `fromuser` |
 | Inbound | every trunk call → ring group 600 (supervisors 103–107, 30 s) |
 | Dialpad outside numbers (customer decision) | app `SIP_EXTERNAL_DIAL_PATTERN` (`.env.docker`, `$$` = `$`); PBX outbound route 1 patterns `0.`, `966XXXXXXXXX`, `800XXXXXXX`, `920XXXXXX` (plus the original `9` + number). Not case-linked: no calling-window check, no wrap-up; Issabel records them |
 | Call records | read-only MySQL `cawp_cdr`@10.0.40.6 (`SELECT` on `asteriskcdrdb.cdr`) → `CDR_*` in `.env.docker`, `CALLING_CDR_SOURCE=mysql` |

@@ -116,11 +116,24 @@ def test_dialplan_empty_windows_deny_everything_and_sip_variant():
 @pytest.mark.parametrize("bad", [
     {"context": "from-internal"}, {"driver": "Local"}, {"trunk": "bad trunk"}, {"max_call_seconds": 10},
     {"ring_seconds": 0}, {"record": "yes"}, {"calling_windows": [{"days": [9], "start": "09:00", "end": "10:00"}]},
-    {"extra": 1},
+    {"extra": 1}, {"caller_id_gosub": "Bad Context"}, {"caller_id_gosub": 3},
 ])
 def test_dialplan_policy_validation(bad):
     with pytest.raises(dialplan.DialplanPolicyError):
         dialplan.render({**POLICY, **bad})
+
+
+def test_dialplan_optional_caller_id_gosub():
+    plain = dialplan.render(POLICY)
+    assert "Gosub(" not in plain
+    text = dialplan.render({**POLICY, "caller_id_gosub": "cawp-cid-rotate"})
+    lines = text.splitlines()
+    gosub = lines.index(" same => n,Gosub(cawp-cid-rotate,s,1)")
+    dial = next(i for i, l in enumerate(lines) if ",Dial(" in l)
+    assert lines.index(" same => n,Set(CDR(userfield)=cawp:${COLLECTIONS_ATTEMPT})") < gosub < dial
+    # only the comment and the Gosub line are added; every other line is unchanged
+    added = [l for l in lines if l not in plain.splitlines()]
+    assert len(added) == 2 and added[0].startswith("; Caller ID: Gosub(cawp-cid-rotate")
 
 
 def test_test_pbx_dialplan_matches_the_generator():
