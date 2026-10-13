@@ -218,6 +218,8 @@ class Issable_db():
         try:
             # Get calls from both tables
             asterisk_calls = self.GetCallsByDateAbdListNumber(start_date, end_date, mobile_numbers)
+            if not Config.CDR_CALL_CENTER:          # a PBX without Issabel's call-center module
+                return asterisk_calls or []
 
             # Create new connection for call center calls since the previous one was closed
             self.conn = self._connect()

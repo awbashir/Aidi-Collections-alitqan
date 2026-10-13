@@ -204,7 +204,8 @@ def _read(lo_utc: _dt.datetime, hi_utc: _dt.datetime, sources: tuple, number: st
                 cur.execute(_CDR_SQL.format(extra=extra), (*params, limit + 1))
                 rows.extend(_cdr_row(r, zone) for r in cur.fetchall())
                 _dedupe_ids(rows)
-            if "call_center" in sources:
+            from core.config import Config
+            if "call_center" in sources and Config.CDR_CALL_CENTER:
                 extra, params = "", [lo, hi]
                 if number:
                     extra = " AND c.phone LIKE %s"

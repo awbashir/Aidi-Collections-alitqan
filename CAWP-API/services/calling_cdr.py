@@ -309,12 +309,14 @@ def recording_records(path: str, full: str) -> list[dict]:
                 a = cdrsrc._cdr_row(r, zone)
                 a["attempt_tag"] = attempt_tag(r.get("uniqueid"), r.get("userfield"), r.get("linkedid"))
                 out.append(a)
-            cur.execute(_REC_CC_SQL.format(marks=marks, window=window.format(col="cr.datetime_entry")),
-                        (*candidates, *wparams))
-            cc = [r for r in cur.fetchall() if resolve_path((r.get("recordingfile") or "").strip()) == full]
-            for a in cdrsrc._cc_rows(cc, zone):
-                a["attempt_tag"] = None
-                out.append(a)
+            from core.config import Config
+            if Config.CDR_CALL_CENTER:
+                cur.execute(_REC_CC_SQL.format(marks=marks, window=window.format(col="cr.datetime_entry")),
+                            (*candidates, *wparams))
+                cc = [r for r in cur.fetchall() if resolve_path((r.get("recordingfile") or "").strip()) == full]
+                for a in cdrsrc._cc_rows(cc, zone):
+                    a["attempt_tag"] = None
+                    out.append(a)
         finally:
             cur.close()
     except cdrsrc.CdrUnavailable:

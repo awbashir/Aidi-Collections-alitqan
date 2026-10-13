@@ -93,6 +93,9 @@ class Config:
     CDR_PASSWORD = os.getenv("CDR_PASSWORD", "")
     CDR_CONNECT_TIMEOUT = _int("CDR_CONNECT_TIMEOUT", 3)
     CDR_ENABLED = _bool("CDR_ENABLED", True)
+    # Issabel's call-center module (MySQL database `call_center`). Off for a PBX without it: every
+    # CDR read then uses asteriskcdrdb.cdr only instead of failing on the missing database.
+    CDR_CALL_CENTER = _bool("CDR_CALL_CENTER", True)
 
     # --- Call recordings (SSH/SFTP on the Asterisk box) ---
     # Only paths under RECORDINGS_ROOT may be fetched (review S1: the old code
