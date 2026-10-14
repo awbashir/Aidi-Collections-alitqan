@@ -69,6 +69,7 @@ const SaveAsNoteDialog = ({
                         expected_revision: draft.revision,
                         text: note.text.trim(),
                         comment_status_id: note.status as string,
+                        ...(note.subStatus ? { comment_sub_status_id: note.subStatus } : {}),
                         contact_method_id: note.method as string,
                         ...(note.reach ? { comment_reachability_id: note.reach } : {}),
                         confirmed: true,

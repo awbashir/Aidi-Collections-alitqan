@@ -48,6 +48,7 @@ from sqlalchemy import text
 from core import audit, riyadh
 from core.api_response import NOT_FOUND, VALIDATION_FAILED, ApiError
 from core.revisions import RevisionConflict, parse_revision
+from services import comment_status_tree as status_tree
 from services.calling import attempts as A
 from services.calling.common import (CALLS_MANAGE, OUTCOMES, case_in_scope, iso, me, optional_text,
                                      parse_uuid, required_text, s, sess)
@@ -83,10 +84,13 @@ def validate_wrapup(body: dict, case: dict) -> dict:
     if note is None:
         note = {}
     if not isinstance(note, dict):
-        _bad("note", "note must be an object: {text?, comment_status_id?, contact_method_id?, comment_reachability_id?}")
+        _bad("note", "note must be an object: {text?, comment_status_id?, comment_sub_status_id?, contact_method_id?, "
+                     "comment_reachability_id?}")
     text_ = optional_text(note, "text", max_len=NOTE_MAX)
     raw_status = note.get("comment_status_id")
     status_id = parse_uuid(raw_status, "note.comment_status_id") if raw_status not in (None, "") else None
+    raw_sub = note.get("comment_sub_status_id")
+    sub_id = parse_uuid(raw_sub, "note.comment_sub_status_id") if raw_sub not in (None, "") else None
     raw_method = note.get("contact_method_id", note.get("contactMethod_id"))
     method_id = parse_uuid(raw_method, "note.contact_method_id") if raw_method not in (None, "") else None
     reach = note.get("comment_reachability_id")
@@ -98,13 +102,22 @@ def validate_wrapup(body: dict, case: dict) -> dict:
         if body.get("callback_at") not in (None, ""):
             _bad("callback_at", "a callback is saved on the case note, so it needs a note status",
                  "needs_note_status", code="callback_needs_note_status")
+        if sub_id is not None:
+            _bad("note.comment_sub_status_id", "a sub-status needs its main note status", "needs_note_status")
         status_id = method_id = reach = None
     else:
-        st = sess().execute(text("""
-            SELECT s.id, s.contract_id::text AS contract_id, s."CommentReachability_id"::text AS reach
-              FROM "CommentStatuses" s WHERE s.id = CAST(:id AS uuid)"""), {"id": status_id}).mappings().first()
+        st = status_tree.load(status_id, sess())
         if st is None:
             _bad("note.comment_status_id", "unknown comment status", "unknown")
+        problem = status_tree.main_status_problem(st)          # 0068: deleted, or a sub-status
+        if problem:
+            _bad("note.comment_status_id", "the note status was deleted" if problem == "status_deleted"
+                 else "this is a sub-status: send its main status and the sub-status separately", problem)
+        if sub_id is not None:
+            problem = status_tree.sub_status_problem(status_id, sub_id, sess())
+            if problem:
+                _bad("note.comment_sub_status_id", "the sub-status is not a live sub-status of the note status",
+                     problem)
         if method_id is None:
             _bad("note.contact_method_id", "a note with a status needs a contact method", "required")
         if sess().execute(text('SELECT 1 FROM "ContactMethods" WHERE id = CAST(:id AS uuid)'), {"id": method_id}).first() is None:
@@ -152,7 +165,7 @@ def validate_wrapup(body: dict, case: dict) -> dict:
                            {"required_any": ["promises", "clints_PayemntDates"]})
 
     return {
-        "outcome": outcome, "note_text": text_, "status_id": status_id, "method_id": method_id,
+        "outcome": outcome, "note_text": text_, "status_id": status_id, "sub_status_id": sub_id, "method_id": method_id,
         "reach_id": reach, "callback": callback, "promise": promise,
         "replacement_default_id": (parse_uuid(body["replacement_default_id"], "replacement_default_id")
                                    if body.get("replacement_default_id") not in (None, "") else None),
@@ -258,11 +271,12 @@ def _insert_note(attempt_id, case_id, actor, contact, attempt, v) -> str:
     note_id = str(uuid.uuid4())
     sess().execute(text("""
         INSERT INTO "Comments" (id, clint_id, user_id, "contactMethod_id", comment, comment_status_id,
-                                comment_reachability_id, next_contact_date, "contactNumber", call_id)
+                                comment_reachability_id, next_contact_date, "contactNumber", call_id,
+                                comment_sub_status_id)
         VALUES (CAST(:id AS uuid), CAST(:case AS uuid), CAST(:actor AS uuid), CAST(:method AS uuid), :text,
-                CAST(:status AS uuid), CAST(:reach AS uuid), :due, :number, :call)"""),
+                CAST(:status AS uuid), CAST(:reach AS uuid), :due, :number, :call, CAST(:sub AS uuid))"""),
         {"id": note_id, "case": case_id, "actor": actor, "method": v["method_id"], "text": v["note_text"] or "",
-         "status": v["status_id"], "reach": v["reach_id"], "due": v["callback"],
+         "status": v["status_id"], "reach": v["reach_id"], "due": v["callback"], "sub": v["sub_status_id"],
          "number": (contact or {}).get("contact") or attempt.get("destination"), "call": attempt_id})
     return note_id
 
@@ -283,7 +297,7 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
                 {"n": note_id}).scalar()
         audit.record("note.create", "comment", note_id, case_id=case_id,
                      after={"comment": v["note_text"] or "", "comment_status_id": v["status_id"],
-                            "contactMethod_id": v["method_id"], "comment_reachability_id": v["reach_id"],
+                            "comment_sub_status_id": v["sub_status_id"], "contactMethod_id": v["method_id"], "comment_reachability_id": v["reach_id"],
                             "next_contact_date": iso(v["callback"]), "call_id": attempt_id,
                             "follow_up_id": follow_up_id}, reason="call wrap-up")
 
@@ -421,8 +435,8 @@ def _save_for_review(attempt: dict, case: dict, contact: dict | None, v: dict, r
         _bad("contact_id", "a wrong number needs the contact that was called", "required",
              code="contact_required")
     deferred = {
-        "note": {"comment_status_id": v["status_id"], "contact_method_id": v["method_id"],
-                 "comment_reachability_id": v["reach_id"]},
+        "note": {"comment_status_id": v["status_id"], "comment_sub_status_id": v["sub_status_id"],
+                 "contact_method_id": v["method_id"], "comment_reachability_id": v["reach_id"]},
         "callback_at": iso(v["callback"]),
         "promise": ({"agreed": True, "amount": v["promise"].get("amount"), "due_date": v["promise"].get("due_date")}
                     if v["promise"] is not None else None),

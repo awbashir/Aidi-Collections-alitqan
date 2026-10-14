@@ -31,7 +31,7 @@ from core.files import resolve_temp_file
 from core.http import error_response
 from extensions import db
 from models import Clints, Contract
-from services import bulk_actions, imports
+from services import bulk_actions, comment_status_tree, imports
 
 bp = Blueprint("imports", __name__)
 URL_PREFIX = None
@@ -226,6 +226,10 @@ def createCommentByExcel():
         # the remaining keys are splatted into Comments(**data), exactly as before
         for key in ('contract_id', 'data1', 'index', 'excel_data', 'async'):
             data.pop(key, None)
+        # 0068: no new notes on a deleted status or with a sub-status as the main status
+        problem = comment_status_tree.legacy_note_problem(data.get('comment_status_id'), None)
+        if problem:
+            return jsonify({"message": problem[1], "status": False, "error": problem[0]}), 201
 
         file_path = _temp_path(file_name)
         return _dispatch("comments-by-excel", imports.run_comments_by_excel,

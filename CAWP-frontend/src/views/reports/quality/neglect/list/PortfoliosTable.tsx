@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useMemo, useState } from "react";
+import useListScrollRestore from "@/utils/hooks/useListScrollRestore";
 import { useTranslation } from "react-i18next";
 import {
   setTableData,
@@ -153,6 +154,9 @@ const PortfoliosTable = () => {
   const dispatch = useAppDispatch();
   const data = useAppSelector((state) => state.neglectList.data.list);
   const loading = useAppSelector((state) => state.neglectList.data.loading);
+  /* Rows open the case in this tab; the list keeps its scroll for the way
+   * back. */
+  const { rootRef: scrollRootRef } = useListScrollRestore({ loading });
   const { page, pageSize, sort, query, total, totalAmount } = useAppSelector(
     (state) => state.neglectList.data.tableData
   );
@@ -351,7 +355,7 @@ const PortfoliosTable = () => {
 
   return (
     <>
-      <div className="mt-5">
+      <div className="mt-5" ref={scrollRootRef}>
         <TableOptions />
         <DataTable
           columns={columns}

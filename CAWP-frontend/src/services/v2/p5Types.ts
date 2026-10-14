@@ -314,6 +314,8 @@ export type CaseBlocks = {
 export type WrapupNote = {
     text?: string
     comment_status_id?: string
+    /** 0068: optional sub-status of comment_status_id */
+    comment_sub_status_id?: string
     contact_method_id?: string
     comment_reachability_id?: string
 }
@@ -417,6 +419,9 @@ export type MonitorAgent = { extension: string; user_id: string | null; name: st
 
 export type MonitorLive = {
     scope: MonitorScope
+    /** The user filter applied (an extension), and every extension the scope allows (for the filter). */
+    extension: string | null
+    options: MonitorAgent[]
     snapshot: { captured_at: Iso | null; ok: boolean; error: string | null; age_seconds: number | null; stale: boolean }
     summary: { active_calls: number; talking: number; ringing: number; in_ivr: number; agents_on_call: number; agents: number }
     calls: Array<{
@@ -444,6 +449,8 @@ export type MonitorUserStats = MonitorAgent & {
 
 export type MonitorStats = {
     scope: MonitorScope
+    extension: string | null
+    options: MonitorAgent[]
     from: string
     to: string
     granularity: 'hour' | 'day'

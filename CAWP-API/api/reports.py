@@ -38,7 +38,7 @@ import logging
 
 from flask import Blueprint, Response, request, stream_with_context
 from flask_jwt_extended import get_jwt_identity, jwt_required
-from sqlalchemy import func, select, true
+from sqlalchemy import func, select, text, true
 from sqlalchemy.orm import aliased
 
 from core.auth import required_roles
@@ -48,6 +48,7 @@ from models import (Branch, Clints, CollectionMethods, CollectionTypes, CommentR
                     Comments, CommentStatuses, ContactMethods, Contract, Nationality,
                     PaymentDates, Payments, Portfolios, Role, Supervisor, SupervisorContract,
                     SupervisorUser, User)
+from services import comment_status_tree as status_tree
 from services.report_scope import payments_scope_clause, supervisor_scope
 from services.reports_query import (apply_all_filters, apply_branch2_filter, apply_sort,
                                     between_range, count_rows, date_range,
@@ -356,6 +357,17 @@ def export_comments_current_user():
     return Response(stream_with_context(gen()), mimetype="application/json")
 
 
+def _note_sub_statuses(case_id):
+    """{note id: {id, name, color}} for the case's notes that carry a sub-status (0068; the
+    column is not mapped on the model, see services/comment_status_tree.py)."""
+    rows = db.session.execute(text("""
+        SELECT c.id::text, s.id::text, s.name, s.color
+          FROM "Comments" c JOIN "CommentStatuses" s ON s.id = c.comment_sub_status_id
+         WHERE c.clint_id = CAST(:id AS uuid) AND c.comment_sub_status_id IS NOT NULL
+    """), {"id": str(case_id)}).all()
+    return {r[0]: {"id": r[1], "name": r[2], "color": r[3]} for r in rows}
+
+
 @bp.route("/comments/clint/<id>", methods=["GET"])
 @jwt_required()
 def get_comments_by_clint(id):
@@ -376,6 +388,7 @@ def get_comments_by_clint(id):
                 .filter(Comments.is_deleted == False)  # noqa: E712
                 .order_by(Comments.create_at.desc(), Comments.id)
                 .all())
+        subs = _note_sub_statuses(id)
         payload = []
         for row in rows:
             d = take(row, Comments, "c")
@@ -385,6 +398,10 @@ def get_comments_by_clint(id):
             d["status"] = take(row, C_CS, "cs")
             d["user"] = take(row, C_U, "u")          # legacy adds no `name` here
             d["contact_method"] = take(row, C_CM, "cm")
+            sub = subs.get(str(d["id"]))
+            if sub is not None:                      # 0068: only on notes with a sub-status
+                d["comment_sub_status_id"] = sub["id"]
+                d["sub_status"] = sub
             payload.append(d)
     except Exception as e:
         db.session.rollback()
@@ -1000,19 +1017,31 @@ def get_supervisors():
 @bp.route("/comment_status", methods=["GET"])
 @jwt_required()
 def get_comment_status():
-    """Per-row `Contract.query.get` + `CommentReachability.query.get` -> two small maps."""
+    """Per-row `Contract.query.get` + `CommentReachability.query.get` -> two small maps.
+
+    0068: soft-deleted statuses are left out unless `include_deleted=1` (then every row has
+    `deleted_at`); every row has `parent_id` and, for a sub-status, `parent` {id, name};
+    `tree=1` (paged mode) lists each main status followed by its sub-statuses."""
     try:
         statuses = CommentStatuses.query.all()
         contracts = {c.id: c.as_dict() for c in Contract.query.all()}
         reach = {r.id: r.as_dict() for r in CommentReachability.query.all()}
+        include_deleted = request.args.get("include_deleted") in ("1", "true")
+        tree = status_tree.tree_columns()
+        names = {str(s.id): s.name for s in statuses}
 
         rows = []
         for s in statuses:
-            d = s.as_dict()
+            extra = tree.get(str(s.id)) or {}
+            if extra.get("deleted_at") is not None and not include_deleted:
+                continue
+            d = status_tree.with_tree(s.as_dict(), extra, deleted=include_deleted)
             if s.contract_id is not None and s.contract_id in contracts:
                 d["contract"] = contracts[s.contract_id]
             if s.CommentReachability_id is not None and s.CommentReachability_id in reach:
                 d["CommentReachability"] = reach[s.CommentReachability_id]
+            if d["parent_id"] is not None:
+                d["parent"] = {"id": d["parent_id"], "name": names.get(d["parent_id"])}
             rows.append(d)
 
         # app.py:3313 — no `page` param at all means "the whole list" (the follow-up picker)
@@ -1023,6 +1052,8 @@ def get_comment_status():
         rows = _py_custom_filter_rows(_py_filter_rows(rows))
         count = len(rows)
         rows = _py_sort_rows(rows)
+        if request.args.get("tree") in ("1", "true"):
+            rows = status_tree.tree_order(rows)
         page_rows = rows[offset:offset + page_size] if page_size > 0 else rows
     except Exception as e:
         db.session.rollback()

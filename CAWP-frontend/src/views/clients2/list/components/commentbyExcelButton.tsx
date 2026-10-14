@@ -8,6 +8,7 @@ import * as Yup from "yup";
 import Button from "@/components/ui/Button";
 import Dialog from "@/components/ui/Dialog";
 import Select from "@/components/ui/Select";
+import { mainStatusesFor } from "@/utils/commentStatusTree";
 import { useTranslation } from "react-i18next";
 import Upload from "@/components/ui/Upload";
 import {
@@ -250,6 +251,8 @@ function CommentByExcelButton({
     value: option.id,
     reachability_id: option.CommentReachability_id,
     contract_id: option.contract_id,
+    parent_id: option.parent_id ?? null,
+    deleted_at: option.deleted_at ?? null,
   }));
 
   const contractsOptions = contracts?.map((option) => ({
@@ -435,12 +438,13 @@ function CommentByExcelButton({
                                   <Select
                                     field={field}
                                     form={form}
-                                    options={commentsStatusOptions?.filter(
+                                    options={mainStatusesFor(
+                                      commentsStatusOptions,
+                                      values?.contract_id
+                                    ).filter(
                                       (commentStatus) =>
-                                        commentStatus.contract_id ==
-                                          values?.contract_id &&
                                         values.comment_reachability_id ==
-                                          commentStatus.reachability_id
+                                        commentStatus.reachability_id
                                     )}
                                     value={commentsStatusOptions?.filter(
                                       (category) =>

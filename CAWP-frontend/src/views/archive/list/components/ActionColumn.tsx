@@ -23,6 +23,8 @@ import ToggleStatusButton from "./ToggleStatusButton";
 import DeleteButton from "./DeleteButton";
 import MoveFromArchiveButton from "./MoveFromArchiveButton";
 import { LuArchiveRestore } from "react-icons/lu";
+import { caseLink } from "@/utils/v2/links";
+import { isPlainLeftClick, openCaseInApp } from "@/utils/v2/rowNavigation";
 
 const ActionColumn = ({
   row,
@@ -51,8 +53,13 @@ const ActionColumn = ({
       <Tooltip title={t("details")}>
         <Link
           className={`cursor-pointer p-2 hover:text-azure-600 font-semibold`}
-          to={`/clients/details/details?id=${row.id}`}
-          target="_blank"
+          to={caseLink(row.id)}
+          onClick={(e) => {
+            if (isPlainLeftClick(e)) {
+              e.preventDefault();
+              openCaseInApp(navigate, row.id);
+            }
+          }}
         >
           <span>
             {direction === "rtl" ? <HiArrowSmLeft /> : <HiArrowSmRight />}

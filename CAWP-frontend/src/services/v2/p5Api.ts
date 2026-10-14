@@ -193,8 +193,8 @@ export const callingAdminApi = {
 
 /** Call monitor: live calls and calls by user over time (scope decided by the API). */
 export const callMonitorApi = {
-    live: (signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', undefined, signal),
-    stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day' }, signal?: AbortSignal) =>
+    live: (q: { extension?: string }, signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', q, signal),
+    stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day'; extension?: string }, signal?: AbortSignal) =>
         v2Get<MonitorStats>('/v2/calling/monitor/stats', q, signal),
 }
 

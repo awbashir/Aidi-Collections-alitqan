@@ -13,6 +13,8 @@ export type CommentStatusOption = Option & {
     color?: string | null
     /** Phase 6: the legacy `is_active` flag (the legacy screens ignore it; AI save-as-note refuses false). */
     is_active?: boolean | null
+    /** 0068: the main status of a sub-status (null = a main status). Deleted statuses are not listed. */
+    parent_id?: string | null
 }
 
 const cache = new Map<string, Promise<unknown>>()
@@ -74,7 +76,13 @@ export const lookups = {
         cached('commentStatuses', async () => {
             const d = await get<{
                 comment_statuses?: Array<
-                    Named & { contract_id?: string | null; CommentReachability_id?: string | null; color?: string | null; is_active?: boolean | null }
+                    Named & {
+                        contract_id?: string | null
+                        CommentReachability_id?: string | null
+                        color?: string | null
+                        is_active?: boolean | null
+                        parent_id?: string | null
+                    }
                 >
             }>('/comment_status')
             return (d.comment_statuses || []).map(
@@ -85,6 +93,7 @@ export const lookups = {
                     reachability_id: c.CommentReachability_id ?? null,
                     color: c.color ?? null,
                     is_active: c.is_active ?? null,
+                    parent_id: c.parent_id ?? null,
                 })
             )
         }),

@@ -34,7 +34,13 @@ type Option = {
   label: string;
   color: string;
 };
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  asSelection,
+  selectionIds,
+  selectionKey,
+} from "@/utils/v2/listRestore";
+import { mainStatusesFor } from "@/utils/commentStatusTree";
 
 const { Control } = components;
 
@@ -80,21 +86,37 @@ const ClientsTableFilter = () => {
 
   const { t } = useTranslation();
 
-  const [selectedContracts_, setSelectedContracts_] = useState([]);
-  const [selectedPortfolios_, setSelectedPortfolios_] = useState();
+  /* The panel starts from the filters the list applies (kept in the store and
+   * the URL hash), so after coming back from a case it shows them instead of
+   * empty fields, and "search" keeps them. */
+  const applied = useAppSelector((state) => state.clientsList.data.filterData);
+  const [selectedContracts_, setSelectedContracts_] = useState(
+    () => asSelection(applied?.customeFilterContractValue) ?? []
+  );
+  const [selectedPortfolios_, setSelectedPortfolios_] = useState(() =>
+    asSelection(applied?.customeFilterPortfoliosValue)
+  );
   const [selectedReachability_, setSelectedReachability_] = useState();
-  const [selectedCommentStatus_, setSelectedCommentStatus_] = useState();
-  const [selectedUsers_, setSelectedUsers_] = useState();
+  const [selectedCommentStatus_, setSelectedCommentStatus_] = useState(() =>
+    asSelection(applied?.customeFilterCommentStatusValue)
+  );
+  const [selectedUsers_, setSelectedUsers_] = useState(() =>
+    asSelection(applied?.customeFilterUserValue)
+  );
   const [selectedAccountNumber_, setSelectedAccountNumber_] = useState();
   const [selectedArchiveBy_, setSelectedArchiveBy_] = useState();
   const [selectedResons_, setSelectedResons_] = useState();
-  const [selectedBranches_, setSelectedBranches_] = useState();
-  const [selectedAttribute_, setSelectedAttribute_] = useState();
+  const [selectedBranches_, setSelectedBranches_] = useState(() =>
+    asSelection(applied?.customeFilterBranchesValue)
+  );
+  const [selectedAttribute_, setSelectedAttribute_] = useState(
+    () => applied?.customeFilterAttributeValue
+  );
   const [selectedAmount_, setSelectedAmount_] = useState();
   const [selectedPortfolioCreateAtFrom_, setSelectedPortfolioCreateAtFrom_] =
-    useState();
+    useState(() => applied?.customeFilterPortfolioCreateAtFromValue);
   const [selectedPortfolioCreateAtTo_, setSelectedPortfolioCreateAtTo_] =
-    useState();
+    useState(() => applied?.customeFilterPortfolioCreateAtToValue);
 
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -171,8 +193,18 @@ const ClientsTableFilter = () => {
   }, []);
 
   const [filteredComment_status, setFilteredComment_status] = useState([]);
+  /* Clear the statuses when the reachability or contract selection really
+   * changes (not when a select re-reports the same ids, or on mount, which
+   * would wipe the statuses restored above). */
+  const statusScope = `${selectionKey(selectedReachability_)}|${selectionKey(
+    selectedContracts_
+  )}`;
+  const lastStatusScope = useRef(statusScope);
   useEffect(() => {
-    setSelectedCommentStatus_([]);
+    if (lastStatusScope.current !== statusScope) {
+      lastStatusScope.current = statusScope;
+      setSelectedCommentStatus_([]);
+    }
     if (selectedReachability_?.length > 0) {
       const commentstatus_ = comment_status.filter((status) =>
         selectedReachability_.some(
@@ -185,12 +217,17 @@ const ClientsTableFilter = () => {
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedReachability_, selectedContracts_]);
+  }, [statusScope, comment_status]);
 
   const [filiteredUsers, setFiliteredUsers] = useState([]);
+  const usersScope = selectionKey(selectedBranches_);
+  const lastUsersScope = useRef(usersScope);
   useEffect(() => {
-    setSelectedUsers_([]);
-    if (selectedBranches_?.length > 0) {
+    if (lastUsersScope.current !== usersScope) {
+      lastUsersScope.current = usersScope;
+      setSelectedUsers_([]);
+    }
+    if (selectedBranches_ && selectedBranches_.length > 0) {
       const users_ = users.filter(
         (user) =>
           selectedBranches_.some((branch) => branch.id === user.branch_id) &&
@@ -202,7 +239,7 @@ const ClientsTableFilter = () => {
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranches_]);
+  }, [usersScope, users]);
 
   const filterData = useAppSelector(
     (state) => state.clientsList.data.filterData,
@@ -275,6 +312,7 @@ const ClientsTableFilter = () => {
                     <MyFilter
                       options={contracts}
                       filter={setSelectedContracts_}
+                      selectedIds={selectionIds(selectedContracts_)}
                       labelField={{
                         plural: "العقود",
                         singular: "العقد",
@@ -294,6 +332,7 @@ const ClientsTableFilter = () => {
                             )
                       }
                       filter={setSelectedPortfolios_}
+                      selectedIds={selectionIds(selectedPortfolios_)}
                       labelField={{
                         plural: "المحافظ",
                         singular: "المحفظة",
@@ -319,11 +358,9 @@ const ClientsTableFilter = () => {
                   </div>
                   <div>
                     <MyFilter
-                      options={filteredComment_status.filter(
-                        (item) =>
-                          item.contract_id === selectedContracts_[0]?.id,
-                      )}
+                      options={mainStatusesFor(filteredComment_status, selectedContracts_[0]?.id)}
                       filter={setSelectedCommentStatus_}
+                      selectedIds={selectionIds(selectedCommentStatus_)}
                       labelField={{
                         plural: "حالات العميل",
                         singular: "حالة",
@@ -340,6 +377,7 @@ const ClientsTableFilter = () => {
                     <MyFilter
                       options={branches}
                       filter={setSelectedBranches_}
+                      selectedIds={selectionIds(selectedBranches_)}
                       labelField={{
                         plural: "الفروع",
                         singular: "الفرع",
@@ -353,6 +391,7 @@ const ClientsTableFilter = () => {
                     <MyFilter
                       options={filiteredUsers}
                       filter={setSelectedUsers_}
+                      selectedIds={selectionIds(selectedUsers_)}
                       labelField={{
                         plural: "المستخدمين",
                         singular: "مستخدم",
@@ -375,6 +414,7 @@ const ClientsTableFilter = () => {
                   <div>
                     <MyField
                       filter={setSelectedAttribute_}
+                      initialValue={selectedAttribute_}
                       labelField={{
                         title: "بحث",
                       }}
@@ -387,6 +427,7 @@ const ClientsTableFilter = () => {
                       <div>
                         <MyField
                           filter={setSelectedPortfolioCreateAtFrom_}
+                          initialValue={selectedPortfolioCreateAtFrom_}
                           labelField={{
                             title: "تاريخ المحفظة من",
                           }}
@@ -396,6 +437,7 @@ const ClientsTableFilter = () => {
                       <div>
                         <MyField
                           filter={setSelectedPortfolioCreateAtTo_}
+                          initialValue={selectedPortfolioCreateAtTo_}
                           labelField={{
                             title: "الى",
                           }}

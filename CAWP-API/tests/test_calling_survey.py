@@ -95,11 +95,12 @@ def test_click_to_call_needs_a_conversation_and_the_contract_switch(agi_server, 
 
 def test_incoming_caller_is_matched_to_a_case(agi_server, pgc):
     _, user, case = world(pgc)
-    add_contact(pgc, case, "0551234567")
-    run(pgc, "INSERT INTO user_extensions (extension, user_id, assign_reason) VALUES ('7311', %s, 'test')", user)
+    local, ext = f"055{uuid.uuid4().int % 10**7:07d}", f"9{uuid.uuid4().int % 9000 + 1000}"   # unique in the shared test DB
+    add_contact(pgc, case, local)
+    run(pgc, "INSERT INTO user_extensions (extension, user_id, assign_reason) VALUES (%s, %s, 'test')", ext, user)
     ch = f"in-{uuid.uuid4()}"
-    fake = survey(agi_server, "collections-survey-offer", ch, CAWP_SURVEY_CALLER="+966551234567",
-                  CAWP_SURVEY_AGENT="7311", CAWP_LANG="en")
+    fake = survey(agi_server, "collections-survey-offer", ch, CAWP_SURVEY_CALLER="+966" + local[1:],
+                  CAWP_SURVEY_AGENT=ext, CAWP_LANG="en")
     assert fake.vars["COLLECTIONS_SURVEY"] == "1"
     row = q1(pgc, "SELECT source, case_id::text, agent_user_id::text, language FROM call_surveys WHERE id = %s",
              fake.vars["COLLECTIONS_SURVEY_ID"])
@@ -110,9 +111,10 @@ def test_incoming_caller_is_matched_to_a_case(agi_server, pgc):
 
 def test_result_only_for_the_offered_channel(agi_server, pgc):
     _, user, case = world(pgc)
-    add_contact(pgc, case, "0557654321")
+    local = f"056{uuid.uuid4().int % 10**7:07d}"
+    add_contact(pgc, case, local)
     ch = f"in-{uuid.uuid4()}"
-    sid = survey(agi_server, "collections-survey-offer", ch, CAWP_SURVEY_CALLER="0557654321").vars["COLLECTIONS_SURVEY_ID"]
+    sid = survey(agi_server, "collections-survey-offer", ch, CAWP_SURVEY_CALLER=local).vars["COLLECTIONS_SURVEY_ID"]
     survey(agi_server, "collections-survey-result", "another-channel", COLLECTIONS_SURVEY_ID=sid, CAWP_SURVEY_SCORE="5")
     assert q1(pgc, "SELECT status FROM call_surveys WHERE id = %s", sid) == ("offered",)
     survey(agi_server, "collections-survey-result", ch, COLLECTIONS_SURVEY_ID=sid)              # nothing pressed

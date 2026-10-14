@@ -52,6 +52,8 @@ type LegacyComment = {
   user?: { id?: string; frist_name?: string; last_name?: string } | null;
   contact_method?: { name?: string } | null;
   status?: { name?: string; color?: string | null; is_active?: boolean } | null;
+  /** 0068: only on notes recorded with a sub-status */
+  sub_status?: { id?: string; name?: string; color?: string | null } | null;
   reachability?: { name?: string } | null;
 };
 
@@ -347,6 +349,10 @@ const TimeLineComment = () => {
                         tone={comment.status?.is_active ? "success" : "danger"}
                       >
                         {comment?.status?.name}
+                        {/* 0068: "Main › Sub" when the note has a sub-status */}
+                        {comment?.sub_status?.name
+                          ? ` › ${comment.sub_status.name}`
+                          : null}
                       </StatusPill>
 
                       <StatusPill

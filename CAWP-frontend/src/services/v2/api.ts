@@ -62,6 +62,8 @@ export const worklistApi = {
             outcome_note: {
                 text: string
                 comment_status_id: string
+                /** 0068: optional sub-status of comment_status_id */
+                comment_sub_status_id?: string
                 contact_method_id: string
                 comment_reachability_id?: string
                 contact_number?: string

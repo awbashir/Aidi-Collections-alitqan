@@ -30,7 +30,8 @@ import {
   HiOutlineBell,
 } from "react-icons/hi";
 import { NumericFormat } from "react-number-format";
-import AddClientsByExcelButton from "./components/AddClientsButton";
+/* The legacy AddClientsButton dialog stays in the tree; /clients uses the portfolio upload wizard. */
+import PortfolioImportButton from "./components/PortfolioImport/PortfolioImportButton";
 import SepcifyUsersByExcelButton from "./components/SepcifyUsersByExcelButton";
 import EnquiryByExcelButton from "./components/EnquiryByExcelButton";
 import UpdateDataByExcelButton from "./components/UpdateDataByExcelButton";
@@ -60,13 +61,17 @@ import { listQueryString } from "@/services/v2";
 import { poolFilterFromQuery } from "@/views/phase5/campaigns/poolFilter";
 import { BulkMenu } from "@/views/phase2/bulk/entry";
 import type { BulkLaunch } from "@/views/phase2/bulk/shared";
+import { openCaseInApp, type RowActivateEvent } from "@/utils/v2/rowNavigation";
+import useListScrollRestore from "@/utils/hooks/useListScrollRestore";
 
 const TableOptions = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const [selectedInquiryClintByExcel, setSelectedInquiryClintByExcel] =
-    useState([]);
   const pramas = useAppSelector((state) => state.clientsList.data.filterData);
+  /* Starts from the applied spreadsheet inquiry, so its "cancel" button is
+   * still there after coming back from a case. */
+  const [selectedInquiryClintByExcel, setSelectedInquiryClintByExcel] =
+    useState(() => pramas?.customeFilterInquiryClintByExcelValue ?? []);
 
   const search = useAppSelector((state) => state.clientsList.data.search);
 
@@ -363,11 +368,7 @@ const TableOptions = () => {
         )}
 
         {perm.clints_add && (
-          <AddClientsByExcelButton
-            notificationTitle={t("uploadExcel")}
-            notificationSuccessMessage={t("uploadSuccess")}
-            notificationFailedMessage={t("uploadFail")}
-          />
+          <PortfolioImportButton />
         )}
       </div>
 
@@ -457,6 +458,15 @@ const ClientsTable = () => {
     useClientsSelectedCase();
   const selectCaseRef = useRef(selectCase);
   selectCaseRef.current = selectCase;
+
+  /* A row click opens the case in this tab (the row is recorded in the hash
+   * first, so it is marked on the way back); the list keeps its scroll. */
+  const navigate = useNavigate();
+  const { rootRef: scrollRootRef } = useListScrollRestore({ loading });
+  const openRow = (row: Client, event: RowActivateEvent) => {
+    selectCaseRef.current(row.id);
+    openCaseInApp(navigate, row.id, event);
+  };
 
   const defaultColumns: ColumnDef<User>[] = useMemo(
     () => [
@@ -698,12 +708,13 @@ const ClientsTable = () => {
 
   return (
     <>
-      <div className="mt-5">
+      <div className="mt-5" ref={scrollRootRef}>
         <TableOptions />
         <DataTable
           selectable
           columns={columns}
           data={data}
+          onRowClick={openRow}
           skeletonAvatarColumns={[0]}
           skeletonAvatarProps={{ width: 28, height: 28 }}
           loading={loading}

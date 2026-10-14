@@ -12,6 +12,11 @@
  *   rail  the raw colour, used for the 3px inset rail and the 7px pill dot
  *   tint  the colour mixed 10% into white — legal as a row fill
  *   text  the colour darkened until it clears 4.5:1 as text on white
+ *
+ * White (the default for new statuses, 0068) and other very light colours would
+ * vanish on a white page: in the light scheme they get a neutral set instead —
+ * a grey rail, an untinted row, a white pill with a 1px border and the dot in
+ * the real colour with a ring (`border` / `dot`).
  */
 
 export type StatusColorSet = {
@@ -24,6 +29,11 @@ export type StatusColorSet = {
     pill: string
     /** darkened to >= 4.5:1 on white — pill label */
     text: string
+    /** very light colours only: 1px pill border and dot ring, so a white
+     *  status still reads as a pill on a white page */
+    border?: string
+    /** very light colours only: the real colour, for the pill dot */
+    dot?: string
 }
 
 type Rgb = { r: number; g: number; b: number }
@@ -169,6 +179,18 @@ const FALLBACK_DARK: StatusColorSet = {
     text: '#C7CDE4',
 }
 
+/** Above this luminance a colour is "near white" on the light scheme. */
+const NEAR_WHITE = 0.8
+
+const lightNeutral = (rgb: Rgb): StatusColorSet => ({
+    rail: '#B8C0CC',
+    tint: '#FFFFFF',
+    pill: '#FFFFFF',
+    text: '#2E3450',
+    border: '#C5CCD6',
+    dot: toHex(rgb),
+})
+
 const cache = new Map<string, StatusColorSet>()
 
 /**
@@ -202,7 +224,9 @@ export function statusTint(
         return miss
     }
 
-    const set: StatusColorSet = dark
+    const set: StatusColorSet = !dark && luminance(rgb) > NEAR_WHITE
+        ? lightNeutral(rgb)
+        : dark
         ? {
               rail: toHex(lightenToContrast(rgb, 3)),
               tint: toHex(mix(rgb, NIGHT_CARD, 0.22)),
@@ -217,6 +241,12 @@ export function statusTint(
           }
     cache.set(key, set)
     return set
+}
+
+/** `true` when the colour would disappear on a white surface (white, near white). */
+export function isNearWhite(color?: string | null): boolean {
+    const rgb = parseColor(color)
+    return !!rgb && luminance(rgb) > NEAR_WHITE
 }
 
 /** `true` when the colour is light enough to need dark text on top of it. */

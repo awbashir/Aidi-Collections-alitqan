@@ -25,6 +25,7 @@ import sqlalchemy as sa
 from core import audit
 from core.api_response import FORBIDDEN, NOT_FOUND, ApiError
 from core.revisions import RevisionConflict
+from services import comment_status_tree as status_tree
 from services import worklist_common as wc
 from services.worklist_common import CLINTS, FOLLOW_UP_EVENTS as EV, FOLLOW_UPS as FU, USERS
 
@@ -311,6 +312,8 @@ def _parse_outcome_note(body) -> dict:
         "text": wc.parse_text(note.get("text"), "outcome_note.text", required=True, max_len=5000),
         "comment_status_id": wc.parse_uuid(note.get("comment_status_id"), "outcome_note.comment_status_id",
                                            required=True),
+        "comment_sub_status_id": wc.parse_uuid(note.get("comment_sub_status_id"),
+                                               "outcome_note.comment_sub_status_id"),
         "contact_method_id": wc.parse_uuid(note.get("contact_method_id") or note.get("contactMethod_id"),
                                            "outcome_note.contact_method_id", required=True),
         "comment_reachability_id": wc.parse_uuid(note.get("comment_reachability_id"),
@@ -323,6 +326,21 @@ def _parse_outcome_note(body) -> dict:
 def _check_lookup(session, table, value, field):
     if value is not None and session.execute(sa.select(table.c.id).where(table.c.id == value)).first() is None:
         raise wc.bad(field, f"{field} does not exist", "unknown")
+
+
+def _check_note_status(session, note):
+    """0068: a NEW note refuses a deleted status and a sub-status given as the main one; the
+    optional sub-status must be a live sub-status of the main status."""
+    problem = status_tree.main_status_problem(status_tree.load(note["comment_status_id"], session))
+    if problem:
+        raise wc.bad("outcome_note.comment_status_id",
+                     "the note status was deleted" if problem == "status_deleted"
+                     else "this is a sub-status: send its main status and the sub-status separately", problem)
+    if note["comment_sub_status_id"] is not None:
+        problem = status_tree.sub_status_problem(note["comment_status_id"], note["comment_sub_status_id"], session)
+        if problem:
+            raise wc.bad("outcome_note.comment_sub_status_id",
+                         "the sub-status is not a live sub-status of the note status", problem)
 
 
 def complete(session, scope, identity, follow_up_id, body, expected, *, can_manage: bool,
@@ -350,6 +368,7 @@ def complete(session, scope, identity, follow_up_id, body, expected, *, can_mana
                            "completing needs a next follow-up (next) or an explicit no_further_action_reason",
                            {"next": "required", "no_further_action_reason": "required"})
     _check_lookup(session, COMMENT_STATUSES, note["comment_status_id"], "outcome_note.comment_status_id")
+    _check_note_status(session, note)
     _check_lookup(session, CONTACT_METHODS, note["contact_method_id"], "outcome_note.contact_method_id")
     _check_lookup(session, REACHABILITY, note["comment_reachability_id"], "outcome_note.comment_reachability_id")
 
@@ -365,9 +384,10 @@ def complete(session, scope, identity, follow_up_id, body, expected, *, can_mana
     session.execute(sa.text("SELECT set_config('cawp.skip_note_follow_up', 'on', true)"))
     session.execute(sa.insert(sa.table("Comments", *[sa.column(c) for c in (
         "id", "clint_id", "user_id", "contactMethod_id", "comment", "comment_status_id",
-        "comment_reachability_id", "next_contact_date", "contactNumber")])).values(
+        "comment_reachability_id", "next_contact_date", "contactNumber", "comment_sub_status_id")])).values(
         id=note_id, clint_id=case_id, user_id=str(identity), contactMethod_id=note["contact_method_id"],
         comment=note["text"], comment_status_id=note["comment_status_id"],
+        comment_sub_status_id=note["comment_sub_status_id"],
         comment_reachability_id=note["comment_reachability_id"], next_contact_date=next_due,
         contactNumber=note["contact_number"]))
     session.execute(sa.text("SELECT set_config('cawp.skip_note_follow_up', '', true)"))

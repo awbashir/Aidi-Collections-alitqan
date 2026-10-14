@@ -20,7 +20,10 @@ request_id = the job id), a reviewed preview, and the framework rechecks.
 Params (shared by every case; legacy names, Phase 1 aliases accepted):
 
     comment                    text, required (<= 5000)
-    comment_status_id          uuid, required, an existing "CommentStatuses" row
+    comment_status_id          uuid, required, an existing, live MAIN "CommentStatuses" row (0068: a
+                               deleted status -> `status_deleted`, a sub-status -> `is_sub_status`);
+                               a general status (contract_id NULL) fits every contract
+    comment_sub_status_id      uuid, optional: a live sub-status of comment_status_id (0068)
     contactMethod_id           uuid, required, an existing "ContactMethods" row  (alias contact_method_id)
     comment_reachability_id    uuid, optional; must be a live comment_reachability row and the
                                status's own reachability. Omitted -> the status's reachability
@@ -54,6 +57,7 @@ from core.api_response import ApiError
 from core.bulk.common import dumps, iso
 from core.bulk.registry import BulkKind, Eligibility, MappingField, Outcome, ParamError
 from core.bulk.sources import JobFailure
+from services import comment_status_tree as status_tree
 from services.bulk_common import reject_unknown
 
 NOTES_KEYS = ("clints_UpdateByExcel",)
@@ -61,7 +65,7 @@ TEXT_MAX = 5000
 CONTACT_NUMBER_MAX = 50
 
 _ALIASES = {"contact_method_id": "contactMethod_id", "contact_number": "contactNumber"}
-_ALLOWED = {"comment", "comment_status_id", "contactMethod_id", "comment_reachability_id",
+_ALLOWED = {"comment", "comment_status_id", "comment_sub_status_id", "contactMethod_id", "comment_reachability_id",
             "next_contact_date", "contactNumber", *_ALIASES}
 
 
@@ -117,16 +121,22 @@ def load_lookups(session, params) -> dict | None:
     row = session.execute(text("""
         SELECT s.id::text AS status_id, s.name AS status_name, s.contract_id::text AS status_contract_id,
                s."CommentReachability_id"::text AS status_reachability_id,
+               s.deleted_at IS NOT NULL AS status_deleted,
+               (SELECT count(*) FROM "CommentStatuses" c
+                 WHERE c.id = CAST(:sub AS uuid) AND c.parent_id = s.id AND c.deleted_at IS NULL) AS subs,
                (SELECT count(*) FROM "ContactMethods" m WHERE m.id = CAST(:method AS uuid)) AS methods,
                (SELECT count(*) FROM comment_reachability r
                  WHERE r.id = CAST(:reach AS uuid) AND r.is_deleted = false) AS reachabilities
           FROM "CommentStatuses" s
          WHERE s.id = CAST(:status AS uuid)
     """), {"status": params["comment_status_id"], "method": params["contactMethod_id"],
-           "reach": params.get("comment_reachability_id")}).mappings().first()
+           "reach": params.get("comment_reachability_id"),
+           "sub": params.get("comment_sub_status_id")}).mappings().first()
     if row is None or row["methods"] == 0:
         return None
     if params.get("comment_reachability_id") and row["reachabilities"] == 0:
+        return None
+    if params.get("comment_sub_status_id") and row["subs"] == 0:   # deleted (or moved) meanwhile
         return None
     return dict(row)
 
@@ -169,16 +179,28 @@ class NotesKind(BulkKind):
             "next_contact_date": None,
             "contactNumber": _text(p, "contactNumber", max_len=CONTACT_NUMBER_MAX),
         }
+        sub = _uuid(p, "comment_sub_status_id")              # stored only when given
+        if sub is not None:
+            out["comment_sub_status_id"] = sub
         due = parse_callback(p.get("next_contact_date"))
         out["next_contact_date"] = iso(due) if due is not None else None
 
         s = ctx.session
         status = s.execute(text("""
-            SELECT s.id::text, s."CommentReachability_id"::text FROM "CommentStatuses" s WHERE s.id = CAST(:id AS uuid)
+            SELECT s.id::text, s."CommentReachability_id"::text, s.deleted_at IS NOT NULL, s.parent_id IS NOT NULL
+              FROM "CommentStatuses" s WHERE s.id = CAST(:id AS uuid)
         """), {"id": out["comment_status_id"]}).first()
         errors = {}
         if status is None:
             errors["comment_status_id"] = "unknown"
+        elif status[2]:
+            errors["comment_status_id"] = "status_deleted"
+        elif status[3]:
+            errors["comment_status_id"] = "is_sub_status"
+        elif sub is not None:
+            problem = status_tree.sub_status_problem(out["comment_status_id"], sub, s)
+            if problem:
+                errors["comment_sub_status_id"] = problem
         if s.execute(text('SELECT 1 FROM "ContactMethods" WHERE id = CAST(:id AS uuid)'),
                      {"id": out["contactMethod_id"]}).first() is None:
             errors["contactMethod_id"] = "unknown"
@@ -203,6 +225,8 @@ class NotesKind(BulkKind):
         lookups = load_lookups(ctx.session, ctx.params)
         if lookups is None:
             raise JobFailure("lookup_missing", "the note status, contact method or reachability no longer exists")
+        if lookups["status_deleted"]:
+            raise JobFailure("status_deleted", "the note status was deleted after the job was created")
         callback = ctx.params.get("next_contact_date")
         out = {}
         for r in rows:
@@ -227,6 +251,8 @@ class NotesKind(BulkKind):
             return {r.id: Outcome.failed("lookup_missing",
                                          "the note status, contact method or reachability no longer exists")
                     for r in rows}
+        if lookups["status_deleted"]:
+            return {r.id: Outcome.failed("status_deleted", "the note status was deleted") for r in rows}
         wc = _wc()
         due = wc.parse_due(p["next_contact_date"]) if p.get("next_contact_date") else None
         if due is not None and wc.riyadh.civil_date(due) < wc.Day().today:
@@ -249,13 +275,14 @@ class NotesKind(BulkKind):
         note_ids = {r.id: str(uuid.uuid4()) for r in todo}
         ctx.session.execute(text("""
             INSERT INTO "Comments" (id, clint_id, user_id, "contactMethod_id", comment, comment_status_id,
-                                    comment_reachability_id, next_contact_date, "contactNumber")
+                                    comment_reachability_id, next_contact_date, "contactNumber", comment_sub_status_id)
             SELECT d.id, d.clint_id, CAST(:actor AS uuid), CAST(:method AS uuid), :comment, CAST(:status AS uuid),
-                   CAST(:reach AS uuid), CAST(:due AS timestamptz), :number
+                   CAST(:reach AS uuid), CAST(:due AS timestamptz), :number, CAST(:sub AS uuid)
               FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS d(id uuid, clint_id uuid, n int)
              ORDER BY d.n
         """), {"actor": ctx.actor_id, "method": p["contactMethod_id"], "comment": p["comment"],
                "status": p["comment_status_id"], "reach": p.get("comment_reachability_id"),
+               "sub": p.get("comment_sub_status_id"),
                "due": p.get("next_contact_date"), "number": p.get("contactNumber"),
                "rows": dumps([{"id": note_ids[r.id], "clint_id": r.case_id, "n": r.row_no} for r in todo])})
 
@@ -271,7 +298,7 @@ class NotesKind(BulkKind):
             fid = follow_ups.get(nid)
             ctx.audit(r, "note.create", entity_type="comment", entity_id=nid, after={
                 "comment": p["comment"], "comment_status_id": p["comment_status_id"],
-                "contactMethod_id": p["contactMethod_id"],
+                "comment_sub_status_id": p.get("comment_sub_status_id"), "contactMethod_id": p["contactMethod_id"],
                 "comment_reachability_id": p.get("comment_reachability_id"),
                 "next_contact_date": p.get("next_contact_date"), "contactNumber": p.get("contactNumber"),
                 "follow_up_id": fid})

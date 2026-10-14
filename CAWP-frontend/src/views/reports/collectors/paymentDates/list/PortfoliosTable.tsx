@@ -1,4 +1,6 @@
 import { useEffect, useCallback, useMemo, useState } from "react";
+import useListScrollRestore from "@/utils/hooks/useListScrollRestore";
+import { appliedDateRange, localDate } from "@/utils/v2/listRestore";
 import { useTranslation } from "react-i18next";
 import {
   setTableData,
@@ -69,10 +71,12 @@ const TableOptions = () => {
     current.getMonth() + 1,
     0
   );
-  const [selectedMoveDate, setSelectedMoveDate] = useState([
-    formatDate(firstDayOfMonth),
-    formatDate(lastDayOfMonth),
-  ]);
+  /* Start from the range the list applies, so coming back from a case does
+   * not reset it to the default. */
+  const appliedRange = appliedDateRange(pramas?.customeFilterDateValue);
+  const [selectedMoveDate, setSelectedMoveDate] = useState(
+    () => appliedRange ?? [formatDate(firstDayOfMonth), formatDate(lastDayOfMonth)]
+  );
   const fetchBranches = async () => {
     const response = await apiGetBranches();
     setBranches(response.data.branches);
@@ -124,8 +128,8 @@ const TableOptions = () => {
           <FilterDate
             filter={setSelectedMoveDate}
             label="تاريخ السداد"
-            defulltFrom={firstDayOfMonth}
-            defulltTo={lastDayOfMonth}
+            defulltFrom={appliedRange ? localDate(appliedRange[0]) : firstDayOfMonth}
+            defulltTo={appliedRange ? localDate(appliedRange[1]) : lastDayOfMonth}
           />
         </div>
       </div>
@@ -160,6 +164,9 @@ const PortfoliosTable = () => {
   const loading = useAppSelector(
     (state) => state.collectorPaymentDates.data.loading
   );
+  /* Rows open the case in this tab; the list keeps its scroll for the way
+   * back. */
+  const { rootRef: scrollRootRef } = useListScrollRestore({ loading });
   const { page, pageSize, sort, query, total, totalAmount } = useAppSelector(
     (state) => state.collectorPaymentDates.data.tableData
   );
@@ -549,7 +556,7 @@ const PortfoliosTable = () => {
 
   return (
     <>
-      <div className="mt-5">
+      <div className="mt-5" ref={scrollRootRef}>
         <TableOptions />
         <DataTable
           columns={columns}

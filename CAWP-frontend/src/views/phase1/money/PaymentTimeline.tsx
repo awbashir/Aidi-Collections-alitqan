@@ -14,6 +14,7 @@ import { CivilDate, Field, Ltr, MoneyText, RiyadhTime } from '@/components/v2/Di
 import { PaymentBadge, PlainBadge } from '@/components/v2/Badges'
 import { ErrorState, Note, SkeletonLines } from '@/components/v2/States'
 import { BlockTitle, MoneyTimeline } from './Timeline'
+import { ReceiptLinks } from '@/views/paymentAttachments'
 import type { TimelineEntry, TimelineTone } from './Timeline'
 
 const EVENT_TONE: Record<PaymentEvent['event'], TimelineTone> = {
@@ -152,6 +153,17 @@ const PaymentTimeline = ({ payment, compact }: { payment: Payment; compact?: boo
                         <MoneyText value={p.allocated} /> / <MoneyText value={p.unallocated} />
                     </Field>
                 </div>
+            )}
+
+            {p.attachments && (
+                <>
+                    <BlockTitle>{t('p7.payAtt.column')}</BlockTitle>
+                    {p.attachments.length > 0 ? (
+                        <ReceiptLinks attachments={p.attachments} />
+                    ) : (
+                        <div className="text-[13px] text-gray-600">{t('p7.payAtt.none')}</div>
+                    )}
+                </>
             )}
 
             <BlockTitle>{t('p1.col.decision')}</BlockTitle>

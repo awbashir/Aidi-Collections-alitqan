@@ -14,6 +14,7 @@ import { DialogField } from '@/components/v2/ActionDialog'
 import { Note } from '@/components/v2/States'
 import type { Option, Outcome } from '@/services/v2'
 import { OUTCOMES } from '@/services/v2'
+import { mainStatusesFor, subStatusesOf } from '@/utils/commentStatusTree'
 import { riyadhToday } from '@/utils/v2/format'
 import { Notice } from '../parts'
 import { MOBILE_METHOD_ID, useNoteLookups } from './draft'
@@ -105,18 +106,19 @@ export const NoteFields = ({
         if (active && !value.method && lk.methods.some((m) => m.value === MOBILE_METHOD_ID)) onChange({ ...value, method: MOBILE_METHOD_ID })
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lk.methods, active])
+    // 0068: main statuses only (the contract's own + the general ones, none deleted); a
+    // sub-status is picked in its own select under its main status
     const statusOptions = useMemo(
         () =>
-            lk.statuses.filter(
-                (s) =>
-                    (contractId ? s.contract_id === contractId || s.contract_id === null : true) &&
-                    s.reachability_id === (value.reach ?? null) &&
-                    (!activeOnly || s.is_active === true)
+            mainStatusesFor(lk.statuses, contractId).filter(
+                (s) => s.reachability_id === (value.reach ?? null) && (!activeOnly || s.is_active === true)
             ),
         [lk.statuses, contractId, value.reach, activeOnly]
     )
+    const subOptions = useMemo(() => subStatusesOf(lk.statuses, value.status), [lk.statuses, value.status])
     useEffect(() => {
-        if (value.status && !lk.loading && !statusOptions.some((s) => s.value === value.status)) onChange({ ...value, status: undefined })
+        if (value.status && !lk.loading && !statusOptions.some((s) => s.value === value.status))
+            onChange({ ...value, status: undefined, subStatus: undefined })
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusOptions])
     return (
@@ -156,7 +158,7 @@ export const NoteFields = ({
                             options={statusOptions}
                             noOptionsMessage={() => t('p1.followUps.complete.noStatuses')}
                             value={statusOptions.find((o) => o.value === value.status) || null}
-                            onChange={(o) => onChange({ ...value, status: (o as Option | null)?.value || undefined })}
+                            onChange={(o) => onChange({ ...value, status: (o as Option | null)?.value || undefined, subStatus: undefined })}
                         />
                     </div>
                 </DialogField>
@@ -173,6 +175,19 @@ export const NoteFields = ({
                     </div>
                 </DialogField>
             </div>
+            {subOptions.length > 0 && (
+                <DialogField label={t('p7.status.subStatus')} hint={t('p7.status.subStatusHint')}>
+                    <div data-testid={`${testId}-sub-status`}>
+                        <Select
+                            {...selectProps}
+                            placeholder={t('p1.followUps.select')}
+                            options={subOptions}
+                            value={subOptions.find((o) => o.value === value.subStatus) || null}
+                            onChange={(o) => onChange({ ...value, subStatus: (o as Option | null)?.value || undefined })}
+                        />
+                    </div>
+                </DialogField>
+            )}
             {lk.failed && <Note className="-mt-2 mb-3 text-danger">{t('p1.followUps.lookupsFailed')}</Note>}
         </div>
     )

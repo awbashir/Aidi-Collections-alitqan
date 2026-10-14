@@ -33,6 +33,9 @@ import { init, use } from "i18next";
 import TimeLineComment from "../components/Timeline";
 import PaymentsTable from "../tables/payments2/Portfolios";
 import PaymentClient from "../components/PaymentClientTable";
+import { ReceiptPicker, describeReceiptError } from "@/views/paymentAttachments";
+import { paymentAttachmentsApi } from "@/services/v2/payAttApi";
+import { newIdempotencyKey } from "@/services/v2";
 
 const Comments = ({
   data = {
@@ -73,6 +76,8 @@ const Comments = ({
   };
 
   const [collectionType, setCollectionType] = useState([]);
+  // optional receipt, uploaded right after the payment is saved
+  const [receipt, setReceipt] = useState<File | null>(null);
   const [collectionMethods, setCollectionMethods] = useState([]);
 
   const collectionTypeOptions = collectionType?.map((option) => ({
@@ -111,7 +116,7 @@ const Comments = ({
     var sendValues = values;
 
     dispatch(postPayments(sendValues))
-      .then((response) => {
+      .then(async (response) => {
         //reset form
         if (response.payload.id) {
           values = initialValues;
@@ -122,6 +127,32 @@ const Comments = ({
               placement: "top-center",
             }
           );
+
+          // The payment is saved; a failed upload never undoes it.
+          if (receipt) {
+            try {
+              await paymentAttachmentsApi.upload(
+                String((response.payload as { id: string }).id),
+                receipt,
+                newIdempotencyKey()
+              );
+              setReceipt(null);
+            } catch (error) {
+              setReceipt(null);
+              toast.push(
+                <Notification
+                  title={t("p7.payAtt.uploadFailedAfterSave")}
+                  type="warning"
+                  duration={9000}
+                >
+                  {describeReceiptError(error, t)} {t("p7.payAtt.attachLater")}
+                </Notification>,
+                {
+                  placement: "top-center",
+                }
+              );
+            }
+          }
 
           dispatch(getPayments(sendValues?.clint_id));
         } else {
@@ -248,6 +279,21 @@ const Comments = ({
                       )}
                     </Field>
                   </FormRow>
+                </div>
+
+                <div className="mt-4">
+                  <div className="mb-2 text-[13.5px] font-semibold text-gray-700 dark:text-night-body">
+                    {t("p7.payAtt.formLabel")}
+                  </div>
+                  <ReceiptPicker
+                    file={receipt}
+                    onChange={setReceipt}
+                    disabled={
+                      isSubmitting ||
+                      !!(clint as { is_archive?: boolean } | undefined)?.is_archive ||
+                      !!(clint as { is_locked?: boolean } | undefined)?.is_locked
+                    }
+                  />
                 </div>
 
                 <div className="mt-6 flex justify-end">

@@ -23,13 +23,16 @@ import { useLocation } from "react-router-dom";
 import { listQueryString } from "@/services/v2";
 import { BulkMenu } from "@/views/phase2/bulk/entry";
 import type { BulkLaunch } from "@/views/phase2/bulk/shared";
+import useListScrollRestore from "@/utils/hooks/useListScrollRestore";
 
 const TableOptions = ({ selectedIds = [] }: { selectedIds?: string[] }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const [selectedInquiryClintByExcel, setSelectedInquiryClintByExcel] =
-    useState([]);
   const pramas = useAppSelector((state) => state.archiveList.data.filterData);
+  /* Starts from the applied inquiry file, so its "cancel" button is still
+   * there after coming back from a case. */
+  const [selectedInquiryClintByExcel, setSelectedInquiryClintByExcel] =
+    useState(() => pramas?.selectedClients_Qkey ?? []);
   const search = useAppSelector((state) => state.archiveList.data.search);
   const sort = useAppSelector((state) => state.archiveList.data.tableData.sort);
   const tableState = useAppSelector((state) => state.archiveList.data.tableData);
@@ -208,6 +211,9 @@ const PortfoliosTable = () => {
   const filterData = useAppSelector(
     (state) => state.archiveList.data.filterData
   );
+  /* Rows open the case in this tab; the list keeps its scroll for the way
+   * back. */
+  const { rootRef: scrollRootRef } = useListScrollRestore({ loading });
 
   const defaultColumns = useMemo(
     () => [
@@ -389,10 +395,11 @@ const PortfoliosTable = () => {
     setSelectedIds(checked ? rows.map((r) => r.original.id) : []);
 
   return (
-    <div className="mt-5">
+    <div className="mt-5" ref={scrollRootRef}>
       <TableOptions selectedIds={selectedIds} />
       <DataTable
         selectable
+        clickAbility
         onCheckBoxChange={onRowSelect}
         onIndeterminateCheckBoxChange={onAllRowSelect}
         columns={columns}

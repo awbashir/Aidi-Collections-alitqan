@@ -3,11 +3,8 @@ import useDirection from "@/utils/hooks/useDirection";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import useThemeClass from "@/utils/hooks/useThemeClass";
-import {
-  useAppDispatch,
-  deletePortfolios,
-  putPortfoliolsToArchive,
-} from "../store";
+import { useAppDispatch } from "../store";
+import type { Portfolio } from "../store";
 import Tooltip from "@/components/ui/Tooltip";
 import { Link } from "react-router-dom";
 import {
@@ -18,28 +15,20 @@ import {
   HiOutlineArchive,
 } from "react-icons/hi";
 import ToggleStatusButton from "./ToggleStatusButton";
-import DeleteButton from "./DeleteButton";
-
-/* No DELETE route exists for this entity in CAWP-API (checked 2026-09-24). */
-const DELETE_ROUTE_EXISTS = false;
+import DeleteStatusButton from "./DeleteStatusButton";
 
 const ActionColumn = ({
   row,
   fetchadata,
 }: {
   row: Portfolio;
-  fetchadata: void;
+  fetchadata: () => void;
 }) => {
   const { t } = useTranslation();
   const [direction, updateDirection] = useDirection();
   const { textTheme } = useThemeClass();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-
-  const onEdit = () => {
-    dispatch(setDrawerOpen());
-    dispatch(setSelectedUser(row));
-  };
 
   const onDetail = useCallback(() => {
     navigate(`/users/${row.id}`);
@@ -69,22 +58,15 @@ const ActionColumn = ({
         </Link>
       </Tooltip>
 
-      {/* Phase 3 (review/phase3-admin.md §6): this button called
-       * DELETE /portfolios/<this row's id>, not a delete of the row itself. The
-       * API has no delete route for comment statuses, so the button is hidden until one
-       * exists (kept in code, not removed). */}
-      {DELETE_ROUTE_EXISTS && (
-        <DeleteButton
-          row={row}
-          fetchData={fetchadata}
-          notificationTitle={"portfolios.delete"}
-          notificationFailedMessage={"portfolios.deleteFail"}
-          notificationSuccessMessage={"portfolios.deleteSuccess"}
-          confirmDialogTitle={"portfolios.delete"}
-          confirmDialogMessage={"portfolios.confirmDelete"}
-          api={deletePortfolios}
-        />
-      )}
+      {/* Phase 3 (review/phase3-admin.md §6): the old button called DELETE /portfolios/<id>.
+       * 0068: DELETE /comment_status/<id> soft-deletes the status (and its sub-statuses),
+       * behind settings_comments_status_delete. */}
+      <DeleteStatusButton
+        id={row.id}
+        name={row.name}
+        isMain={!row.parent_id}
+        onDeleted={() => fetchadata?.()}
+      />
 
       {/* 
       <Tooltip title={t("clients.view")}>

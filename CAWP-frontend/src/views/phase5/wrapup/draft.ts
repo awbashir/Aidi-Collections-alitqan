@@ -12,7 +12,8 @@ import { MONEY_INPUT, riyadhInstant } from '@/utils/v2/format'
 /* The legacy note form defaults the contact method to "mobile" (Comments.tsx MOBILE_METHOD_ID). */
 export const MOBILE_METHOD_ID = 'ff081c7e-4500-4a75-ae36-580f2ae90834'
 
-export type NoteDraft = { text: string; reach?: string; status?: string; method?: string }
+/** `subStatus`: the optional sub-status of `status` (0068), offered only when `status` has some. */
+export type NoteDraft = { text: string; reach?: string; status?: string; subStatus?: string; method?: string }
 export type CallbackDraft = { date: string; time: string }
 export type PromiseDraft = { agreed: boolean; amount: string; due: string }
 
@@ -50,6 +51,7 @@ export const noteValid = (n: NoteDraft) => n.text.trim() !== '' && !!n.status &&
 export const noteBody = (n: NoteDraft): WrapupBody['note'] => ({
     text: n.text.trim(),
     comment_status_id: n.status as string,
+    ...(n.subStatus ? { comment_sub_status_id: n.subStatus } : {}),
     contact_method_id: n.method as string,
     ...(n.reach ? { comment_reachability_id: n.reach } : {}),
 })
@@ -67,6 +69,7 @@ export const wrapupNoteBody = (n: NoteDraft): WrapupBody['note'] | undefined => 
     return {
         text,
         comment_status_id: n.status,
+        ...(n.subStatus ? { comment_sub_status_id: n.subStatus } : {}),
         contact_method_id: n.method as string,
         ...(n.reach ? { comment_reachability_id: n.reach } : {}),
     }

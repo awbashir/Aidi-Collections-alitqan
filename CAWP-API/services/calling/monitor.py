@@ -1,6 +1,7 @@
 """Call monitor (customer request 2026-10-13): live calls and calls by user over time.
 
-Scope, decided here for every request (never by the page):
+Scope, decided here for every request (never by the page); the page's user filter
+(`extension`) can only narrow it (403 `not_in_scope` outside it):
 
 * a user whose role is `SuperAdmin` sees every extension and calls not yet at an agent (IVR);
 * a supervisor (an active `supervisors` row) sees the active extensions of their team
@@ -29,6 +30,7 @@ from core.api_response import VALIDATION_FAILED, ApiError
 from services.calling.common import USER_NAME_SQL, iso, me, sess
 
 AGENT_RE = re.compile(r"^PJSIP/([0-9]{2,6})-")
+AGENT_EXT_RE = re.compile(r"^[0-9]{2,6}$")
 MAX_DAYS = 31
 MAX_CDR_ROWS = 200_000
 
@@ -55,14 +57,31 @@ def scope(user_id=None) -> dict:
     return {"kind": kind, "extensions": exts, "owners": names}
 
 
+def narrow(sc: dict, extension) -> dict:
+    """The scope narrowed to one extension (the page's user filter); 403 outside the scope."""
+    if extension in (None, ""):
+        return sc
+    ext = str(extension).strip()
+    if not AGENT_EXT_RE.match(ext) or (sc["extensions"] is not None and ext not in sc["extensions"]):
+        raise ApiError(403, "not_in_scope", "this extension is not in your scope", {"extension": "not_in_scope"})
+    return {**sc, "extensions": {ext}, "filtered": ext}
+
+
+def options(sc: dict) -> list[dict]:
+    """Every extension of the scope (before any filter), for the page's user filter."""
+    exts = sc["extensions"] if sc["extensions"] is not None else sc["owners"].keys()
+    return [_agent(e, sc["owners"]) for e in sorted(exts, key=lambda e: (len(e), e))]
+
+
 def _agent(ext, owners):
     o = owners.get(ext) or {}
     return {"extension": ext, "user_id": o.get("id"), "name": o.get("name")}
 
 
 # --------------------------------------------------------------------------- live
-def live(user_id=None) -> dict:
-    sc = scope(user_id)
+def live(user_id=None, extension=None) -> dict:
+    full = scope(user_id)
+    sc = narrow(full, extension)
     snap = sess().execute(text("""
         SELECT captured_at, ok, error, channel_count, extract(epoch FROM now() - captured_at) AS age
           FROM pbx_live_snapshot WHERE id = 1""")).mappings().first()
@@ -119,7 +138,7 @@ def live(user_id=None) -> dict:
               for e in exts]
     age = float(snap["age"]) if snap else None
     return {
-        "scope": sc["kind"],
+        "scope": sc["kind"], "extension": sc.get("filtered"), "options": options(full),
         "snapshot": {"captured_at": iso(snap["captured_at"]) if snap else None, "ok": bool(snap["ok"]) if snap else False,
                      "error": snap["error"] if snap else "no_snapshot", "age_seconds": round(age, 1) if age is not None else None,
                      "stale": age is None or age > 15 or not snap["ok"]},
@@ -184,7 +203,8 @@ def _cdr_rows(lo, hi):
 
 
 def stats(args, user_id=None, rows=None) -> dict:
-    sc = scope(user_id)
+    full = scope(user_id)
+    sc = narrow(full, args.get("extension"))
     today = riyadh.now().date()
     start = _date(args.get("from"), "from", today)
     end = _date(args.get("to"), "to", start)
@@ -238,7 +258,8 @@ def stats(args, user_id=None, rows=None) -> dict:
     users = sorted(per_user.values(), key=lambda u: -(u["outbound"] + u["inbound_answered"] + u["internal"]))
     for u in users:
         u["handled"] = u["outbound"] + u["inbound_answered"] + u["internal"]
-    return {"scope": sc["kind"], "from": start.isoformat(), "to": end.isoformat(), "granularity": gran,
+    return {"scope": sc["kind"], "extension": sc.get("filtered"), "options": options(full),
+            "from": start.isoformat(), "to": end.isoformat(), "granularity": gran,
             "truncated": len(cdr) > MAX_CDR_ROWS, "users": users, "series": list(series.values()),
             "totals": {"handled": sum(u["handled"] for u in users), "outbound": sum(u["outbound"] for u in users),
                        "outbound_answered": sum(u["outbound_answered"] for u in users),

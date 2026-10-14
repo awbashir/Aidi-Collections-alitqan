@@ -34,6 +34,8 @@ import {
   putClintsDelinquencyByID,
 } from "../store";
 
+import { mainStatusesFor, subStatusesOf } from "@/utils/commentStatusTree";
+
 // Types
 import type { FieldProps } from "formik";
 
@@ -54,6 +56,7 @@ interface NotificationSettingProps {
 
 interface ProfileFormModel {
   comment_status_id: string;
+  comment_sub_status_id?: string;
   contactMethod_id: string;
   contact: string;
   nextContactTime: string;
@@ -128,9 +131,20 @@ const Comments = ({ data }: NotificationSettingProps) => {
   const PHONE_METHOD_ID = "b55aa031-9349-4a3a-ad14-1f9d6821a342";
   const MOBILE_METHOD_ID = "ff081c7e-4500-4a75-ae36-580f2ae90834";
 
+  // 0068: the main statuses this case may use (its contract's + the general ones, none
+  // deleted); the last note's status is only preselected while it is still one of them
+  const liveMainIds = new Set(
+    mainStatusesFor(commentStatus, clint?.contract?.id).map((s: any) => s.id)
+  );
+
   // Form Initial Values
   const initialValues = {
-    comment_status_id: lastComment?.comment_status_id || "",
+    comment_status_id:
+      lastComment?.comment_status_id &&
+      liveMainIds.has(lastComment.comment_status_id)
+        ? lastComment.comment_status_id
+        : "",
+    comment_sub_status_id: "",
     contactMethod_id: MOBILE_METHOD_ID,
     contact: "",
     nextContactTime: "",
@@ -258,10 +272,23 @@ const Comments = ({ data }: NotificationSettingProps) => {
     delete sendValues.nextContactDate;
     delete sendValues.contact;
     delete sendValues.delinquencyReason_id;
+    // 0068: the optional sub-status is sent only when one was chosen
+    if (!sendValues.comment_sub_status_id) delete sendValues.comment_sub_status_id;
 
     // Post the comment
     dispatch(postComments(sendValues))
-      .then(() => {
+      .then((action: any) => {
+        // a refused note comes back as 201 {status: false, message} (e.g. a deleted status)
+        if (action?.payload?.status === false) {
+          toast.push(
+            <Notification
+              title={action.payload.message || t("comments.addFail")}
+              type="danger"
+            />,
+            { placement: "top-center" }
+          );
+          return;
+        }
         dispatch(getComments(clint?.id));
         toast.push(
           <Notification title={t("comments.addSuccess")} type="success" />,
@@ -313,6 +340,8 @@ const Comments = ({ data }: NotificationSettingProps) => {
     value: option.id,
     reachability_id: option.CommentReachability_id,
     contract_id: option.contract_id,
+    parent_id: option.parent_id ?? null,
+    deleted_at: option.deleted_at ?? null,
   }));
 
   const filteredCallsOptions = filteredCalls?.map((option: any) => ({
@@ -496,24 +525,69 @@ const Comments = ({ data }: NotificationSettingProps) => {
                             field={field}
                             form={form}
                             isLoading={commentStatusLoading}
-                            options={commentsStatusOptions?.filter(
+                            options={mainStatusesFor(
+                              commentsStatusOptions,
+                              clint?.contract?.id
+                            ).filter(
                               (status) =>
-                                status.contract_id === clint?.contract?.id &&
                                 values.comment_reachability_id ===
-                                  status.reachability_id
+                                status.reachability_id
                             )}
                             value={commentsStatusOptions?.filter(
                               (option) =>
                                 option.value === values.comment_status_id
                             )}
-                            onChange={(option) =>
-                              form.setFieldValue(field.name, option?.value)
-                            }
+                            onChange={(option) => {
+                              form.setFieldValue(field.name, option?.value);
+                              form.setFieldValue("comment_sub_status_id", "");
+                            }}
                             placeholder={t("select")}
                           />
                         )}
                       </Field>
                     </FormRow>
+
+                    {/* Sub-status (0068): only when the chosen status has some */}
+                    {subStatusesOf(
+                      commentsStatusOptions,
+                      values.comment_status_id
+                    ).length > 0 && (
+                      <FormRow
+                        border={false}
+                        name="comment_sub_status_id"
+                        label={t("p7.status.subStatus")}
+                        {...validatorProps}
+                      >
+                        <Field name="comment_sub_status_id">
+                          {({ field, form }: FieldProps) => {
+                            const subOptions = subStatusesOf(
+                              commentsStatusOptions,
+                              values.comment_status_id
+                            );
+                            return (
+                              <Select
+                                field={field}
+                                form={form}
+                                isClearable
+                                options={subOptions}
+                                value={subOptions.filter(
+                                  (option) =>
+                                    option.value ===
+                                    values.comment_sub_status_id
+                                )}
+                                onChange={(option) =>
+                                  form.setFieldValue(
+                                    field.name,
+                                    option?.value || ""
+                                  )
+                                }
+                                placeholder={t("p7.status.subStatusOptional")}
+                              />
+                            );
+                          }}
+                        </Field>
+                      </FormRow>
+                    )}
 
                     {/* Next Contact Date */}
                     <FormRow

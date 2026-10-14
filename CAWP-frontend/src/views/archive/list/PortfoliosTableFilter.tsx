@@ -31,7 +31,13 @@ type Option = {
   label: string;
   color: string;
 };
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  asSelection,
+  selectionIds,
+  selectionKey,
+} from "@/utils/v2/listRestore";
+import { mainStatusesFor } from "@/utils/commentStatusTree";
 
 const { Control } = components;
 
@@ -76,14 +82,31 @@ const PortfoliosTableFilter = () => {
   const search = useAppSelector((state) => state.archiveList.data.search);
 
   const { t } = useTranslation();
-  const [selectedContracts_, setSelectedContracts_] = useState([]);
-  const [selectedPortfolios_, setSelectedPortfolios_] = useState();
+  /* The panel starts from the filters the list applies (kept in the store and
+   * the URL hash), so after coming back from a case it shows them. */
+  const applied = useAppSelector((state) => state.archiveList.data.filterData);
+  const [selectedContracts_, setSelectedContracts_] = useState(
+    () => asSelection(applied?.selectedContracts_Qkey) ?? []
+  );
+  const [selectedPortfolios_, setSelectedPortfolios_] = useState(() =>
+    asSelection(applied?.SelectedPortfolios_Qkey)
+  );
   const [selectedReachability_, setSelectedReachability_] = useState();
-  const [selectedCommentStatus_, setSelectedCommentStatus_] = useState();
-  const [selectedUsers_, setSelectedUsers_] = useState();
-  const [selectedAccountNumber_, setSelectedAccountNumber_] = useState();
-  const [selectedArchiveBy_, setSelectedArchiveBy_] = useState();
-  const [selectedResons_, setSelectedResons_] = useState();
+  const [selectedCommentStatus_, setSelectedCommentStatus_] = useState(() =>
+    asSelection(applied?.SelectedCommentStatus_Qkey)
+  );
+  const [selectedUsers_, setSelectedUsers_] = useState(() =>
+    asSelection(applied?.selectedUsers_Qkey)
+  );
+  const [selectedAccountNumber_, setSelectedAccountNumber_] = useState(
+    () => applied?.selectedAccountNumber_Qkey
+  );
+  const [selectedArchiveBy_, setSelectedArchiveBy_] = useState(() =>
+    asSelection(applied?.selectedArchiveBy_Qkey)
+  );
+  const [selectedResons_, setSelectedResons_] = useState(() =>
+    asSelection(applied?.SelectedResons_Qkey)
+  );
 
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -147,8 +170,17 @@ const PortfoliosTableFilter = () => {
   }, []);
 
   const [filteredComment_status, setFilteredComment_status] = useState([]);
+  /* Clear the statuses only when the reachability or contract selection
+   * really changes (not on mount, which would wipe the restored ones). */
+  const statusScope = `${selectionKey(selectedReachability_)}|${selectionKey(
+    selectedContracts_
+  )}`;
+  const lastStatusScope = useRef(statusScope);
   useEffect(() => {
-    setSelectedCommentStatus_([]);
+    if (lastStatusScope.current !== statusScope) {
+      lastStatusScope.current = statusScope;
+      setSelectedCommentStatus_([]);
+    }
     if (selectedReachability_?.length > 0) {
       const commentstatus_ = comment_status.filter((status) =>
         selectedReachability_.some(
@@ -161,7 +193,7 @@ const PortfoliosTableFilter = () => {
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedReachability_, selectedContracts_]);
+  }, [statusScope, comment_status]);
 
   const filterData = useAppSelector(
     (state) => state.archiveList.data.filterData
@@ -244,6 +276,7 @@ const PortfoliosTableFilter = () => {
                     <MyFilter
                       options={contracts || []}
                       filter={setSelectedContracts_}
+                      selectedIds={selectionIds(selectedContracts_)}
                       labelField={{
                         plural: "nav.contracts.contracts",
                         singular: "nav.contracts.singular",
@@ -264,6 +297,7 @@ const PortfoliosTableFilter = () => {
                             )
                       }
                       filter={setSelectedPortfolios_}
+                      selectedIds={selectionIds(selectedPortfolios_)}
                       labelField={{
                         plural: "nav.portfolio.portfolio",
                         singular: "nav.portfolio.singular",
@@ -289,10 +323,9 @@ const PortfoliosTableFilter = () => {
                   </div>
                   <div>
                     <MyFilter
-                      options={filteredComment_status.filter(
-                        (item) => item.contract_id === selectedContracts_[0]?.id
-                      )}
+                      options={mainStatusesFor(filteredComment_status, selectedContracts_[0]?.id)}
                       filter={setSelectedCommentStatus_}
+                      selectedIds={selectionIds(selectedCommentStatus_)}
                       labelField={{
                         plural: "Clientstatus",
                         singular: "status",
@@ -309,6 +342,7 @@ const PortfoliosTableFilter = () => {
                     <MyFilter
                       options={users}
                       filter={setSelectedUsers_}
+                      selectedIds={selectionIds(selectedUsers_)}
                       labelField={{
                         plural: "users.title",
                         singular: "users.user",
@@ -320,6 +354,7 @@ const PortfoliosTableFilter = () => {
                   <div>
                     <MyField
                       filter={setSelectedAccountNumber_}
+                      initialValue={selectedAccountNumber_}
                       labelField={{
                         title: "clients.accountNumber",
                       }}
@@ -331,6 +366,7 @@ const PortfoliosTableFilter = () => {
                     <MyFilter
                       options={users}
                       filter={setSelectedArchiveBy_}
+                      selectedIds={selectionIds(selectedArchiveBy_)}
                       labelField={{
                         plural: "users.title",
                         singular: "users.user",
@@ -344,6 +380,7 @@ const PortfoliosTableFilter = () => {
                     <MyFilter
                       options={archive_reason}
                       filter={setSelectedResons_}
+                      selectedIds={selectionIds(selectedResons_)}
                       labelField={{
                         plural: "ArchiveReasons",
                         singular: "ArchiveReason",

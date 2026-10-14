@@ -1,4 +1,11 @@
 import { useEffect, useCallback, useMemo, useState } from "react";
+import useListScrollRestore from "@/utils/hooks/useListScrollRestore";
+import {
+  appliedDateRange,
+  asSelection,
+  localDate,
+  selectionIds,
+} from "@/utils/v2/listRestore";
 import { useTranslation } from "react-i18next";
 import {
   setTableData,
@@ -52,7 +59,10 @@ const TableOptions = () => {
   const search = useAppSelector((state) => state.paymentsList.data.search);
 
   const [branches, setBranches] = useState([]);
-  const [selectedBranches_, setSelectedBranches_] = useState([]);
+  /* Starts from the branch the list applies (kept when coming back). */
+  const [selectedBranches_, setSelectedBranches_] = useState(
+    () => asSelection(pramas?.customeFilterBranchesValue2) ?? []
+  );
   const current = new Date(); // get current date
   const firstDayOfMonth = new Date(
     current.getFullYear(),
@@ -64,10 +74,12 @@ const TableOptions = () => {
     current.getMonth() + 1,
     0
   );
-  const [selectedMoveDate, setSelectedMoveDate] = useState([
-    formatDate(firstDayOfMonth),
-    formatDate(lastDayOfMonth),
-  ]);
+  /* Start from the range the list applies, so coming back from a case does
+   * not reset it to the default. */
+  const appliedRange = appliedDateRange(pramas?.customeFilterMoveDateValue);
+  const [selectedMoveDate, setSelectedMoveDate] = useState(
+    () => appliedRange ?? [formatDate(firstDayOfMonth), formatDate(lastDayOfMonth)]
+  );
   const fetchBranches = async () => {
     const response = await apiGetBranches();
     setBranches(response.data.branches);
@@ -83,8 +95,8 @@ const TableOptions = () => {
 
   useEffect(() => {
     if (
-      JSON.stringify(pramas?.customeFilterBranchesValue2) !==
-        JSON.stringify(selectedBranches_) ||
+      JSON.stringify(pramas?.customeFilterBranchesValue2 ?? []) !==
+        JSON.stringify(selectionIds(selectedBranches_) ?? []) ||
       JSON.stringify(pramas?.customeFilterMoveDateValue) !==
         JSON.stringify(selectedMoveDate)
     ) {
@@ -109,6 +121,7 @@ const TableOptions = () => {
           <MyFilter
             options={branches}
             filter={setSelectedBranches_}
+            selectedIds={selectionIds(selectedBranches_)}
             labelField={{
               plural: "الفروع",
               singular: "الفرع",
@@ -119,8 +132,8 @@ const TableOptions = () => {
           <FilterDate
             filter={setSelectedMoveDate}
             label="تاريخ السداد"
-            defulltFrom={firstDayOfMonth}
-            defulltTo={lastDayOfMonth}
+            defulltFrom={appliedRange ? localDate(appliedRange[0]) : firstDayOfMonth}
+            defulltTo={appliedRange ? localDate(appliedRange[1]) : lastDayOfMonth}
           />
         </div>
       </div>
@@ -153,6 +166,9 @@ const PortfoliosTable = () => {
   const dispatch = useAppDispatch();
   const data = useAppSelector((state) => state.paymentsList.data.list);
   const loading = useAppSelector((state) => state.paymentsList.data.loading);
+  /* Rows open the case in this tab; the list keeps its scroll for the way
+   * back. */
+  const { rootRef: scrollRootRef } = useListScrollRestore({ loading });
   const { page, pageSize, sort, query, total, totalAmount } = useAppSelector(
     (state) => state.paymentsList.data.tableData
   );
@@ -357,9 +373,11 @@ const PortfoliosTable = () => {
 
   return (
     <>
-      <div className="mt-5">
+      <div className="mt-5" ref={scrollRootRef}>
         <TableOptions />
         <DataTable
+          clickAbility
+          clintID="clint.id"
           columns={columns}
           data={data}
           skeletonAvatarColumns={[0]}

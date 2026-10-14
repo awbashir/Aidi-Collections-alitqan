@@ -28,12 +28,24 @@ import {
   CellContext,
 } from "@tanstack/react-table";
 import type { SkeletonProps } from "@/components/ui/Skeleton";
-import type { ForwardedRef, ChangeEvent, CSSProperties } from "react";
+import type {
+  ForwardedRef,
+  ChangeEvent,
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import type { CheckboxProps } from "@/components/ui/Checkbox";
 import TFoot from "../ui/Table/TFoot";
 import { NumericFormat } from "react-number-format";
 import { useTranslation } from "react-i18next";
 import { useConfig } from "@/components/ui/ConfigProvider";
+import { useNavigate } from "react-router-dom";
+import {
+  openCaseInApp,
+  shouldIgnoreRowClick,
+  type RowActivateEvent,
+} from "@/utils/v2/rowNavigation";
 
 const PriceAmount = ({ amount = 0 }: { amount?: number }) => {
   return (
@@ -82,8 +94,15 @@ type DataTableProps<T> = {
     pageSize: number;
     displayTotal?: boolean;
   };
+  /** Rows open their case (`clintID` path on the row) in the same tab;
+   *  Ctrl/Cmd/Shift- or middle-click opens a new tab. */
   clickAbility?: boolean;
   clintID?: string;
+  /** Called when a row is clicked (or Enter pressed on it) anywhere that is
+   *  not a control inside it. Takes precedence over `clickAbility`. */
+  onRowClick?: (row: T, event: RowActivateEvent) => void;
+  /** Which rows react to clicks (default: all, when clicks are on). */
+  isRowClickable?: (row: T) => boolean;
   /** Marks the row whose `id` matches (e.g. the case last opened from this
    *  list, restored from the URL hash) with a leading azure rail. */
   activeRowId?: string | number;
@@ -188,6 +207,8 @@ function _DataTable<T>(
     },
     clickAbility = false,
     clintID = "id",
+    onRowClick,
+    isRowClickable,
     activeRowId,
     sortState,
     footerTotalAmount = { status: false, label: "", value: 0, place: 0 },
@@ -195,6 +216,7 @@ function _DataTable<T>(
 
   const { t } = useTranslation();
   const { mode } = useConfig();
+  const navigate = useNavigate();
   const scheme = mode === "dark" ? "dark" : "light";
 
   const { pageSize, total } = pagingData;
@@ -342,6 +364,31 @@ function _DataTable<T>(
     resetSelected,
   }));
 
+  /* Row clicks: the case id for `clickAbility`, read from the `clintID`
+   * path (e.g. "clint.id"). */
+  const rowCaseId = (original: T): unknown =>
+    clintID
+      .split(".")
+      // eslint-disable-next-line  @typescript-eslint/no-explicit-any
+      .reduce((acc: any, prop) => acc?.[prop], original);
+
+  const canClickRow = (original: T): boolean => {
+    if (!onRowClick && !clickAbility) return false;
+    if (isRowClickable && !isRowClickable(original)) return false;
+    if (onRowClick) return true;
+    const id = rowCaseId(original);
+    return id !== undefined && id !== null && id !== "";
+  };
+
+  const activateRow = (original: T, event: RowActivateEvent) => {
+    if (!canClickRow(original) || shouldIgnoreRowClick(event)) return;
+    if (onRowClick) {
+      onRowClick(original, event);
+      return;
+    }
+    openCaseInApp(navigate, String(rowCaseId(original)), event);
+  };
+
   const rows = table.getRowModel().rows;
   const columnCount = (finalColumns as Array<T>).length;
   const isEmpty = !loading && data.length === 0;
@@ -439,28 +486,39 @@ function _DataTable<T>(
                 activeRowId !== "" &&
                 String(original?.id) === String(activeRowId);
               const tone = rawColor ? statusTint(rawColor, scheme) : null;
+              const rowData = row.original as T;
+              const clickable = canClickRow(rowData);
 
               return (
                 <Tr
-                  onClick={() => {
-                    if (clickAbility) {
-                      const propertyName = clintID;
-                      const properties = propertyName.split(".");
-                      const client_id = properties.reduce(
-                        (acc, prop) => acc?.[prop],
-                        row.original
-                      );
-                      window.open(
-                        `/clients/details/details?id=${client_id}`,
-                        "_blank"
-                      );
-                    }
-                  }}
+                  onClick={
+                    clickable
+                      ? (e: RowActivateEvent) => activateRow(rowData, e)
+                      : undefined
+                  }
+                  onAuxClick={
+                    clickable
+                      ? (e: ReactMouseEvent<HTMLElement>) => {
+                          if (e.button === 1) activateRow(rowData, e);
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    clickable
+                      ? (e: ReactKeyboardEvent<HTMLElement>) => {
+                          if (e.key === "Enter" && e.target === e.currentTarget) {
+                            activateRow(rowData, e);
+                          }
+                        }
+                      : undefined
+                  }
+                  tabIndex={clickable ? 0 : undefined}
                   key={row.id}
                   className={classNames(
                     selected && "table-row-selected",
                     current && "table-row-current",
-                    clickAbility && "cursor-pointer"
+                    clickable &&
+                      "cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-azure-500"
                   )}
                   aria-current={current ? "true" : undefined}
                   style={
@@ -486,6 +544,14 @@ function _DataTable<T>(
                     return (
                       <Td
                         key={cell.id}
+                        /* The selection and row-action cells are controls,
+                           even between their buttons. */
+                        data-no-row-click={
+                          cell.column.id === "select" ||
+                          cell.column.id === "action"
+                            ? ""
+                            : undefined
+                        }
                         className={classNames(
                           cell.column.id === "select" && "w-11",
                           meta?.isNumeric && "text-end tabular-nums",

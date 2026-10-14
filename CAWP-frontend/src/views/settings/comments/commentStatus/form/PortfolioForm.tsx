@@ -1,13 +1,12 @@
-import { forwardRef, useState } from "react";
+import { forwardRef } from "react";
 import { FormContainer } from "@/components/ui/Form";
 import Button from "@/components/ui/Button";
 import hooks from "@/components/ui/hooks";
-import Fields from "./Fields";
+import Fields, { DEFAULT_STATUS_COLOR } from "./Fields";
+import DeleteStatusButton from "../list/components/DeleteStatusButton";
 import StickyFooter from "@/components/shared/StickyFooter";
-import ConfirmDialog from "@/components/shared/ConfirmDialog";
 import { Form, Formik, FormikProps } from "formik";
 import cloneDeep from "lodash/cloneDeep";
-import { HiOutlineTrash } from "react-icons/hi";
 import { AiOutlineSave } from "react-icons/ai";
 import * as Yup from "yup";
 import { useTranslation } from "react-i18next";
@@ -19,15 +18,16 @@ type FormikRef = FormikProps<any>;
 type InitialData = {
   id: string;
   name: string;
-  is_active: boolean;
-  contract_id: string;
-  CommentReachability_id: string;
+  is_active: boolean | string;
+  /** null = a general status, usable on every contract (0068) */
+  contract_id: string | null;
+  CommentReachability_id: string | null;
   color: string;
+  /** a sub-status's main status (0068) */
+  parent_id?: string | null;
 };
 
-export type FormModel = Omit<InitialData, "tags"> & {
-  tags: { label: string; value: string }[] | string[];
-};
+export type FormModel = InitialData;
 
 export type SetSubmitting = (isSubmitting: boolean) => void;
 
@@ -38,71 +38,30 @@ type OnDelete = (callback: OnDeleteCallback) => void;
 type PortfolioForm = {
   initialData?: InitialData;
   type: "edit" | "new";
+  contracts?: { id: string; name: string }[];
+  reachability?: { id: string; name: string }[];
   onDiscard?: () => void;
   onDelete?: OnDelete;
+  /** edit page: after the status was (soft) deleted */
+  onDeleted?: () => void;
   onFormSubmit: (formData: FormModel, setSubmitting: SetSubmitting) => void;
 };
 
 const { useUniqueId } = hooks;
 
+// 0068: the contract is optional (none = a general status) and so is the parent;
+// the colour defaults to white
 const validationSchema = Yup.object().shape({
   name: Yup.string().required(t("requiredField")),
-  contract_id: Yup.string().required(t("requiredField")),
-  CommentReachability_id: Yup.string().required(t("requiredField")),
+  contract_id: Yup.string().nullable(),
+  parent_id: Yup.string().nullable(),
+  CommentReachability_id: Yup.string().nullable().required(t("requiredField")),
   is_active: Yup.string().required(t("requiredField")),
-  color: Yup.string().required(t("requiredField")),
+  color: Yup.string().nullable(),
 });
-
-const DeleteProductButton = ({ onDelete }: { onDelete: OnDelete }) => {
-  const [dialogOpen, setDialogOpen] = useState(false);
-
-  const onConfirmDialogOpen = () => {
-    setDialogOpen(true);
-  };
-
-  const onConfirmDialogClose = () => {
-    setDialogOpen(false);
-  };
-
-  const handleConfirm = () => {
-    onDelete?.(setDialogOpen);
-  };
-
-  return (
-    <>
-      <Button
-        className="text-red-600"
-        variant="plain"
-        size="sm"
-        icon={<HiOutlineTrash />}
-        type="button"
-        onClick={onConfirmDialogOpen}
-      >
-        {t("delete")}
-      </Button>
-      <ConfirmDialog
-        isOpen={dialogOpen}
-        type="danger"
-        title={t("portfolios.delete")}
-        confirmText={t("confirm") as string}
-        cancelText={t("cancel") as string}
-        confirmButtonColor="red-600"
-        onClose={onConfirmDialogClose}
-        onRequestClose={onConfirmDialogClose}
-        onCancel={onConfirmDialogClose}
-        onConfirm={handleConfirm}
-      >
-        <p>{t("portfolios.deleteConfirm")}</p>
-      </ConfirmDialog>
-    </>
-  );
-};
 
 const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
   const {
-    nationalities,
-    branches,
-    roles,
     contracts,
     reachability,
     type,
@@ -110,13 +69,14 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
       id: "",
       name: "",
       is_active: "",
-      contract_id: "",
-      CommentReachability_id: "",
-      color: "",
+      contract_id: null,
+      CommentReachability_id: null,
+      color: DEFAULT_STATUS_COLOR,
+      parent_id: null,
     },
     onFormSubmit,
     onDiscard,
-    onDelete,
+    onDeleted,
   } = props;
 
   const { t } = useTranslation();
@@ -127,10 +87,16 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
         innerRef={ref}
         initialValues={{
           ...initialData,
+          parent_id: initialData.parent_id ?? null,
+          color: initialData.color || DEFAULT_STATUS_COLOR,
         }}
         validationSchema={validationSchema}
         onSubmit={(values: FormModel, { setSubmitting }) => {
           const formData = cloneDeep(values);
+          // empty selects are sent as null: no contract = general, no parent = main status
+          formData.contract_id = formData.contract_id || null;
+          formData.parent_id = formData.parent_id || null;
+          formData.color = formData.color || DEFAULT_STATUS_COLOR;
 
           onFormSubmit?.(formData, setSubmitting);
         }}
@@ -155,8 +121,14 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
                 stickyClass="border-t border-gray-300 bg-white dark:border-night-border dark:bg-night-card"
               >
                 <div>
-                  {type === "edit" && (
-                    <DeleteProductButton onDelete={onDelete as OnDelete} />
+                  {type === "edit" && initialData.id && (
+                    <DeleteStatusButton
+                      variant="button"
+                      id={initialData.id}
+                      name={initialData.name}
+                      isMain={!initialData.parent_id}
+                      onDeleted={() => onDeleted?.()}
+                    />
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

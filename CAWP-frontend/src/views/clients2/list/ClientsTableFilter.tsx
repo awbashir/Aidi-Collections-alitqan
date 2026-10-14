@@ -78,13 +78,24 @@ const ClientsTableFilter = () => {
   const [selectedPortfolios_, setSelectedPortfolios_] = useState();
   const [selectedReachability_, setSelectedReachability_] = useState();
   const [selectedCommentStatus_, setSelectedCommentStatus_] = useState();
-  const [selectedMobileNumber_, setSelectedMobileNumber_] = useState();
+  /* The search fields start from what the list applies (kept in the store and
+   * the URL hash), so they still show it after coming back from a case. */
+  const applied = useAppSelector(
+    (state) => state.clientsList2.data.filterData
+  );
+  const [selectedMobileNumber_, setSelectedMobileNumber_] = useState(
+    () => applied?.customeFilterMobileNumberValue
+  );
   const [selectedUsers_, setSelectedUsers_] = useState();
   const [selectedArchiveBy_, setSelectedArchiveBy_] = useState();
   const [selectedResons_, setSelectedResons_] = useState();
   const [selectedBranches_, setSelectedBranches_] = useState();
-  const [selectedAttribute_, setSelectedAttribute_] = useState();
-  const [selectedAccountNumber_, setSelectedAccountNumber_] = useState();
+  const [selectedAttribute_, setSelectedAttribute_] = useState(
+    () => applied?.customeFilterAttributeValue
+  );
+  const [selectedAccountNumber_, setSelectedAccountNumber_] = useState(
+    () => applied?.customeFilrerAccountNumberValue
+  );
   const [selectedAmount_, setSelectedAmount_] = useState();
 
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -247,6 +258,7 @@ useEffect(() => {
                  <div>
                     <MyField
                       filter={setSelectedMobileNumber_}
+                      initialValue={selectedMobileNumber_}
                       labelField={{
                         title: "رقم الجوال",
                       }}
@@ -266,6 +278,7 @@ useEffect(() => {
                   <div>
                     <MyField
                       filter={setSelectedAttribute_}
+                      initialValue={selectedAttribute_}
                       labelField={{
                         title: "بحث",
                       }}
@@ -276,6 +289,7 @@ useEffect(() => {
                    <div>
                     <MyField
                       filter={setSelectedAccountNumber_}
+                      initialValue={selectedAccountNumber_}
                       labelField={{
                         title: "رقم الحساب",
                       }}

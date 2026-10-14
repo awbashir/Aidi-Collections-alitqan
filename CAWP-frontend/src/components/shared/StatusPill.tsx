@@ -42,9 +42,22 @@ const TONE_CLASS: Record<StatusTone, string> = {
     neutral: 'tag-neutral',
 }
 
-const Glyph = ({ tone, color }: { tone: StatusTone; color?: string }) => {
+const Glyph = ({
+    tone,
+    color,
+    ring,
+}: {
+    tone: StatusTone
+    color?: string
+    ring?: string
+}) => {
     const style: CSSProperties | undefined = color
-        ? { backgroundColor: color, borderColor: color }
+        ? {
+              backgroundColor: color,
+              borderColor: color,
+              // a white dot needs a ring to be seen at all
+              ...(ring ? { boxShadow: `0 0 0 1px ${ring}` } : {}),
+          }
         : undefined
 
     switch (tone) {
@@ -111,6 +124,8 @@ const StatusPill = (props: StatusPillProps) => {
         ...(derived
             ? { backgroundColor: derived.pill, color: derived.text }
             : {}),
+        // white / near-white status colours: a neutral pill with a border
+        ...(derived?.border ? { border: `1px solid ${derived.border}` } : {}),
     }
 
     return (
@@ -124,7 +139,11 @@ const StatusPill = (props: StatusPillProps) => {
                 className
             )}
         >
-            <Glyph tone={tone} color={derived ? derived.rail : undefined} />
+            <Glyph
+                tone={tone}
+                color={derived ? derived.dot || derived.rail : undefined}
+                ring={derived?.border}
+            />
             <span className="truncate">{children}</span>
         </span>
     )

@@ -8,12 +8,15 @@
  *   extension, by hour (one day) or by day, with a chart per user and a chart over time.
  *
  * The API decides the scope: SuperAdmin every extension, a supervisor their team's, anyone
- * else their own. Extensions are attributed to their current owner.
+ * else their own. The user filter (one extension) narrows both sections; its choices are the
+ * scope's own extensions (`options`), and the API refuses any other (403 not_in_scope).
+ * Extensions are attributed to their current owner.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import classNames from 'classnames'
 import Input from '@/components/ui/Input'
+import Select from '@/components/ui/Select'
 import Table from '@/components/ui/Table'
 import Chart from '@/components/shared/Chart'
 import { Ltr } from '@/components/v2/Display'
@@ -21,7 +24,7 @@ import { EmptyState, ErrorState, SkeletonLines, SkeletonRows } from '@/component
 import { PageHead, TableFrame } from '@/components/v2/ListParts'
 import { Segmented } from '@/views/phase1/followUps/parts'
 import { callMonitorApi, describeP5Error } from '@/services/v2'
-import type { MonitorLive, MonitorStats, Translate } from '@/services/v2'
+import type { MonitorAgent, MonitorLive, MonitorStats, Option, Translate } from '@/services/v2'
 import { useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { Card, Fact, Notice } from '../parts'
@@ -45,7 +48,7 @@ const agentLabel = (a: { name: string | null; extension: string }) => (a.name ? 
 
 /* ------------------------------------------------------------------ live */
 
-function useLive() {
+function useLive(ext: string) {
     const [data, setData] = useState<MonitorLive | null>(null)
     const [error, setError] = useState<unknown>(null)
     const [fetchedAt, setFetchedAt] = useState(0)
@@ -58,7 +61,7 @@ function useLive() {
             ctrl.current?.abort()
             ctrl.current = new AbortController()
             try {
-                const res = await callMonitorApi.live(ctrl.current.signal)
+                const res = await callMonitorApi.live({ extension: ext || undefined }, ctrl.current.signal)
                 if (!alive) return
                 setData(res)
                 setError(null)
@@ -78,7 +81,7 @@ function useLive() {
             if (timer.current) window.clearInterval(timer.current)
             window.clearInterval(ticker)
         }
-    }, [])
+    }, [ext])
     const elapsed = fetchedAt ? (Date.now() - fetchedAt) / 1000 : 0
     return { data, error, elapsed }
 }
@@ -90,9 +93,13 @@ const STATE_TONE: Record<string, string> = {
     connecting: 'bg-gray-100 text-gray-700 dark:bg-night-page dark:text-night-body',
 }
 
-const LiveSection = () => {
+const LiveSection = ({ ext, onOptions }: { ext: string; onOptions: (o: MonitorAgent[]) => void }) => {
     const { t } = useTranslation()
-    const { data, error, elapsed } = useLive()
+    const { data, error, elapsed } = useLive(ext)
+    useEffect(() => {
+        if (data) onOptions(data.options)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data?.options.length])
     if (error && !data) return <ErrorState error={error} onRetry={() => window.location.reload()} describe={describe} />
     if (!data) return <SkeletonLines rows={5} />
     const stale = data.snapshot.stale
@@ -188,12 +195,15 @@ const LiveSection = () => {
 
 /* ------------------------------------------------------------------ stats */
 
-const StatsSection = () => {
+const StatsSection = ({ ext }: { ext: string }) => {
     const { t } = useTranslation()
     const [from, setFrom] = useState(riyadhToday())
     const [to, setTo] = useState(riyadhToday())
     const [gran, setGran] = useState<'hour' | 'day'>('hour')
-    const q = useV2Query((signal) => callMonitorApi.stats({ from, to, granularity: gran }, signal), [from, to, gran])
+    const q = useV2Query(
+        (signal) => callMonitorApi.stats({ from, to, granularity: gran, extension: ext || undefined }, signal),
+        [from, to, gran, ext]
+    )
     const data: MonitorStats | undefined = q.data
     const byUser = useMemo(() => {
         const users = (data?.users || []).slice(0, 20)
@@ -365,14 +375,34 @@ const StatsSection = () => {
 
 const CallMonitor = () => {
     const { t } = useTranslation()
+    const [ext, setExt] = useState('')
+    const [agents, setAgents] = useState<MonitorAgent[]>([])
+    const userOptions: Option[] = [{ value: '', label: t('p5.monitor.allUsers') }, ...agents.map((a) => ({ value: a.extension, label: agentLabel(a) }))]
     return (
         <div data-testid="p5-monitor" className="flex flex-col gap-4">
             <PageHead title={t('p5.monitor.title')} subtitle={t('p5.monitor.subtitle')} />
+            <div className="flex flex-wrap items-end gap-3" data-testid="p5-monitor-user-filter">
+                <label className="flex w-full max-w-[340px] flex-col gap-1 text-[12.5px]">
+                    <span className="text-gray-600">{t('p5.monitor.user')}</span>
+                    <Select
+                        size="sm"
+                        isSearchable
+                        options={userOptions}
+                        value={userOptions.find((o) => o.value === ext) || userOptions[0]}
+                        onChange={(o) => setExt((o as Option | null)?.value || '')}
+                    />
+                </label>
+                {ext && (
+                    <button type="button" className="mb-1 text-[12.5px] font-extrabold text-navy-600 underline dark:text-gray-100" onClick={() => setExt('')}>
+                        {t('p5.monitor.clearUser')}
+                    </button>
+                )}
+            </div>
             <Card lead title={t('p5.monitor.liveTitle')}>
-                <LiveSection />
+                <LiveSection ext={ext} onOptions={setAgents} />
             </Card>
             <Card title={t('p5.monitor.statsTitle')}>
-                <StatsSection />
+                <StatsSection ext={ext} />
             </Card>
         </div>
     )

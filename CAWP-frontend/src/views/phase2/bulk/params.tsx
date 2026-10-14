@@ -21,6 +21,7 @@ import { notesCallback, str } from './paramsLogic'
 import type { Params } from './paramsLogic'
 import type { ReactNode } from 'react'
 import { Segmented } from '@/views/phase1/followUps/parts'
+import { mainStatusesFor } from '@/utils/commentStatusTree'
 
 const selectProps = { size: 'sm' as const, menuPosition: 'fixed' as const }
 
@@ -285,9 +286,10 @@ const NotesForm = ({ value, onChange }: FormProps) => {
     }, [])
     const ui = value.__ui || {}
     const setUi = (patch: Record<string, string>) => onChange({ ...value, __ui: { ...ui, ...patch } })
-    /* Same rule as the legacy note dialogs: the contract, then the reachability, then the status. */
-    const statusOptions = statuses.filter(
-        (s) => (!ui.contract || s.contract_id === ui.contract) && (!value.comment_reachability_id || s.reachability_id === value.comment_reachability_id)
+    /* Same rule as the legacy note dialogs: the contract, then the reachability, then the status.
+       0068: general statuses fit every contract; sub-statuses and deleted statuses are not offered. */
+    const statusOptions = mainStatusesFor(statuses, ui.contract).filter(
+        (s) => !value.comment_reachability_id || s.reachability_id === value.comment_reachability_id
     )
     return (
         <>

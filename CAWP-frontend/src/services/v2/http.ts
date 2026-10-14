@@ -109,7 +109,7 @@ export function newIdempotencyKey(): string {
 type Query = Record<string, string | number | boolean | undefined | null | Array<string | number>>
 
 export type V2RequestOptions = {
-    method?: 'get' | 'post' | 'put' | 'patch'
+    method?: 'get' | 'post' | 'put' | 'patch' | 'delete'
     params?: Query
     data?: unknown
     /** Required on every mutation. One key per user action; reuse it for retries. */
@@ -202,3 +202,7 @@ export const v2Put = <T>(url: string, data: unknown, idempotencyKey: string) =>
 /** Phase 5: `PATCH` (campaign edits). Same rules as the other mutations. */
 export const v2Patch = <T>(url: string, data: unknown, idempotencyKey: string) =>
     v2Request<T>(url, { method: 'patch', data, idempotencyKey })
+
+/** `DELETE` (payment attachments). Same rules as the other mutations. */
+export const v2Delete = <T>(url: string, idempotencyKey: string) =>
+    v2Request<T>(url, { method: 'delete', idempotencyKey })

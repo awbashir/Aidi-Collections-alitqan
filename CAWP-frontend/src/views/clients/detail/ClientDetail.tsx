@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from "react";
+import { useState, useEffect, useLayoutEffect, Suspense, lazy } from "react";
 import Tabs from "@/components/ui/Tabs";
 import AdaptableCard from "@/components/shared/AdaptableCard";
 import Container from "@/components/shared/Container";
@@ -27,6 +27,9 @@ import type { CaseInfo } from "@/views/phase1/caseTypes";
 import Button from "@/components/ui/Button";
 import { historyApi } from "@/services/v2";
 import { useV2Query } from "@/utils/v2/hooks";
+import { HiArrowLeft } from "react-icons/hi";
+import { SkeletonLines } from "@/components/v2/States";
+import { backPathFromState } from "@/utils/v2/rowNavigation";
 
 injectReducer("crmCustomerDetails", reducer);
 
@@ -190,10 +193,54 @@ const Settings = () => {
     location.pathname.lastIndexOf("/") + 1,
   );
 
+  /* A tab change keeps `?id=` and the list it came from (`state.from`), and
+   * replaces the entry, so Browser Back goes straight back to the list. */
   const onTabChange = (val: string) => {
     setCurrentTab(val);
-    navigate(`/clients/details/${val}`);
+    navigate(
+      { pathname: `/clients/details/${val}`, search: location.search },
+      { replace: true, state: location.state },
+    );
   };
+
+  /* The case asked for: `?id=`, or the last opened one (old links). */
+  const queryId = query.get("id");
+  const requestedId = queryId || localStorage.getItem("id");
+  /* Opened in the same tab, the store may still hold the previous case
+   * until this one loads: never show (or act on) it under this URL. */
+  const staleCase =
+    !!requestedId && !!data?.id && String(data.id) !== String(requestedId);
+  const [caseLoadFailed, setCaseLoadFailed] = useState(false);
+
+  /* "Back to list": the list this case was opened from (one step back in
+   * history, so the list keeps its place), else the previous page, else the
+   * clients list. */
+  const backPath = backPathFromState(location.state);
+  const historyIndex =
+    (window.history.state as { idx?: number } | null)?.idx ?? 0;
+  const goBack = () => {
+    if (historyIndex > 0) {
+      navigate(-1);
+    } else {
+      navigate(backPath ?? "/clients");
+    }
+  };
+  const backButton = (
+    <button
+      type="button"
+      onClick={goBack}
+      className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-extrabold text-azure-600 hover:underline"
+      data-testid="p7-back-to-list"
+    >
+      <HiArrowLeft className="rtl:rotate-180" aria-hidden="true" />
+      {t("p7.nav.backToList")}
+    </button>
+  );
+
+  // A case opened from a scrolled list starts at the top.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [requestedId]);
 
   const fetchData = async () => {
     let id = query.get("id");
@@ -211,7 +258,10 @@ const Settings = () => {
     }
 
     //const response = await apiGetClientsDetails<GetAccountSettingData>(id);
-    dispatch(getCustomer(id));
+    setCaseLoadFailed(false);
+    dispatch(getCustomer(id)).then((action: { meta?: { requestStatus?: string } }) =>
+      setCaseLoadFailed(action?.meta?.requestStatus === "rejected"),
+    );
 
     const total_paments = await apiGetPaymentsClientsTotal(id);
 
@@ -273,7 +323,8 @@ const Settings = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryId]);
 
   /*   const fetchContacts = async (identityNumber: string) => {
     const response = await apiGetContactsIdentityNumber(identityNumber);
@@ -281,6 +332,7 @@ const Settings = () => {
   }; */
 
   useEffect(() => {
+    if (staleCase) return;
     if (data.status == false) {
       navigate(`/access-denied`);
     }
@@ -288,11 +340,29 @@ const Settings = () => {
       // fetchContacts(data.identityNumber);
       dispatch(getContactsIdentityNumber(data.identityNumber));
     }
-  }, [data]);
+  }, [data, staleCase]);
+
+  if (staleCase) {
+    return (
+      <Container>
+        <AdaptableCard>
+          {backButton}
+          {caseLoadFailed ? (
+            <Alert type="danger" showIcon duration={0}>
+              {t("p7.nav.caseLoadFailed")}
+            </Alert>
+          ) : (
+            <SkeletonLines rows={4} />
+          )}
+        </AdaptableCard>
+      </Container>
+    );
+  }
 
   return (
     <Container>
       <AdaptableCard>
+        {backButton}
         <div className="mb-8">
           <span className="text-eyebrow">اسم العميل</span>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">

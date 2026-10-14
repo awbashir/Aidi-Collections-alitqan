@@ -23,6 +23,8 @@ import MoveToArchiveButton from "./MoveToArchiveButton";
 import SepcifyUsersOneButton from "./SepcifyUsersButton";
 import LockUnlockButton from "./LockUnlockButton";
 import { useAppSelector } from "@/store";
+import { caseLink } from "@/utils/v2/links";
+import { isPlainLeftClick, openCaseInApp } from "@/utils/v2/rowNavigation";
 
 const ActionColumn = ({
   row,
@@ -53,11 +55,18 @@ const ActionColumn = ({
   return (
     <div className="flex justify-end items-center text-[16px] text-gray-600 dark:text-night-muted">
       <Tooltip title={t("details")}>
+        {/* Same tab, like a row click; Ctrl/Cmd/middle-click still opens
+            a new tab through the link itself. */}
         <Link
-          target="_blank"
           className={`cursor-pointer p-2 hover:text-azure-600 font-semibold`}
-          to={`/clients/details/details?id=${row.id}`}
-          onClick={() => onOpenDetail?.(row.id)}
+          to={caseLink(row.id)}
+          onClick={(e) => {
+            onOpenDetail?.(row.id);
+            if (isPlainLeftClick(e)) {
+              e.preventDefault();
+              openCaseInApp(navigate, row.id);
+            }
+          }}
         >
           <span>
             {direction === "rtl" ? <HiArrowSmLeft /> : <HiArrowSmRight />}

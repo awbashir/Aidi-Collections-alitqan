@@ -29,6 +29,7 @@ type Option = {
   color: string;
 };
 import { useEffect, useState } from "react";
+import { mainStatusesFor } from "@/utils/commentStatusTree";
 
 const { Control } = components;
 
@@ -319,9 +320,7 @@ const PortfoliosTableFilter = () => {
                   </div>
                   <div>
                     <MyFilter
-                      options={filteredComment_status.filter(
-                        (item) => item.contract_id === selectedContracts_[0]?.id
-                      )}
+                      options={mainStatusesFor(filteredComment_status, selectedContracts_[0]?.id)}
                       filter={setSelectedCommentStatus_}
                       labelField={{
                         plural: "حالات العميل",

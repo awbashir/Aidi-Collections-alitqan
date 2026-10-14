@@ -15,6 +15,7 @@ import {
   HiOutlinePencil,
   HiOutlineUserGroup,
   HiArrowSmLeft,
+  HiArrowSmRight,
   HiOutlineTrash,
   HiOutlineArchive,
 } from "react-icons/hi";
@@ -24,6 +25,8 @@ import MoveFromArchiveButton from "./MoveFromArchiveButton";
 import EditPaymentButton from "./EditPaymentButton";
 
 import { LuArchiveRestore } from "react-icons/lu";
+import { caseLink } from "@/utils/v2/links";
+import { isPlainLeftClick, openCaseInApp } from "@/utils/v2/rowNavigation";
 
 const ActionColumn = ({ row }: { row: Portfolio }) => {
   const { t } = useTranslation();
@@ -45,9 +48,14 @@ const ActionColumn = ({ row }: { row: Portfolio }) => {
     <div className="flex items-center justify-end gap-1 text-base">
       <Tooltip title={t("details")}>
         <Link
-          target="_blank"
           className={`cursor-pointer p-2 hover:text-azure-600 font-semibold`}
-          to={`/clients/details/details?id=${row?.clint?.id}`}
+          to={caseLink(String(row?.clint?.id ?? ""))}
+          onClick={(e) => {
+            if (row?.clint?.id && isPlainLeftClick(e)) {
+              e.preventDefault();
+              openCaseInApp(navigate, row.clint.id);
+            }
+          }}
         >
           <span>
             {direction === "rtl" ? <HiArrowSmLeft /> : <HiArrowSmRight />}

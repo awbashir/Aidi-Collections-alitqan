@@ -88,7 +88,7 @@ const UserNew = () => {
           navigate("/settings/comments/commentStatus");
         } else {
           ToastNotification(
-            t("settings.comments.commentStatus.failAdd"),
+            response?.message || t("settings.comments.commentStatus.failAdd"),
             t("settings.comments.commentStatus.new"),
             "danger"
           );
@@ -108,7 +108,7 @@ const UserNew = () => {
   return (
     <Container className="h-full">
       <UserForm
-        type="New"
+        type="new"
         /*  nationalities={naionalityOptions}
         roles={roleOptions}
         branches={branchOptions} */

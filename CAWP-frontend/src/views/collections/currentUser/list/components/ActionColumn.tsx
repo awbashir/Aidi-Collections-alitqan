@@ -23,6 +23,7 @@ import DeleteButton from "./DeleteButton";
 import MoveFromArchiveButton from "./MoveFromArchiveButton";
 import EditPaymentButton from "./EditPaymentButton";
 import AprrovePaymentButton from "./AprrovePaymentButton";
+import { LegacyReceiptButton } from "@/views/paymentAttachments";
 import { useAppSelector as useRootSelector } from "@/store";
 
 import { LuArchiveRestore } from "react-icons/lu";
@@ -47,6 +48,7 @@ const ActionColumn = ({ row }: { row: Portfolio }) => {
 
   return (
     <div className="flex items-center justify-end gap-1 text-base">
+      <LegacyReceiptButton paymentId={String(row.id)} />
       {/* <Tooltip title={t("details")}>
         <Link
           className={`cursor-pointer p-2 hover:text-azure-600 font-semibold`}

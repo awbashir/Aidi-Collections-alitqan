@@ -14,6 +14,7 @@ import { Note } from '@/components/v2/States'
 import { moneyApi } from '@/services/v2'
 import type { Balance, Payment } from '@/services/v2'
 import BalanceBreakdown from '@/views/phase1/money/BalanceBreakdown'
+import { ReceiptLinks } from '@/views/paymentAttachments'
 
 export type DecisionKind = 'approve' | 'reject' | 'reverse'
 
@@ -46,6 +47,13 @@ const PaymentSummary = ({ payment }: { payment: Payment }) => {
             <Field label={t('p1.col.recorder')}>{payment.recorder?.name || '—'}</Field>
             <Field label={t('p1.col.method')} className="sm:col-span-2">
                 {[payment.collection_type?.name, payment.collection_method?.name].filter(Boolean).join(' / ') || '—'}
+            </Field>
+            <Field label={t('p7.payAtt.column')} className="col-span-2 sm:col-span-3">
+                {payment.attachments && payment.attachments.length > 0 ? (
+                    <ReceiptLinks attachments={payment.attachments} />
+                ) : (
+                    <span className="text-gray-600">{t('p7.payAtt.none')}</span>
+                )}
             </Field>
         </div>
     )

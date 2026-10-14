@@ -335,6 +335,40 @@ _STATUS_SQL = """
          ELSE 'rejected' END
 """
 
+# Live receipts attached to payment `p` (db/migrations/0069, services/payment_attachments.py),
+# as one JSON array per row; `attachment_items()` turns it into the API shape.
+ATTACHMENTS_SQL = """(
+    SELECT coalesce(json_agg(json_build_object(
+               'document_id', pa_d.id, 'display_name', pa_d.display_name,
+               'original_name', pa_d.original_name, 'file_type', pa_d.file_type,
+               'size_bytes', pa.size_bytes, 'added_by', pa.added_by,
+               'added_by_name', concat_ws(' ', pa_u.frist_name, pa_u.last_name),
+               'added_at', pa.added_at) ORDER BY pa.id), '[]'::json)
+      FROM payment_attachments pa
+      JOIN clint_documents pa_d ON pa_d.id = pa.document_id AND pa_d.is_deleted = false
+      LEFT JOIN users pa_u ON pa_u.id = pa.added_by
+     WHERE pa.payment_id = p.id AND pa.removed_at IS NULL)"""
+
+
+def attachment_items(payment_id, raw) -> list[dict]:
+    """The `attachments` of a payment from the ATTACHMENTS_SQL array."""
+    out = []
+    for a in raw or []:
+        doc = str(a["document_id"])
+        out.append({
+            "id": doc,
+            "document_id": doc,
+            "name": (a.get("display_name") or "").strip() or a.get("original_name"),
+            "original_name": a.get("original_name"),
+            "file_type": a.get("file_type"),
+            "size_bytes": a.get("size_bytes"),
+            "added_by": person(a.get("added_by"), a.get("added_by_name")),
+            "added_at": a.get("added_at"),
+            "download_url": f"/v2/payments/{payment_id}/attachments/{doc}/download",
+        })
+    return out
+
+
 _PAYMENT_COLS = f"""
            p.id, p.clint_id, round(p.amount::numeric, 2) AS amount, p.payment_date,
            (p.payment_date AT TIME ZONE 'Asia/Riyadh')::date AS payment_civil_date,
@@ -353,7 +387,8 @@ _PAYMENT_COLS = f"""
            c.id AS case_id, c.name AS case_name, c."accountNumber" AS account_number,
            c."identityNumber" AS identity_number, c.user_id AS owner_id,
            concat_ws(' ', ou.frist_name, ou.last_name) AS owner_name,
-           pf.id AS portfolio_id, pf.name AS portfolio_name, ct.id AS contract_id, ct.name AS contract_name
+           pf.id AS portfolio_id, pf.name AS portfolio_name, ct.id AS contract_id, ct.name AS contract_name,
+           {ATTACHMENTS_SQL} AS attachments
 """
 
 _PAYMENT_JOINS = """
@@ -405,6 +440,7 @@ def serialize_payment(row, with_case: bool = True) -> dict:
             "by": person(row["reversed_by"], row["reverser_name"]),
             "at": iso(row["reversed_at"]),
         } if row["reversal_id"] else None),
+        "attachments": attachment_items(row["id"], row.get("attachments")),
     }
     if with_case:
         d["case"] = {

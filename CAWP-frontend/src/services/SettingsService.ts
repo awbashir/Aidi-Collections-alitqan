@@ -320,6 +320,14 @@ export async function apiPutCommentStatus<T, U extends Record<string, unknown>>(
   });
 }
 
+/** Soft delete (0068): the status and its sub-statuses; existing notes keep showing them. */
+export async function apiDeleteCommentStatus<T>(id: string) {
+  return ApiService.fetchData<T>({
+    url: "/comment_status/" + id,
+    method: "delete",
+  });
+}
+
 export async function apiGetContracts<T, U extends Record<string, unknown>>(
   id: U
 ) {

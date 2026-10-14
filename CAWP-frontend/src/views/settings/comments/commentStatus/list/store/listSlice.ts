@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import {
   apiGetListCommentStatus,
+  apiDeleteCommentStatus,
   apPutPortfolio,
   apiDeletePortfolios,
   apiGetArchiveReasons,
@@ -15,6 +16,13 @@ export type Portfolio = {
   name: string;
   total_amount: number;
   updated_at: Date;
+  /** 0068 */
+  color?: string | null;
+  contract_id?: string | null;
+  parent_id?: string | null;
+  parent?: { id: string; name: string } | null;
+  contract?: { id: string; name: string } | null;
+  CommentReachability?: { id: string; name: string } | null;
 };
 
 type Filter = {
@@ -41,10 +49,11 @@ export const SLICE_NAME = "commentStatusList";
 export const getList = createAsyncThunk(
   "Portfolios/data/getList",
   async (data: TableQueries & { filterData?: Filter }) => {
+    // tree=1 (0068): each main status is followed by its sub-statuses
     const response = await apiGetListCommentStatus<
       GetPortfoliosResponse,
       TableQueries
-    >(data);
+    >({ ...data, tree: 1 } as TableQueries);
     return response.data;
   }
 );
@@ -60,6 +69,16 @@ export const deletePortfolios = async <T, U extends Record<string, unknown>>(
   data: U
 ) => {
   const response = await apiDeletePortfolios<T, U>(data);
+  return response.data;
+};
+
+/** 0068 soft delete -> {status, message, sub_statuses_deleted} (status false + message when refused). */
+export const deleteCommentStatus = async (id: string) => {
+  const response = await apiDeleteCommentStatus<{
+    status: boolean;
+    message?: string;
+    sub_statuses_deleted?: string[];
+  }>(id);
   return response.data;
 };
 

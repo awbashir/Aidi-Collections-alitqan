@@ -39,6 +39,7 @@ import { CasePaymentHistory } from '@/views/phase1/money/PaymentTimeline'
 import { DateFilter, SidePanel } from '@/views/phase1/money/listParts'
 import { absMoney } from '@/views/phase1/money/moneyMath'
 import { DecisionDialogs } from './PaymentDialogs'
+import { ReceiptLinks } from '@/views/paymentAttachments'
 import type { DecisionKind, DecisionResult } from './PaymentDialogs'
 
 const { THead, TBody, Tr, Th, Td } = Table
@@ -298,7 +299,7 @@ const PaymentApprovals = () => {
         )
     }
 
-    const cols = 9
+    const cols = 10
     return (
         <div data-testid="p1-payment-approvals">
             <PageHead
@@ -417,6 +418,7 @@ const PaymentApprovals = () => {
                                         <Th className="text-end">{t('p1.col.amount')}</Th>
                                         <Th>{t('p1.col.paymentDate')}</Th>
                                         <Th>{t('p1.col.method')}</Th>
+                                        <Th>{t('p7.payAtt.column')}</Th>
                                         <Th>{t('p1.col.recorder')}</Th>
                                         <Th>{t('p1.col.created')}</Th>
                                         <Th>{t('p1.col.decision')}</Th>
@@ -456,6 +458,13 @@ const PaymentApprovals = () => {
                                                 <Td>
                                                     <div>{p.collection_type?.name || '—'}</div>
                                                     <div className="text-[12px] text-gray-600">{p.collection_method?.name || ''}</div>
+                                                </Td>
+                                                <Td data-testid="payatt-desk-cell">
+                                                    {p.attachments && p.attachments.length > 0 ? (
+                                                        <ReceiptLinks attachments={p.attachments} compact />
+                                                    ) : (
+                                                        <span className="text-gray-500">—</span>
+                                                    )}
                                                 </Td>
                                                 <Td>{p.recorder?.name || '—'}</Td>
                                                 <Td>

@@ -10,11 +10,15 @@ import { useTranslation } from "react-i18next";
 const MyField = (props) => {
   const { t } = useTranslation();
   // props: filter, labelField, isMulti = true
-  const { filter, labelField, type } = props;
+  const { filter, labelField, type, initialValue } = props;
 
   // theme: dark or light
 
-  const [value, setValue] = useState([]);
+  /* `initialValue` (optional): what the field shows when it mounts, e.g. the
+   * filter already applied to the list. It is not reported through `filter`. */
+  const [value, setValue] = useState(
+    initialValue !== undefined && initialValue !== null ? initialValue : []
+  );
 
   const initialRender = useRef(true);
 

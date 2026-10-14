@@ -41,6 +41,7 @@ from core import audit
 from core.api_response import (FORBIDDEN, IDEMPOTENCY_IN_PROGRESS, IDEMPOTENCY_KEY_INVALID,
                                IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED, VALIDATION_FAILED, ApiError)
 from core.revisions import RevisionConflict
+from services import comment_status_tree as status_tree
 from services.ai import drafts_inputs as I
 from services.ai import drafts_kinds as K
 from services.case_history_common import (USER_NAME_SQL, case_in_scope, iso, me, parse_uuid, required_text, s,
@@ -390,8 +391,8 @@ def discard(draft_id, body: dict, expected: int) -> dict:
     return as_dict(after, level="meta")
 
 
-_NOTE_FIELDS = {"text", "comment_status_id", "contact_method_id", "comment_reachability_id", "expected_revision",
-                "confirmed"}
+_NOTE_FIELDS = {"text", "comment_status_id", "comment_sub_status_id", "contact_method_id", "comment_reachability_id",
+                "expected_revision", "confirmed"}
 _NEVER = {"callback_at", "next_contact_date", "promise", "payment", "call", "send", "follow_up", "outcome"}
 
 
@@ -400,13 +401,23 @@ def _note_fields(body: dict, contract_id) -> dict:
     method_id = parse_uuid(body.get("contact_method_id"), "contact_method_id")
     reach = body.get("comment_reachability_id")
     reach = parse_uuid(reach, "comment_reachability_id") if reach not in (None, "") else None
-    st = _s().execute(text("""
-        SELECT s.id, s.contract_id::text AS contract_id, s."CommentReachability_id"::text AS reach, s.is_active
-          FROM "CommentStatuses" s WHERE s.id = CAST(:id AS uuid)"""), {"id": status_id}).mappings().first()
+    raw_sub = body.get("comment_sub_status_id")
+    sub_id = parse_uuid(raw_sub, "comment_sub_status_id") if raw_sub not in (None, "") else None
+    st = status_tree.load(status_id, _s())
     # `is_active` is ignored, as in the legacy note form, the Phase 5 wrap-up and Phase 2 bulk
     # notes (most statuses in daily use are flagged inactive; decision 2026-09-24)
     if st is None:
         raise ApiError(422, VALIDATION_FAILED, "unknown comment status", {"comment_status_id": "unknown"})
+    problem = status_tree.main_status_problem(st)              # 0068: deleted, or a sub-status
+    if problem:
+        raise ApiError(422, VALIDATION_FAILED, "the note status was deleted" if problem == "status_deleted"
+                       else "this is a sub-status: send its main status and the sub-status separately",
+                       {"comment_status_id": problem})
+    if sub_id is not None:
+        problem = status_tree.sub_status_problem(status_id, sub_id, _s())
+        if problem:
+            raise ApiError(422, VALIDATION_FAILED, "the sub-status is not a live sub-status of the note status",
+                           {"comment_sub_status_id": problem})
     if st["contract_id"] is not None and st["contract_id"] != contract_id:
         raise ApiError(422, VALIDATION_FAILED, "the note status belongs to another contract",
                        {"comment_status_id": "status_not_for_contract"})
@@ -423,7 +434,7 @@ def _note_fields(body: dict, contract_id) -> dict:
                            {"comment_reachability_id": "status_mismatch"})
     else:
         reach = st["reach"]
-    return {"status_id": status_id, "method_id": method_id, "reach_id": reach}
+    return {"status_id": status_id, "sub_status_id": sub_id, "method_id": method_id, "reach_id": reach}
 
 
 def save_as_note(draft_id, body: dict, expected: int) -> dict:
@@ -452,13 +463,14 @@ def save_as_note(draft_id, body: dict, expected: int) -> dict:
     actor, note_id = me(), str(uuid.uuid4())
     _s().execute(text("""
         INSERT INTO "Comments" (id, clint_id, user_id, "contactMethod_id", comment, comment_status_id,
-                                comment_reachability_id)
+                                comment_reachability_id, comment_sub_status_id)
         VALUES (CAST(:id AS uuid), CAST(:case AS uuid), CAST(:actor AS uuid), CAST(:method AS uuid), :text,
-                CAST(:status AS uuid), CAST(:reach AS uuid))"""),
+                CAST(:status AS uuid), CAST(:reach AS uuid), CAST(:sub AS uuid))"""),
         {"id": note_id, "case": case_id, "actor": actor, "method": v["method_id"], "text": note_text,
-         "status": v["status_id"], "reach": v["reach_id"]})
+         "status": v["status_id"], "reach": v["reach_id"], "sub": v["sub_status_id"]})
     audit.record("note.create", "comment", note_id, case_id=case_id,
                  after={"comment": note_text, "comment_status_id": v["status_id"],
+                        "comment_sub_status_id": v["sub_status_id"],
                         "contactMethod_id": v["method_id"], "comment_reachability_id": v["reach_id"],
                         "next_contact_date": None, "ai_draft_id": str(draft_id)},
                  reason="saved from an AI draft")

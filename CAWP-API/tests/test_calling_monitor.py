@@ -138,3 +138,34 @@ def test_access_and_validation(mon_app, pgc):
     bad = client.get("/v2/calling/monitor/stats", query_string={"from": "2026-01-01", "to": "2026-03-01"},
                      headers=token(mon_app, CL.super))
     assert bad.status_code == 422
+
+
+def test_user_filter_narrows_within_scope_only(mon_app, pgc):
+    member, other = new_user(pgc), new_user(pgc)
+    sup = new_supervisor(pgc, users=[member])
+    e1, e2 = f"4{uuid.uuid4().int % 900 + 100}", f"3{uuid.uuid4().int % 900 + 100}"
+    own(pgc, member, e1)
+    own(pgc, other, e2)
+    a, b = f"call-{uuid.uuid4().hex[:8]}", f"call-{uuid.uuid4().hex[:8]}"
+    write_snapshot(mon_app, [frame(a, f"PJSIP/{e1}-1", bridge="x1"), frame(a + ".2", "SIP/ITC-1", linked=a, bridge="x1"),
+                             frame(b, f"PJSIP/{e2}-2", bridge="x2"), frame(b + ".2", "SIP/ITC-2", linked=b, bridge="x2")])
+    rows = [{"calldate": dt.datetime(2026, 10, 12, 9), "channel": f"PJSIP/{e1}-1", "dstchannel": "SIP/ITC-1",
+             "disposition": "ANSWERED", "billsec": 10, "linkedid": "F1"},
+            {"calldate": dt.datetime(2026, 10, 12, 9), "channel": f"PJSIP/{e2}-2", "dstchannel": "SIP/ITC-2",
+             "disposition": "ANSWERED", "billsec": 10, "linkedid": "F2"}]
+    from core.api_response import ApiError
+    from extensions import db
+    with mon_app.app_context():
+        mine = monitor.live(user_id=sup, extension=e1)
+        assert [c["id"] for c in mine["calls"]] == [a] and [g["extension"] for g in mine["agents"]] == [e1]
+        assert mine["extension"] == e1 and {o["extension"] for o in mine["options"]} == {e1}      # options = the team
+        admin = monitor.live(user_id=CL.super, extension=e2)
+        assert [c["id"] for c in admin["calls"]] == [b] and {e1, e2} <= {o["extension"] for o in admin["options"]}
+        stats = monitor.stats({"from": "2026-10-12", "extension": e1}, user_id=CL.super, rows=rows)
+        assert [u["extension"] for u in stats["users"]] == [e1] and stats["totals"]["handled"] == 1
+        with pytest.raises(ApiError) as refused:
+            monitor.live(user_id=sup, extension=e2)                                            # not in the team
+        assert refused.value.status == 403
+        with pytest.raises(ApiError):
+            monitor.stats({"from": "2026-10-12", "extension": e2}, user_id=sup, rows=rows)
+        db.session.remove()

@@ -17,6 +17,7 @@ import { BucketBadge } from '@/components/v2/Badges'
 import { Note } from '@/components/v2/States'
 import { isV2Error, lookups, worklistApi } from '@/services/v2'
 import type { CommentStatusOption, FollowUp, Option } from '@/services/v2'
+import { mainStatusesFor, subStatusesOf } from '@/utils/commentStatusTree'
 import { riyadhInstant } from '@/utils/v2/format'
 import { DueFields, FollowUpSummary, Segmented } from './parts'
 import { validDue } from './access'
@@ -116,6 +117,7 @@ export const CompleteFollowUpDialog = ({
     const [text, setText] = useState('')
     const [reach, setReach] = useState<string | undefined>(undefined)
     const [status, setStatus] = useState<string | undefined>(undefined)
+    const [subStatus, setSubStatus] = useState<string | undefined>(undefined)
     const [method, setMethod] = useState<string | undefined>(undefined)
     const [mode, setMode] = useState<Mode>('next')
     const [date, setDate] = useState('')
@@ -129,23 +131,27 @@ export const CompleteFollowUpDialog = ({
         if (!method && lk.methods.some((m) => m.value === MOBILE_METHOD_ID)) setMethod(MOBILE_METHOD_ID)
     }, [lk.methods, method])
 
-    /* Same rule as the legacy note form: the case's contract and the chosen reachability. */
+    /* The legacy note form's rule (the case's contract and the chosen reachability), plus 0068:
+       general statuses fit every contract, sub-statuses have their own select, deleted ones never show. */
     const statusOptions = useMemo(
-        () =>
-            lk.statuses.filter(
-                (s) => (contract ? s.contract_id === contract : true) && s.reachability_id === (reach ?? null)
-            ),
+        () => mainStatusesFor(lk.statuses, contract).filter((s) => s.reachability_id === (reach ?? null)),
         [lk.statuses, contract, reach]
     )
+    const subOptions = useMemo(() => subStatusesOf(lk.statuses, status), [lk.statuses, status])
 
     useEffect(() => {
         if (status && !statusOptions.some((s) => s.value === status)) setStatus(undefined)
     }, [statusOptions, status])
 
+    useEffect(() => {
+        if (subStatus && !subOptions.some((s) => s.value === subStatus)) setSubStatus(undefined)
+    }, [subOptions, subStatus])
+
     const reset = () => {
         setText('')
         setReach(undefined)
         setStatus(undefined)
+        setSubStatus(undefined)
         setMode('next')
         setDate('')
         setTime('09:00')
@@ -165,6 +171,7 @@ export const CompleteFollowUpDialog = ({
                 outcome_note: {
                     text: text.trim(),
                     comment_status_id: status as string,
+                    ...(subStatus ? { comment_sub_status_id: subStatus } : {}),
                     contact_method_id: method as string,
                     ...(reach ? { comment_reachability_id: reach } : {}),
                 },
@@ -256,6 +263,19 @@ export const CompleteFollowUpDialog = ({
                     </div>
                 </DialogField>
             </div>
+            {subOptions.length > 0 && (
+                <DialogField label={t('p7.status.subStatus')} hint={t('p7.status.subStatusHint')}>
+                    <div data-testid="p1-fu-complete-sub-status">
+                        <Select
+                            {...selectProps}
+                            placeholder={t('p1.followUps.select')}
+                            options={subOptions}
+                            value={subOptions.find((o) => o.value === subStatus) || null}
+                            onChange={(o) => setSubStatus((o as Option | null)?.value || undefined)}
+                        />
+                    </div>
+                </DialogField>
+            )}
             {lk.failed && <Note className="-mt-2 mb-3 text-danger">{t('p1.followUps.lookupsFailed')}</Note>}
 
             <div className="text-eyebrow mb-2 mt-2">{t('p1.followUps.complete.then')}</div>

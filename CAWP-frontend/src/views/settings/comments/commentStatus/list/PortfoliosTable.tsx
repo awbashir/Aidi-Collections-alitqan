@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   setTableData,
@@ -10,6 +10,7 @@ import {
   Portfolio,
 } from "./store";
 import DataTable from "@/components/shared/DataTable";
+import type { ColumnDef, OnSortParam } from "@/components/shared/DataTable";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui";
 import { HiPlusCircle, HiDownload } from "react-icons/hi";
@@ -54,19 +55,68 @@ const PortfoliosTable = () => {
     (state) => state.commentStatusList.data.filterData
   );
 
-  const defaultColumns: ColumnDef<User>[] = useMemo(
+  const fetchRef = useRef<() => void>();
+  const defaultColumns: ColumnDef<Portfolio>[] = useMemo(
     () => [
       {
         header: t("name"),
         accessorKey: "name",
+        /* 0068: sub-statuses sit indented under their main status (the list is
+           requested with tree=1) */
+        cell: (props) => {
+          const { name, parent_id, parent } = props.row.original;
+          if (!parent_id) {
+            return (
+              <span className="font-extrabold text-navy-600 dark:text-gray-100">
+                {name}
+              </span>
+            );
+          }
+          return (
+            <span className="inline-flex items-center gap-2 ps-5" title={parent?.name}>
+              <span
+                aria-hidden
+                className="inline-block h-3 w-3 -mt-2 rounded-es border-b-2 border-s-2 border-gray-300 dark:border-night-border"
+              />
+              <span>{name}</span>
+              <span className="text-[11.5px] text-gray-500">
+                {t("p7.status.sub")}
+              </span>
+            </span>
+          );
+        },
+      },
+      {
+        header: t("color"),
+        accessorKey: "color",
+        cell: (props) => {
+          const color = props.row.original?.color || "#FFFFFF";
+          return (
+            <span className="inline-flex items-center gap-2">
+              <span
+                aria-hidden
+                className="inline-block h-4 w-4 rounded-full border border-gray-300 dark:border-night-border"
+                style={{ backgroundColor: color }}
+              />
+              <span className="text-[12px] text-gray-600 tabular-nums" dir="ltr">
+                {color.toUpperCase()}
+              </span>
+            </span>
+          );
+        },
       },
       {
         header: t("contracts.name"),
         accessorKey: "contract..name",
 
         cell: (props) => {
-          const { name } = props.row.original?.contract;
-          return name ? name : "";
+          // a status without a contract is general: usable on every contract
+          const name = props.row.original?.contract?.name;
+          return name ? (
+            name
+          ) : (
+            <StatusPill tone="info">{t("p7.status.general")}</StatusPill>
+          );
         },
       },
 
@@ -74,10 +124,7 @@ const PortfoliosTable = () => {
         header: t("reachability"),
         accessorKey: "CommentReachability..name",
 
-        cell: (props) => {
-          const { name } = props.row.original?.CommentReachability;
-          return name ? name : "";
-        },
+        cell: (props) => props.row.original?.CommentReachability?.name ?? "",
       },
 
       {
@@ -203,7 +250,10 @@ const PortfoliosTable = () => {
         id: "action",
         cell: (props) => {
           return (
-            <ActionColumn row={props.row.original} fetchadata={fetchData} />
+            <ActionColumn
+              row={props.row.original}
+              fetchadata={() => fetchRef.current?.()}
+            />
           );
         },
       },
@@ -220,6 +270,8 @@ const PortfoliosTable = () => {
   const fetchData = useCallback(() => {
     dispatch(getList({ page, pageSize, sort, query, filterData }));
   }, [page, pageSize, sort, query, filterData, dispatch]);
+  // the memoised columns call the CURRENT fetch (page, sort) after a delete
+  fetchRef.current = fetchData;
 
   useEffect(() => {
     fetchData();

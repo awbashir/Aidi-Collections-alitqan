@@ -40,13 +40,15 @@ import { useFetchClients } from "./hooks/GetClientHook";
 import StatusPill from "@/components/shared/StatusPill";
 import { BulkLaunchButton } from "@/views/phase2/bulk/entry";
 import { HiOutlineDocumentSearch } from "react-icons/hi";
+import useListScrollRestore from "@/utils/hooks/useListScrollRestore";
 
 const TableOptions = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const [selectedInquiryClintByExcel, setSelectedInquiryClintByExcel] =
-    useState([]);
   const pramas = useAppSelector((state) => state.clientsList2.data.filterData);
+  /* Starts from the applied inquiry list (kept when coming back from a case). */
+  const [selectedInquiryClintByExcel, setSelectedInquiryClintByExcel] =
+    useState(() => pramas?.customeFilterInquiryClintByExcelValue ?? []);
 
   const search = useAppSelector((state) => state.clientsList2.data.search);
 
@@ -105,6 +107,9 @@ const ClientsTable = () => {
   const filterData = useAppSelector(
     (state) => state.clientsList2.data.filterData
   );
+  /* Rows open the case in this tab (not archived ones, like the arrow); the
+   * list keeps its scroll position for the way back. */
+  const { rootRef: scrollRootRef } = useListScrollRestore({ loading });
 
   const defaultColumns: ColumnDef<User>[] = useMemo(
     () => [
@@ -294,10 +299,12 @@ const ClientsTable = () => {
 
   return (
     <>
-      <div className="mt-5">
+      <div className="mt-5" ref={scrollRootRef}>
         <TableOptions />
         <DataTable
           selectable
+          clickAbility
+          isRowClickable={(row) => !(row as { is_archive?: boolean })?.is_archive}
           columns={columns}
           data={data}
           skeletonAvatarColumns={[0]}

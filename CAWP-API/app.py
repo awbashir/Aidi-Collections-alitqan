@@ -62,6 +62,7 @@ from extensions import init_app as init_extensions
 from models import *  # noqa: F401,F403 - the 29 models + defult_permission
 from services import excel
 from services import sessions, sessions_admin_gates
+from services import comment_status_tree
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1815,17 +1816,19 @@ def createClintContacts():
 @jwt_required()
 @required_roles('settings_comments_status_add')  # settings add page
 def createCommentStatus():
+    # 0068: optional parent_id (one level of sub-statuses, inheriting the parent's contract and
+    # reachability), contract_id null = a general status, colour defaults to white
     try:
-        data = request.get_json()
-        comment_status = CommentStatuses(**data)
-        db.session.add(comment_status)
-        db.session.commit()
+        created = comment_status_tree.create(request.get_json())
+    except comment_status_tree.StatusRuleError as e:
+        db.session.rollback()
+        return jsonify(e.body()), 201
     except Exception as e:
         db.session.rollback()
         return error_response("حدث خطأ أثناء إنشاء حالة التعليق", e)
       
     
-    return jsonify( comment_status.as_dict()),200
+    return jsonify(created),200
 
 #get comment status by id
 @app.route('/comment_status/<id>' , methods =['GET'])
@@ -1836,7 +1839,8 @@ def getCommentStatus(id):
         comment_status = CommentStatuses.query.get(id)
         if comment_status is None:
                return jsonify( {"message": "حالة التعليق غير موجودة","status":False , "error": "comment_status not found"}),201
-        return  jsonify(comment_status.as_dict()),200
+        extra = comment_status_tree.load(comment_status.id)
+        return  jsonify(comment_status_tree.with_tree(comment_status.as_dict(), extra, deleted=True)),200
     except Exception as e:
         db.session.rollback()
         return error_response("حدث خطأ أثناء جلب حالة التعليق", e)
@@ -1852,14 +1856,11 @@ def updateCommentStatus(id):
         if comment_status is None:
             return jsonify( {"message": "حالة التعليق غير موجودة","status":False , "error": "comment_status not found"}),201
         
-        data = request.get_json()
-        comment_status.name = data['name'] if 'name' in data else comment_status.name  
-        comment_status.contract_id = data['contract_id'] if 'contract_id' in data else comment_status.contract_id
-        comment_status.CommentReachability_id = data['CommentReachability_id'] if 'CommentReachability_id' in data else comment_status.CommentReachability_id
-        comment_status.is_active = data['is_active'] if 'is_active' in data else comment_status.is_active   
-        comment_status.color = data['color'] if 'color' in data else comment_status.color
-        db.session.commit()
-        return jsonify( comment_status.as_dict()),200
+        # the legacy field updates + parent_id and the contract/reachability inheritance (0068)
+        return jsonify(comment_status_tree.update(comment_status, request.get_json())),200
+    except comment_status_tree.StatusRuleError as e:
+        db.session.rollback()
+        return jsonify(e.body()), 201
     except Exception as e:
         db.session.rollback()
         return error_response("حدث خطأ أثناء تعديل حالة التعليق", e)
@@ -1886,7 +1887,14 @@ def createComment():
         #time.sleep(2)
        
         data = request.get_json()
+        # 0068: refuse a deleted status or a sub-status as the main one; optional sub-status
+        sub_status_id = data.pop('comment_sub_status_id', None) or None
+        problem = comment_status_tree.legacy_note_problem(data.get('comment_status_id'), sub_status_id)
+        if problem:
+            return jsonify({"message": problem[1], "status": False, "error": problem[0]}), 201
         comment = Comments(**data)
+        if sub_status_id is not None:
+            return jsonify(comment_status_tree.insert_legacy_note(comment, sub_status_id)), 200
         db.session.add(comment)
         db.session.commit()
     except Exception as e:

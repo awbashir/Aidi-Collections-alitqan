@@ -40,6 +40,7 @@ import ToastNotification from "@/components/shared/myComponents/ToastNotificatio
 import ConfirmDialog from "@/components/shared/myComponents/ConfirmDialog";
 import BalanceCard from "@/views/phase1/money/BalanceCard";
 import ContactsPanel from "@/views/phase1/history/ContactsPanel";
+import PreviousRecordSection from "../components/PreviousRecordSection";
 
 interface CustomerInfoProps {
   data: any;
@@ -318,6 +319,10 @@ const CustomerInfo = ({
           </div>
         </Card>
       </div>
+
+      {/* Previous (archived) record this case replaced on a portfolio upload;
+          renders nothing when there is none. */}
+      {data?.id ? <PreviousRecordSection caseId={data.id} /> : null}
 
       {/* Confirm Delete Dialog */}
       <ConfirmDialog

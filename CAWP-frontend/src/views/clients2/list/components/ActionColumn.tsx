@@ -10,6 +10,7 @@ import {
   HiOutlinePencil,
   HiOutlineUserGroup,
   HiArrowSmLeft,
+  HiArrowSmRight,
   HiOutlineTrash,
   HiOutlineArchive,
 } from "react-icons/hi";
@@ -19,6 +20,8 @@ import MoveArchiveButton from "./MoveArchiveButton";
 import MoveToArchiveButton from "./MoveToArchiveButton";
 import SepcifyUsersOneButton from "./SepcifyUsersButton";
 import { useAppSelector } from "@/store";
+import { caseLink } from "@/utils/v2/links";
+import { isPlainLeftClick, openCaseInApp } from "@/utils/v2/rowNavigation";
 
 const ActionColumn = ({
   row,
@@ -49,9 +52,14 @@ const ActionColumn = ({
          row.is_archive ? null : (
               <Tooltip title={t("details")}>
         <Link
-          target="_blank"
           className={`cursor-pointer p-2 hover:text-azure-600 font-semibold`}
-          to={`/clients/details/details?id=${row.id}`}
+          to={caseLink(row.id)}
+          onClick={(e) => {
+            if (isPlainLeftClick(e)) {
+              e.preventDefault();
+              openCaseInApp(navigate, row.id);
+            }
+          }}
         >
           <span>
             {direction === "rtl" ? <HiArrowSmLeft /> : <HiArrowSmRight />}

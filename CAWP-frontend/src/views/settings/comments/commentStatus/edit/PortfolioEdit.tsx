@@ -78,7 +78,7 @@ const PortfolioEdit = () => {
           navigate("/settings/comments/commentStatus");
         } else {
           ToastNotification(
-            t("settings.comments.commentStatus.failEdit"),
+            response?.message || t("settings.comments.commentStatus.failEdit"),
             t("settings.comments.commentStatus.edit"),
             "danger"
           );
@@ -105,6 +105,7 @@ const PortfolioEdit = () => {
             reachability={reachabilityOptions}
             initialData={data}
             onDiscard={handleDiscard}
+            onDeleted={handleDiscard}
             onFormSubmit={handleFormSubmit}
           />
         )}

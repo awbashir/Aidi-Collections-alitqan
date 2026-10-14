@@ -246,6 +246,21 @@ export type Payment = {
     events?: PaymentEvent[]
     allocations?: Allocation[]
     changes?: Array<Record<string, unknown>>
+    /** Live receipts (GET /v2/payments*, db/migrations/0069). */
+    attachments?: PaymentAttachment[]
+}
+
+/** A receipt attached to a payment; also a document of the case. */
+export type PaymentAttachment = {
+    id: string
+    document_id: string
+    name: string
+    original_name: string
+    file_type: string
+    size_bytes: number | null
+    added_by: Actor
+    added_at: Iso
+    download_url: string
 }
 
 export type PaymentDesk = {

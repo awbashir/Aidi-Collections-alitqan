@@ -16,6 +16,7 @@ MODULES = [
     "api.dashboard",         # dashboards (B2)
     "api.imports",           # Excel imports + bulk actions + async jobs (C)
     "api.money",             # Phase 1 A: /v2 payments, reversals, promises
+    "api.payment_attachments",  # payment receipts: attach / list / download / remove (0069)
     "api.worklist",          # Phase 1 B: /v2 follow-ups, attention queue
     "api.case_history",      # Phase 1 C: /v2 note/contact history, case corrections
     "api.bulk",              # Phase 2: /v2 uploads, reviewed bulk jobs, jobs list
@@ -32,6 +33,8 @@ MODULES = [
     "api.ai",                # Phase 6 Q0/Q1: AI status, data policy, drafts
     "api.quality",           # Phase 6 Q2: quality workspace
     "api.voice_lab",         # Phase 6 Q3: voice training lab sessions
+    "api.portfolio_import",  # portfolio upload: mapping, preview, one-transaction import, lineage (0070)
+    "api.comment_status",    # note statuses: soft DELETE (0068); POST/PUT stay in app.py
 ]
 
 

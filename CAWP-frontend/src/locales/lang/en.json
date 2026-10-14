@@ -2978,6 +2978,9 @@
   },
   "p5": {
     "monitor": {
+      "user": "User",
+      "allUsers": "All users",
+      "clearUser": "Show all users",
       "title": "Call monitor",
       "subtitle": "Live calls and calls by user. You see all extensions as SuperAdmin, your team's as a supervisor.",
       "liveTitle": "Live now",
@@ -4999,6 +5002,247 @@
         "aiTitle": "AI for quality",
         "aiNote": "Manual transcripts and human reviews always work; AI only drafts."
       }
+    }
+  },
+  "p7": {
+    "nav": {
+      "backToList": "Back to list",
+      "caseLoadFailed": "This client's details could not be loaded. Go back to the list and try again."
+    },
+    "payAtt": {
+      "column": "Receipt",
+      "title": "Payment receipts",
+      "formLabel": "Receipt (optional)",
+      "hint": "PDF, JPG or PNG, up to 10 MB",
+      "choose": "Attach a receipt",
+      "change": "Change file",
+      "clear": "Remove the chosen file",
+      "attach": "Attach",
+      "manage": "Receipts",
+      "view": "View",
+      "remove": "Remove receipt",
+      "confirmRemove": "Remove this receipt from the payment?",
+      "none": "No receipt attached",
+      "full": "This payment already has the maximum of {{max}} receipts.",
+      "close": "Close",
+      "attached": "Receipt attached",
+      "removed": "Receipt removed",
+      "openFail": "Could not open the receipt",
+      "uploadFailedAfterSave": "Payment saved, but the receipt was not attached",
+      "attachLater": "You can attach it from the payments table below.",
+      "invalid": {
+        "type": "Only PDF, JPG, JPEG or PNG files can be attached.",
+        "size": "The file is larger than 10 MB.",
+        "empty": "The file is empty."
+      },
+      "err": {
+        "type_mismatch": "The file content is not a real PDF, JPEG or PNG.",
+        "unsupported_file_type": "Only PDF, JPG, JPEG or PNG files can be attached.",
+        "file_too_large": "The file is larger than 10 MB.",
+        "empty_file": "The file is empty.",
+        "too_many_attachments": "This payment already has the maximum number of receipts.",
+        "payment_not_pending": "Receipts can only be removed while the payment is pending.",
+        "attachment_not_found": "This receipt is no longer attached to the payment.",
+        "file_missing": "The receipt file is missing on the server."
+      }
+    },
+    "import": {
+      "button": "Upload portfolio",
+      "title": "Upload a portfolio",
+      "step": {
+        "setup": "File",
+        "mapping": "Columns",
+        "preview": "Review",
+        "run": "Import"
+      },
+      "setup": {
+        "contract": "Contract",
+        "pickContract": "Choose a contract",
+        "portfolioName": "Portfolio name",
+        "accepted": "Excel (.xlsx) or UTF-8 CSV. The first row holds the column names.",
+        "chooseFile": "Choose file",
+        "replaceFile": "Choose another file",
+        "rows": "{{n}} data rows",
+        "columns": "{{n}} columns",
+        "sheet": "Sheet",
+        "notScanned": "The file was not scanned for viruses. Upload only files you trust.",
+        "noRows": "This sheet has no data rows."
+      },
+      "mapping": {
+        "intro": "Sheet {{sheet}}: {{rows}} data rows. Choose the file column for each field. Obvious matches are already filled in.",
+        "contact": "Contact",
+        "required": "Required",
+        "optional": "Optional",
+        "collectorHint": "Each client is assigned to the user with this username. An unknown or inactive username imports the client unassigned and is listed in the report.",
+        "pickColumn": "Choose a column",
+        "pickType": "Contact type",
+        "contactsTitle": "Contact columns",
+        "contactsHint": "Each column becomes a contact of the client's identity number. A number the client already has is not added again.",
+        "removeContact": "Remove",
+        "addContact": "Add a contact column",
+        "attributesNote": "Every column of the file is also kept in the client's additional information.",
+        "unnamedColumns": "Columns with data but no name in the header row: {{count}}. They are not imported; name them and upload the file again.",
+        "sample": "First rows of the file",
+        "noSample": "No sample rows.",
+        "problem": {
+          "required": "Choose a column for \"{{field}}\".",
+          "twice": "The column \"{{column}}\" is chosen more than once.",
+          "contact_incomplete": "Every contact row needs a column and a contact type."
+        }
+      },
+      "preview": {
+        "intro": "Nothing has been saved yet. This is what importing into \"{{name}}\" will do.",
+        "archiveNote": "From the archive: the archived client keeps all its notes, payments, promises and follow-ups and stays archived under a new account number ending in -أرشيف; the new client keeps the account number and shows the old record's history. Old payments do not reduce the new balance.",
+        "skippedNote": "Skipped: a client with this account number is already active. Nothing about it changes.",
+        "problems": "Rows to check (first {{limit}})"
+      },
+      "run": {
+        "running": "Importing…",
+        "runningHint": "You can close this window; the import continues and the list refreshes when it is done.",
+        "succeeded": "The portfolio \"{{name}}\" was created with all its clients.",
+        "openPortfolio": "Show the portfolio's clients",
+        "report": "Download the import report",
+        "failed": "The import failed. Nothing was saved and no portfolio was created.",
+        "failedHint": "Retry runs the same import again; it can never create a second portfolio."
+      },
+      "action": {
+        "close": "Close",
+        "next": "Next",
+        "back": "Back",
+        "preview": "Check the file",
+        "confirm": "Import {{n}} clients",
+        "retry": "Retry",
+        "backToMapping": "Change the columns"
+      },
+      "count": {
+        "total": "Rows in the file",
+        "created": "New clients",
+        "createdFromArchive": "New, from the archive",
+        "skipped": "Skipped (already active)",
+        "rejected": "Rejected",
+        "collectorNotMatched": "Collector not found",
+        "assigned": "Assigned to a collector",
+        "contactsNew": "New contacts",
+        "contactsExisting": "Contacts already known"
+      },
+      "outcome": {
+        "created": "New",
+        "created_from_archive": "From the archive",
+        "skipped_active_exists": "Skipped",
+        "rejected": "Rejected"
+      },
+      "problems": {
+        "none": "No rows need attention.",
+        "row": "Row",
+        "account": "Account number",
+        "outcome": "Result",
+        "reason": "Reason"
+      },
+      "code": {
+        "created": "Created",
+        "created_from_archive": "Created; the archived record is kept and linked",
+        "active_exists": "An active client with this account number already exists",
+        "missing_name": "Name is empty",
+        "missing_identity_number": "Identity number is empty",
+        "missing_account_number": "Account number is empty",
+        "missing_amount": "Amount is empty",
+        "invalid_amount": "Amount is not a number",
+        "negative_amount": "Amount is negative",
+        "amount_too_precise": "Amount has more than 2 decimals",
+        "amount_too_large": "Amount is too large",
+        "duplicate_in_file": "Account number repeats an earlier row",
+        "formula_not_allowed": "A mapped cell holds a formula",
+        "value_too_long": "A value is too long",
+        "archived_already_linked": "This archived record was already replaced by a newer record"
+      },
+      "warning": {
+        "unknown_collector": "Username not found, imported unassigned",
+        "inactive_collector": "Collector account inactive, imported unassigned",
+        "ambiguous_collector": "Username matches several users, imported unassigned",
+        "identity_changed": "Identity number differs from the archived record",
+        "contact_formula_skipped": "A contact cell with a formula was skipped"
+      },
+      "err": {
+        "invalid_mapping": "The column choices are not valid. Check the required fields.",
+        "already_imported": "This file was already imported. Upload it again only if you want a new portfolio.",
+        "import_in_progress": "This file is being imported right now.",
+        "portfolio_name_exists": "A portfolio with this name already exists in the contract. Choose another name.",
+        "nothing_to_import": "No row of the file can be added, so no portfolio is created.",
+        "upload_purged": "The uploaded file was removed. Upload it again.",
+        "upload_expired": "The uploaded file has expired. Upload it again.",
+        "upload_not_found": "The uploaded file was not found. Upload it again.",
+        "upload_purpose_mismatch": "This file was uploaded for another operation. Upload it again here.",
+        "import_failed": "An unexpected error stopped the import. Nothing was saved.",
+        "cases_changed": "Some matching clients changed during the import. Nothing was saved; try again.",
+        "file_changed": "The file could not be read the same way twice. Upload it again.",
+        "too_many_rows": "The file has too many rows.",
+        "report_not_ready": "The report exists only for a completed import.",
+        "file_too_large": "The file is too large.",
+        "unsupported_file_type": "Only .xlsx and .csv files are accepted.",
+        "not_a_workbook": "The file is not a valid Excel workbook.",
+        "type_mismatch": "The file's content does not match its extension.",
+        "not_utf8": "The CSV file must be saved as UTF-8.",
+        "empty_file": "The file is empty.",
+        "no_data": "The file has no header row.",
+        "generic": "The import failed: {{message}}"
+      },
+      "previous": {
+        "title": "Previous record",
+        "intro": "This client was added by a portfolio upload in place of an archived record with the same account number. The previous record stays archived with its own history, shown here read-only. Its payments do not count toward this client's balance.",
+        "empty": "Nothing recorded.",
+        "notPermitted": "Your role cannot view this section.",
+        "tab": {
+          "notes": "Notes",
+          "payments": "Payments",
+          "promises": "Promises",
+          "follow_ups": "Follow-ups"
+        },
+        "corrected": "Corrected",
+        "paymentsNote": "Each payment is shown with its approval state. Pending, rejected and reversed payments never count as recovered.",
+        "amount": "Amount",
+        "paymentDate": "Payment date",
+        "state": "Status",
+        "recordedBy": "Recorded by",
+        "decision": "Reviewed by",
+        "dueDate": "Due date",
+        "nextAction": "Next action",
+        "closedAt": "Completed at",
+        "olderLevel": "Earlier record (level {{n}})",
+        "accountNow": "Account number now",
+        "originalAccount": "Original account number",
+        "portfolio": "Portfolio",
+        "originalAmount": "Original debt",
+        "archivedAt": "Archived on",
+        "archiveReason": "Archive reason",
+        "linkedAt": "Linked on",
+        "status": "State",
+        "archived": "Archived",
+        "notArchived": "Not archived",
+        "deleted": "Deleted",
+        "deletedHint": "The previous record was deleted with its portfolio; its history is no longer available."
+      }
+    },
+    "status": {
+      "subStatus": "Sub-status",
+      "subStatusHint": "Optional: a more precise outcome under the chosen status.",
+      "subStatusOptional": "Sub-status (optional)",
+      "sub": "Sub-status",
+      "parent": "Main status",
+      "optional": "(optional)",
+      "noParent": "None: this is a main status",
+      "parentHint": "Choose a main status to make this a sub-status. It then takes the main status's contract and reachability.",
+      "hasChildrenHint": "This status has sub-statuses, so it cannot become a sub-status itself.",
+      "general": "General: all contracts",
+      "generalAll": "General for all contracts",
+      "contractHint": "Leave empty for a general status that every contract can use.",
+      "inheritedHint": "Taken from the main status \"{{name}}\".",
+      "white": "White",
+      "customColor": "Custom",
+      "deleteTitle": "Delete status",
+      "deleteChildren": "Its sub-statuses will be deleted too.",
+      "deleteKeepsNotes": "Notes already recorded keep showing this status. It can no longer be chosen for new notes.",
+      "deleteSuccess": "The status was deleted",
+      "deleteFail": "The status could not be deleted"
     }
   }
 }
