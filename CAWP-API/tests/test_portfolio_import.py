@@ -201,7 +201,8 @@ def test_amount_parsing_accepts_arabic_digits_and_separators():
     assert parse_amount("1234.5600000001") == (Decimal("1234.56"), None)
     assert parse_amount("-5")[1] == "negative_amount"
     assert parse_amount("(5)")[1] == "negative_amount"
-    assert parse_amount("12.345")[1] == "amount_too_precise"
+    assert parse_amount("12970.344") == (Decimal("12970.34"), "amount_rounded")   # rounded, not rejected
+    assert parse_amount("12.345") == (Decimal("12.35"), "amount_rounded")
     assert parse_amount("abc")[1] == "invalid_amount"
     assert parse_amount("1.2.3")[1] == "invalid_amount"
 
@@ -310,7 +311,7 @@ def test_commit_creates_one_portfolio_with_all_rows_in_one_go(pc, db, inline_job
     rows = [HEAD + [None, "city"],
             ["New One", "211", f"C1-{t}", "1000", "0500000101", "pi.collector.a", "extra", "Riyadh"],
             ["New Two", "212", f"C2-{t}", "١٬٢٣٤٫٥٠", "", "", None, "Jeddah"],
-            ["Unknown", "213", f"C3-{t}", "10", "", "ghost", None, None],
+            ["Unknown", "213", f"C3-{t}", "12970.344", "", "ghost", None, None],   # 3 decimals: rounded
             ["Bad", "214", f"C4-{t}", "-1", "", "", None, None]]
     up = uploaded(pc, rows)
     name = f"Import {t}"
@@ -326,7 +327,7 @@ def test_commit_creates_one_portfolio_with_all_rows_in_one_go(pc, db, inline_job
                                               attribute, id::text, is_archive
                                          FROM clints WHERE portfolios_id = %s""", (pids[0][0],))}
     assert set(cases) == {f"C1-{t}", f"C2-{t}", f"C3-{t}"}
-    assert cases[f"C2-{t}"][3] == 1234.5
+    assert cases[f"C2-{t}"][3] == 1234.5 and cases[f"C3-{t}"][3] == 12970.34
     assert cases[f"C1-{t}"][4] == P.col_a and cases[f"C3-{t}"][4] is None and cases[f"C2-{t}"][4] is None
     attr = cases[f"C1-{t}"][5]
     assert attr["city"] == "Riyadh" and attr["Column G"] == "extra" and attr["accountNumber"] == f"C1-{t}"
@@ -339,7 +340,9 @@ def test_commit_creates_one_portfolio_with_all_rows_in_one_go(pc, db, inline_job
     # report rows: every source row, with outcome and warnings
     report = {r[0]: r for r in q(db, """SELECT row_number, outcome, code, warnings FROM portfolio_import_rows
                                         WHERE import_id = %s""", (imp["id"],))}
-    assert len(report) == 4 and report[4][1] == "created" and report[4][3][0]["code"] == "unknown_collector"
+    assert len(report) == 4 and report[4][1] == "created"
+    assert {w["code"] for w in report[4][3]} == {"unknown_collector", "amount_rounded"}
+    assert done["counts"]["amounts_rounded"] == 1
     assert report[5][1] == "rejected" and report[5][2] == "negative_amount"
     r = pc.get(f"/v2/portfolio-imports/{imp['id']}/rows?outcome=rejected")
     assert [x["row_number"] for x in r.get_json()["data"]["items"]] == [5]

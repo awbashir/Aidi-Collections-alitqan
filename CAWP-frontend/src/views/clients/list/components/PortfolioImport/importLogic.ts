@@ -95,6 +95,6 @@ export function warningLabel(w: ImportWarning, t: Translate): string {
     const key = `p7.import.warning.${w.code}`
     const text = t(key)
     const label = text === key ? w.code : text
-    const value = w.value || w.previous || w.column
+    const value = w.code === 'amount_rounded' ? `${w.value} → ${w.amount}` : w.value || w.previous || w.column
     return value ? `${label}: ${value}` : label
 }

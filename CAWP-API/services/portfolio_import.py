@@ -73,6 +73,7 @@ RENAME_PROBE = 20             # candidate suffix numbers probed per query round
 STALE_SECONDS = 900           # a queued/running import untouched this long may be retried
 LINEAGE_MAX_DEPTH = 20
 CENT = Decimal("0.01")
+AMOUNT_WARNINGS = {"amount_rounded"}     # parse_amount codes that keep the row
 MAX_AMOUNT = Decimal("999999999999.99")
 OUTCOMES = ("created", "created_from_archive", "skipped_active_exists", "rejected")
 
@@ -139,7 +140,7 @@ ROW_CODES = {
     "missing_amount": ("Amount is empty", "المبلغ فارغ"),
     "invalid_amount": ("Amount is not a number", "المبلغ ليس رقماً صحيحاً"),
     "negative_amount": ("Amount is negative", "المبلغ سالب"),
-    "amount_too_precise": ("Amount has more than 2 decimals", "المبلغ يحتوي على أكثر من خانتين عشريتين"),
+    "amount_too_precise": ("Amount has more than 2 decimals", "المبلغ يحتوي على أكثر من خانتين عشريتين"),  # no longer raised (rounded)
     "amount_too_large": ("Amount is too large", "المبلغ أكبر من المسموح"),
     "duplicate_in_file": ("The account number repeats an earlier row of the file", "رقم الحساب مكرر في الملف"),
     "formula_not_allowed": ("A mapped cell holds a formula; enter the value itself",
@@ -155,6 +156,8 @@ WARNING_CODES = {
                            "حساب المحصل غير نشط؛ أُضيف العميل دون تعيين"),
     "ambiguous_collector": ("The username matches several users; imported unassigned",
                             "اسم المستخدم يطابق أكثر من مستخدم؛ أُضيف العميل دون تعيين"),
+    "amount_rounded": ("The amount had more than 2 decimals and was rounded",
+                       "المبلغ فيه أكثر من خانتين عشريتين وتم تقريبه"),
     "identity_changed": ("The identity number differs from the archived record",
                          "رقم الهوية في الملف يختلف عن السجل المؤرشف"),
     "contact_formula_skipped": ("A contact cell holding a formula was skipped",
@@ -203,8 +206,10 @@ def clean(value) -> str | None:
 
 
 def parse_amount(raw: str) -> tuple[Decimal | None, str | None]:
-    """A non-negative amount with at most 2 decimals. Arabic-Indic digits, the Arabic decimal
-    separator and thousands separators (`,` `٬` spaces) are accepted."""
+    """A non-negative amount rounded half-up to 2 decimals. Arabic-Indic digits, the Arabic decimal
+    separator and thousands separators (`,` `٬` spaces) are accepted. More than 2 decimals is not an
+    error (customer decision 2026-10-15): the amount is rounded and the second value is the
+    `amount_rounded` warning (AMOUNT_WARNINGS) instead of a rejection code."""
     s = raw.translate(_DIGITS).strip()
     for ch in (",", "٬", " ", " ", " ", "'"):
         s = s.replace(ch, "")
@@ -221,10 +226,10 @@ def parse_amount(raw: str) -> tuple[Decimal | None, str | None]:
     if negative and d != 0:
         return None, "negative_amount"
     q = d.quantize(CENT, rounding=ROUND_HALF_UP)
-    if abs(d - q) > Decimal("0.000001"):      # float artifacts (1234.5600000001) are tolerated
-        return None, "amount_too_precise"
     if q > MAX_AMOUNT:
         return None, "amount_too_large"
+    if abs(d - q) > Decimal("0.000001"):      # float artifacts (1234.5600000001) pass silently
+        return q, "amount_rounded"
     return q, None
 
 
@@ -525,7 +530,9 @@ def _plan_row(row_no: int, raw: dict, formula_headers: set, mapping: dict) -> Ro
         p.reject("value_too_long")
     else:
         p.amount, problem = parse_amount(amount_raw)
-        if problem:
+        if problem in AMOUNT_WARNINGS:
+            p.warnings.append({"code": problem, "value": amount_raw[:50], "amount": str(p.amount)})
+        elif problem:
             p.reject(problem, amount_raw[:50])
     for c in mapping["contacts"]:
         v = clean(raw.get(c["column"]))
@@ -660,6 +667,7 @@ def _counts(plans, contacts_to_insert, existing_contacts) -> dict:
         "to_create": c["created"] + c["created_from_archive"],
         "assigned": sum(1 for p in plans if p.creates and p.user_id),
         "collector_not_matched": sum(warn.get(k, 0) for k in COLLECTOR_WARNINGS),
+        "amounts_rounded": warn.get("amount_rounded", 0),
         "warnings": warn,
         "contacts_new": len(contacts_to_insert),
         "contacts_existing": existing_contacts,
@@ -1101,6 +1109,8 @@ def _warnings_text(warnings) -> str:
     for w in warnings or []:
         label = WARNING_CODES.get(w.get("code"), (w.get("code"), w.get("code")))[1]
         value = w.get("value") or w.get("previous") or w.get("column")
+        if w.get("code") == "amount_rounded":
+            value = f"{w.get('value')} ← {w.get('amount')}"
         parts.append(f"{label}: {value}" if value else label)
     return "؛ ".join(parts)
 
@@ -1134,6 +1144,7 @@ def build_report(import_id, actor: str, scope, dest_dir: str) -> tuple[str, str]
                        ("skipped_active_exists", OUTCOME_AR["skipped_active_exists"]),
                        ("rejected", OUTCOME_AR["rejected"]), ("assigned", "تم تعيين محصل"),
                        ("collector_not_matched", "لم يُطابق اسم المحصل"),
+                       ("amounts_rounded", "مبالغ تم تقريبها لخانتين عشريتين"),
                        ("contacts_new", "أرقام تواصل جديدة"), ("contacts_existing", "أرقام تواصل موجودة مسبقاً")):
         summary.append([("s", label), ("int", int(counts.get(key) or 0))])
     wb.save()

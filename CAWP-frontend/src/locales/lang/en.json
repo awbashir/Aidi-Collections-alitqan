@@ -5115,6 +5115,7 @@
         "backToMapping": "Change the columns"
       },
       "count": {
+        "amountsRounded": "Amounts rounded to 2 decimals",
         "total": "Rows in the file",
         "created": "New clients",
         "createdFromArchive": "New, from the archive",
@@ -5156,6 +5157,7 @@
         "archived_already_linked": "This archived record was already replaced by a newer record"
       },
       "warning": {
+        "amount_rounded": "The amount had more than 2 decimals and was rounded",
         "unknown_collector": "Username not found, imported unassigned",
         "inactive_collector": "Collector account inactive, imported unassigned",
         "ambiguous_collector": "Username matches several users, imported unassigned",

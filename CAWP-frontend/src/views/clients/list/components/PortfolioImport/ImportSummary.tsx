@@ -56,6 +56,14 @@ export const CountTiles = ({ counts }: { counts: Partial<ImportCounts> }) => {
                 value={counts.collector_not_matched}
                 tone="text-warning"
             />
+            {counts.amounts_rounded ? (
+                <Tile
+                    testId="p7-count-rounded"
+                    label={t('p7.import.count.amountsRounded')}
+                    value={counts.amounts_rounded}
+                    tone="text-warning"
+                />
+            ) : null}
             <Tile testId="p7-count-assigned" label={t('p7.import.count.assigned')} value={counts.assigned} />
             <Tile testId="p7-count-contacts" label={t('p7.import.count.contactsNew')} value={counts.contacts_new} />
             <Tile testId="p7-count-contacts-existing" label={t('p7.import.count.contactsExisting')} value={counts.contacts_existing} />

@@ -31,7 +31,7 @@ export type ImportCatalogue = {
 
 export type ImportOutcome = 'created' | 'created_from_archive' | 'skipped_active_exists' | 'rejected'
 
-export type ImportWarning = { code: string; value?: string; previous?: string; column?: string }
+export type ImportWarning = { code: string; value?: string; previous?: string; column?: string; amount?: string }
 
 export type ImportCounts = {
     total: number
@@ -42,6 +42,8 @@ export type ImportCounts = {
     to_create: number
     assigned: number
     collector_not_matched: number
+    /** rows whose amount had more than 2 decimals and was rounded half-up */
+    amounts_rounded?: number
     warnings: Record<string, number>
     contacts_new: number
     contacts_existing: number
