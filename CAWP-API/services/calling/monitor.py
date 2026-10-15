@@ -17,10 +17,19 @@ agent extension: outbound (PJSIP/<ext> -> trunk), inbound (-> PJSIP/<ext>), inte
 agent). A ring-group call rings several extensions: each rung extension that did not answer
 counts one missed inbound. Extensions map to users through their CURRENT owner
 (`user_extensions`): calls are attributed to today's owner of the extension.
+
+Downloads (customer request 2026-10-15), same scope, period and user filter as the page:
+* the summary (export_summary): the per-user table, its totals and the calls over time;
+* the call detail (export_calls): one row per call and agent (calls(): the CDR rows of one
+  linkedid merged, as the statistics count them) with the time, the other party's number, the
+  line (caller ID) used, the result, ring and talk seconds and whether it was recorded. The
+  number is matched to a client ONLY among the cases the downloader may see (money.scope_sql),
+  through the normalised-mobile index; otherwise the client columns stay empty.
 """
 from __future__ import annotations
 
 import datetime as _dt
+import os
 import re
 
 from sqlalchemy import text
@@ -183,7 +192,8 @@ def _cdr_rows(lo, hi):
         cur = conn.cursor(dictionary=True)
         try:
             cur.execute("""
-                SELECT calldate, channel, dstchannel, disposition, billsec, linkedid, uniqueid
+                SELECT calldate, channel, dstchannel, disposition, billsec, duration, linkedid, uniqueid,
+                       src, dst, userfield, recordingfile
                   FROM asteriskcdrdb.cdr
                  WHERE calldate >= %s AND calldate < %s AND (channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')
                  ORDER BY calldate LIMIT %s""", (lo, hi, MAX_CDR_ROWS + 1))
@@ -202,9 +212,8 @@ def _cdr_rows(lo, hi):
             pass
 
 
-def stats(args, user_id=None, rows=None) -> dict:
-    full = scope(user_id)
-    sc = narrow(full, args.get("extension"))
+def _range(args):
+    """(from, to, lo, hi) of the page's period: Asia/Riyadh days, default today, 31 days max."""
     today = riyadh.now().date()
     start = _date(args.get("from"), "from", today)
     end = _date(args.get("to"), "to", start)
@@ -212,11 +221,18 @@ def stats(args, user_id=None, rows=None) -> dict:
         raise ApiError(422, VALIDATION_FAILED, "to is before from", {"to": "before_from"})
     if (end - start).days >= MAX_DAYS:
         raise ApiError(422, VALIDATION_FAILED, f"at most {MAX_DAYS} days", {"to": "range_too_long"})
+    lo = _dt.datetime.combine(start, _dt.time.min)                      # the PBX writes Riyadh wall clock
+    hi = _dt.datetime.combine(end + _dt.timedelta(days=1), _dt.time.min)
+    return start, end, lo, hi
+
+
+def stats(args, user_id=None, rows=None) -> dict:
+    full = scope(user_id)
+    sc = narrow(full, args.get("extension"))
+    start, end, lo, hi = _range(args)
     gran = args.get("granularity") or ("hour" if start == end else "day")
     if gran not in ("hour", "day"):
         raise ApiError(422, VALIDATION_FAILED, "granularity must be hour or day", {"granularity": "invalid"})
-    lo = _dt.datetime.combine(start, _dt.time.min)                      # the PBX writes Riyadh wall clock
-    hi = _dt.datetime.combine(end + _dt.timedelta(days=1), _dt.time.min)
     cdr = rows if rows is not None else _cdr_rows(lo, hi)
     allowed = sc["extensions"]
     calls: dict[tuple, dict] = {}
@@ -266,3 +282,167 @@ def stats(args, user_id=None, rows=None) -> dict:
                        "inbound_answered": sum(u["inbound_answered"] for u in users),
                        "inbound_missed": sum(u["inbound_missed"] for u in users),
                        "talk_seconds": sum(u["talk_seconds"] for u in users)}}
+
+
+# --------------------------------------------------------------------------- call detail + downloads
+DIRECTION_AR = {"outbound": "صادرة", "inbound": "واردة", "internal": "داخلية"}
+RESULT_AR = {"ANSWERED": "تم الرد", "NO ANSWER": "لم يتم الرد", "BUSY": "مشغول", "FAILED": "فشل",
+             "CONGESTION": "تعذر الاتصال"}
+SCOPE_AR = {"all": "كل التحويلات", "team": "الفريق", "own": "تحويلتي"}
+
+
+def _other_party(r, direction):
+    """(number, line) of one CDR row: the customer's number and the PBX line (caller ID / DID)."""
+    src, dst = (r.get("src") or "").strip(), (r.get("dst") or "").strip()
+    if direction == "outbound":
+        return dst, src
+    if direction == "inbound":
+        uf = (r.get("userfield") or "").strip()
+        did = uf.split(":")[1] if uf.startswith("ivr:") and uf.count(":") >= 1 else ""
+        return src, did
+    peer = AGENT_RE.match(r.get("dstchannel") or "")
+    return (peer.group(1) if peer else dst), ""
+
+
+def calls(args, user_id=None, rows=None) -> dict:
+    """One row per call and agent (the CDR rows of one linkedid merged), oldest first."""
+    full = scope(user_id)
+    sc = narrow(full, args.get("extension"))
+    start, end, lo, hi = _range(args)
+    cdr = rows if rows is not None else _cdr_rows(lo, hi)
+    allowed = sc["extensions"]
+    merged: dict[tuple, dict] = {}
+    for r in cdr[:MAX_CDR_ROWS]:
+        for ext, direction, answered in classify(r):
+            if allowed is not None and ext not in allowed:
+                continue
+            key = (r.get("linkedid") or r.get("uniqueid"), ext, direction)
+            number, line = _other_party(r, direction)
+            disp = (r.get("disposition") or "").upper()
+            rank = 3 if answered else 2 if (r.get("dstchannel") or "") else 1    # the Dial row tells the result
+            billsec, duration = int(r.get("billsec") or 0), int(r.get("duration") or 0)
+            c = merged.get(key)
+            if c is None:
+                merged[key] = {"at": r["calldate"], "extension": ext, "direction": direction, "answered": answered,
+                               "result": disp, "_rank": rank, "number": number, "line": line,
+                               "talk_seconds": billsec if answered else 0, "ring_seconds": max(duration - billsec, 0),
+                               "recorded": bool((r.get("recordingfile") or "").strip()), "call_id": key[0]}
+                continue
+            c["at"] = min(c["at"], r["calldate"])
+            if rank > c["_rank"]:
+                c["result"], c["_rank"] = disp, rank
+            c["answered"] = c["answered"] or answered
+            if answered:
+                c["talk_seconds"] = max(c["talk_seconds"], billsec)
+            c["ring_seconds"] = max(c["ring_seconds"], duration - billsec)
+            c["number"], c["line"] = c["number"] or number, c["line"] or line
+            c["recorded"] = c["recorded"] or bool((r.get("recordingfile") or "").strip())
+    items = sorted(merged.values(), key=lambda c: (c["at"], c["extension"]))
+    for c in items:
+        c.pop("_rank")
+        c.update({k: v for k, v in _agent(c["extension"], sc["owners"]).items() if k != "extension"})
+    clients = _clients_for([c["number"] for c in items if c["direction"] != "internal"], user_id)
+    for c in items:
+        c["client"] = clients.get(c["number"]) if c["direction"] != "internal" else None
+    return {"scope": sc["kind"], "extension": sc.get("filtered"), "from": start.isoformat(), "to": end.isoformat(),
+            "truncated": len(cdr) > MAX_CDR_ROWS, "calls": items}
+
+
+def _clients_for(numbers, user_id=None) -> dict:
+    """number -> {name, account_number} for the numbers that are a contact of a case the caller
+    may see (one client per number: active before archived, the latest updated)."""
+    from services import money
+    nums = sorted({n for n in numbers if n and len(re.sub(r"[^0-9]", "", n)) >= 9})
+    if not nums:
+        return {}
+    pred, params = money.scope_sql(money.caller_scope(str(user_id or me())), alias="k")
+    rows = sess().execute(text(f"""
+        SELECT DISTINCT ON (m.n) m.n, k.name, k."accountNumber"
+          FROM unnest(CAST(:nums AS text[])) AS m(n)
+          JOIN "ClintContacts" cc ON cc.is_deleted = false
+                                 AND cawp_norm_mobile(cc.contact) = cawp_norm_mobile(m.n)
+          JOIN clints k ON k."identityNumber" = cc."identityNumber"
+         WHERE cawp_norm_mobile(m.n) IS NOT NULL AND {pred}
+         ORDER BY m.n, k.is_archive ASC, k.update_at DESC NULLS LAST"""), {"nums": nums, **params}).all()
+    return {r[0]: {"name": r[1], "account_number": r[2]} for r in rows}
+
+
+def _clock(seconds) -> str:
+    seconds = int(seconds or 0)
+    return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+
+def _who(sc_kind, ext, owners) -> str:
+    if not ext:
+        return SCOPE_AR.get(sc_kind, sc_kind)
+    a = _agent(ext, owners)
+    return f"{a['name'] or '—'} ({ext})"
+
+
+def _info_sheet(wb, data, owners, kind_ar):
+    sh = wb.add_sheet("معلومات")
+    sh.append([("s", "البند"), ("s", "القيمة")], header=True)
+    for label, value in (("التقرير", kind_ar), ("من", data["from"]), ("إلى", data["to"]),
+                         ("الموظف", _who(data["scope"], data.get("extension"), owners)),
+                         ("وقت الإنشاء (الرياض)", riyadh.now().strftime("%Y-%m-%d %H:%M")),
+                         ("ملاحظة", "المكالمات تُنسب للمالك الحالي للتحويلة؛ الأوقات بتوقيت الرياض")):
+        sh.append([("s", label), ("s", value)])
+    if data.get("truncated"):
+        sh.append([("s", "تنبيه"), ("s", f"الفترة فيها أكثر من {MAX_CDR_ROWS} سجل؛ قصّر الفترة")])
+
+
+def export_summary(args, dest_dir: str, user_id=None, rows=None) -> tuple[str, str, int]:
+    """XLSX: the per-user table with totals, the calls over time, and the period. -> (path, name, users)."""
+    from core.reports.xlsx import Workbook
+    data = stats({**args, "granularity": args.get("granularity") or None}, user_id=user_id, rows=rows)
+    owners = scope(user_id)["owners"]
+    name = f"call-monitor-summary-{data['from']}_{data['to']}{'-' + data['extension'] if data['extension'] else ''}.xlsx"
+    path = os.path.join(dest_dir, name)
+    wb = Workbook(path, rtl=True)
+    sh = wb.add_sheet("ملخص الموظفين", freeze_header=True)
+    sh.append([("s", h) for h in ("الموظف", "التحويلة", "المكالمات المنجزة", "صادرة", "صادرة تم الرد عليها",
+                                  "واردة تم الرد عليها", "واردة فائتة", "داخلية", "مدة المحادثة",
+                                  "مدة المحادثة (ثانية)")], header=True)
+    for u in data["users"]:
+        sh.append([("s", u["name"] or "—"), ("s", u["extension"]), ("int", u["handled"]), ("int", u["outbound"]),
+                   ("int", u["outbound_answered"]), ("int", u["inbound_answered"]), ("int", u["inbound_missed"]),
+                   ("int", u["internal"]), ("s", _clock(u["talk_seconds"])), ("int", u["talk_seconds"])])
+    tot = data["totals"]
+    sh.append([("s", "الإجمالي"), None, ("int", tot["handled"]), ("int", tot["outbound"]),
+               ("int", tot["outbound_answered"]), ("int", tot["inbound_answered"]), ("int", tot["inbound_missed"]),
+               ("int", sum(u["internal"] for u in data["users"])), ("s", _clock(tot["talk_seconds"])),
+               ("int", tot["talk_seconds"])], header=True)
+    ts = wb.add_sheet("حسب الوقت", freeze_header=True)
+    exts = [u["extension"] for u in data["users"]]
+    ts.append([("s", "الساعة" if data["granularity"] == "hour" else "اليوم"), ("s", "الإجمالي")]
+              + [("s", f"{u['name'] or '—'} ({u['extension']})") for u in data["users"]], header=True)
+    for b in data["series"]:
+        ts.append([("s", b["bucket"]), ("int", b["total"])] + [("int", b["by_extension"].get(e, 0)) for e in exts])
+    _info_sheet(wb, data, owners, "ملخص مكالمات الموظفين")
+    wb.save()
+    return path, name, len(data["users"])
+
+
+def export_calls(args, dest_dir: str, user_id=None, rows=None) -> tuple[str, str, int]:
+    """XLSX: one row per call (the call detail). -> (path, name, calls)."""
+    from core.reports.xlsx import Workbook
+    data = calls(args, user_id=user_id, rows=rows)
+    owners = scope(user_id)["owners"]
+    name = f"call-monitor-calls-{data['from']}_{data['to']}{'-' + data['extension'] if data['extension'] else ''}.xlsx"
+    path = os.path.join(dest_dir, name)
+    wb = Workbook(path, rtl=True)
+    sh = wb.add_sheet("تفاصيل المكالمات", freeze_header=True)
+    sh.append([("s", h) for h in ("التاريخ والوقت", "الموظف", "التحويلة", "الاتجاه", "الرقم", "العميل",
+                                  "رقم الحساب", "الخط", "النتيجة", "مدة الرنين (ثانية)", "مدة المحادثة",
+                                  "مدة المحادثة (ثانية)", "مسجلة", "معرف المكالمة")], header=True)
+    for c in data["calls"]:
+        client = c["client"] or {}
+        sh.append([("datetime", c["at"]), ("s", c["name"] or "—"), ("s", c["extension"]),
+                   ("s", DIRECTION_AR[c["direction"]]), ("s", c["number"] or None), ("s", client.get("name")),
+                   ("s", client.get("account_number")), ("s", c["line"] or None),
+                   ("s", RESULT_AR.get(c["result"], c["result"] or "—")), ("int", c["ring_seconds"]),
+                   ("s", _clock(c["talk_seconds"])), ("int", c["talk_seconds"]), ("s", "نعم" if c["recorded"] else "لا"),
+                   ("s", c["call_id"])])
+    _info_sheet(wb, data, owners, "تفاصيل المكالمات")
+    wb.save()
+    return path, name, len(data["calls"])

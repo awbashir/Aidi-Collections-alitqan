@@ -6,6 +6,8 @@
  *   snapshot is shown as "unknown", never as "no calls".
  * - Calls by user over time (`GET /v2/calling/monitor/stats`): the PBX call records per agent
  *   extension, by hour (one day) or by day, with a chart per user and a chart over time.
+ * - Downloads (XLSX, same period and user filter): the per-user summary and the call detail
+ *   (one row per call: time, number, client, line, result, ring/talk time, recorded).
  *
  * The API decides the scope: SuperAdmin every extension, a supervisor their team's, anyone
  * else their own. The user filter (one extension) narrows both sections; its choices are the
@@ -15,6 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import classNames from 'classnames'
+import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import Table from '@/components/ui/Table'
@@ -228,6 +231,19 @@ const StatsSection = ({ ext }: { ext: string }) => {
         return { labels, lines }
     }, [data, t])
     const totals = data?.totals
+    const [downloading, setDownloading] = useState<'summary' | 'calls' | null>(null)
+    const [downloadError, setDownloadError] = useState<unknown>(null)
+    const download = async (kind: 'summary' | 'calls') => {
+        setDownloading(kind)
+        setDownloadError(null)
+        try {
+            await callMonitorApi.download(kind, { from, to, extension: ext || undefined })
+        } catch (e) {
+            setDownloadError(e)
+        } finally {
+            setDownloading(null)
+        }
+    }
     return (
         <div className="flex flex-col gap-4" data-testid="p5-monitor-stats">
             <div className="flex flex-wrap items-end gap-3">
@@ -257,7 +273,29 @@ const StatsSection = ({ ext }: { ext: string }) => {
                         { value: 'day', label: t('p5.monitor.byDay') },
                     ]}
                 />
+                <div className="ms-auto flex flex-wrap gap-2">
+                    <Button
+                        size="sm"
+                        loading={downloading === 'summary'}
+                        disabled={downloading !== null}
+                        onClick={() => download('summary')}
+                        data-testid="p5-monitor-download-summary"
+                    >
+                        {t('p5.monitor.downloadSummary')}
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="solid"
+                        loading={downloading === 'calls'}
+                        disabled={downloading !== null}
+                        onClick={() => download('calls')}
+                        data-testid="p5-monitor-download-calls"
+                    >
+                        {t('p5.monitor.downloadCalls')}
+                    </Button>
+                </div>
             </div>
+            {downloadError ? <Notice tone="danger">{describe(downloadError, t)}</Notice> : null}
             {q.error && !data ? (
                 <ErrorState error={q.error} onRetry={q.reload} describe={describe} />
             ) : !data || !totals ? (

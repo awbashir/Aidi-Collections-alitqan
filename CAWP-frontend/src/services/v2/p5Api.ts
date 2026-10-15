@@ -196,6 +196,43 @@ export const callMonitorApi = {
     live: (q: { extension?: string }, signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', q, signal),
     stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day'; extension?: string }, signal?: AbortSignal) =>
         v2Get<MonitorStats>('/v2/calling/monitor/stats', q, signal),
+    /** XLSX download with the bearer token: `summary` = the per-user table, `calls` = one row per call. */
+    download: async (kind: 'summary' | 'calls', q: { from?: string; to?: string; extension?: string }) => {
+        const params = Object.fromEntries(Object.entries(q).filter(([, v]) => v))
+        let res
+        try {
+            res = await BaseService({
+                url: kind === 'summary' ? '/v2/calling/monitor/stats/export' : '/v2/calling/monitor/calls/export',
+                method: 'get',
+                params,
+                responseType: 'blob',
+                timeout: 0,
+            })
+        } catch (err) {
+            const ax = err as { response?: { status: number; data?: Blob } }
+            if (ax?.response) {
+                let body: { code?: string; message?: string; error?: unknown } = {}
+                try {
+                    body = JSON.parse(await (ax.response.data as Blob).text())
+                } catch {
+                    /* not JSON */
+                }
+                throw new V2Error(ax.response.status, body.code || 'unknown', body.message || '', body.error ?? null)
+            }
+            throw new V2Error(0, 'network_error', (err as Error)?.message || 'network error', null)
+        }
+        const disposition = String(res.headers?.['content-disposition'] || '')
+        const name = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)?.[1] || `call-monitor-${kind}.xlsx`
+        const url = URL.createObjectURL(res.data as Blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = decodeURIComponent(name)
+        a.rel = 'noopener'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 10000)
+    },
 }
 
 /* ---------------------------------------------------------------- campaigns */

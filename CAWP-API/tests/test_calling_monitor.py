@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 import uuid
 
 import pytest
 
 from services.calling import live_monitor, monitor
-from test_calling_helpers import CL, cl, new_supervisor, new_user, pgc, run  # noqa: F401
+from test_calling_helpers import (CL, add_contact, cl, make_case, new_contract, new_supervisor, new_user,  # noqa: F401
+                                 pgc, run)
 
 
 @pytest.fixture(scope="module")
@@ -169,3 +171,97 @@ def test_user_filter_narrows_within_scope_only(mon_app, pgc):
         with pytest.raises(ApiError):
             monitor.stats({"from": "2026-10-12", "extension": e2}, user_id=sup, rows=rows)
         db.session.remove()
+
+
+def detail_world(pgc):
+    member, other = new_user(pgc), new_user(pgc)
+    sup = new_supervisor(pgc, users=[member])
+    e1, e2 = f"2{uuid.uuid4().int % 900 + 100}", f"1{uuid.uuid4().int % 900 + 100}"
+    own(pgc, member, e1)
+    own(pgc, other, e2)
+    _, portfolio = new_contract(pgc, "monitor detail")
+    mine, theirs = make_case(pgc, member, portfolio), make_case(pgc, other, portfolio)
+    n_mine, n_theirs = f"055{uuid.uuid4().int % 10**7:07d}", f"056{uuid.uuid4().int % 10**7:07d}"
+    add_contact(pgc, mine, n_mine)
+    add_contact(pgc, theirs, n_theirs)
+    at = lambda h, m=0, s=0: dt.datetime(2026, 10, 14, h, m, s)  # noqa: E731
+    rows = [
+        # outbound by e1, not answered: the Dial row (result) + the follow-up Congestion row of the same call
+        {"calldate": at(9), "channel": f"PJSIP/{e1}-1", "dstchannel": "SIP/ITC_SIP_Trunk-1", "disposition": "NO ANSWER",
+         "billsec": 0, "duration": 40, "linkedid": "D1", "src": "+966125123081", "dst": n_mine,
+         "recordingfile": "out-1.wav"},
+        {"calldate": at(9, 0, 41), "channel": f"PJSIP/{e1}-1", "dstchannel": "", "disposition": "CONGESTION",
+         "billsec": 0, "duration": 1, "linkedid": "D1", "src": "+966125123081", "dst": n_mine, "recordingfile": "out-1.wav"},
+        # outbound by e2 to a client the supervisor may not see, answered
+        {"calldate": at(10), "channel": f"PJSIP/{e2}-2", "dstchannel": "SIP/ITC_SIP_Trunk-2", "disposition": "ANSWERED",
+         "billsec": 125, "duration": 140, "linkedid": "D2", "src": "+966125123082", "dst": n_theirs, "recordingfile": ""},
+        # inbound to the IVR line, ring group: e1 answers, e2 misses
+        {"calldate": at(11), "channel": "Local/FMGL;2", "dstchannel": f"PJSIP/{e1}-3", "disposition": "ANSWERED",
+         "billsec": 30, "duration": 36, "linkedid": "D3", "src": n_mine, "dst": "600", "userfield": "ivr:+966125123075:ar:dept1"},
+        {"calldate": at(11), "channel": "Local/FMGL;2", "dstchannel": f"PJSIP/{e2}-4", "disposition": "NO ANSWER",
+         "billsec": 0, "duration": 6, "linkedid": "D3", "src": n_mine, "dst": "600"},
+        # internal e1 -> e2
+        {"calldate": at(12), "channel": f"PJSIP/{e1}-5", "dstchannel": f"PJSIP/{e2}-6", "disposition": "ANSWERED",
+         "billsec": 5, "duration": 8, "linkedid": "D4", "src": e1, "dst": e2},
+    ]
+    return member, other, sup, e1, e2, n_mine, n_theirs, rows
+
+
+def test_call_detail_merges_rows_and_matches_clients_in_scope(mon_app, pgc):
+    member, other, sup, e1, e2, n_mine, n_theirs, rows = detail_world(pgc)
+    from extensions import db
+    with mon_app.app_context():
+        everything = monitor.calls({"from": "2026-10-14"}, user_id=CL.super, rows=rows)
+        team = monitor.calls({"from": "2026-10-14"}, user_id=sup, rows=rows)
+        db.session.remove()
+    by = {(c["call_id"], c["extension"]): c for c in everything["calls"]}
+    assert len(everything["calls"]) == 5
+    d1 = by[("D1", e1)]
+    assert d1["direction"] == "outbound" and d1["result"] == "NO ANSWER" and d1["number"] == n_mine
+    assert d1["line"] == "+966125123081" and d1["ring_seconds"] == 40 and d1["talk_seconds"] == 0 and d1["recorded"]
+    assert d1["at"] == dt.datetime(2026, 10, 14, 9) and d1["user_id"] == member
+    assert d1["client"]["account_number"] and by[("D2", e2)]["client"] is not None          # SuperAdmin sees both
+    d2 = by[("D2", e2)]
+    assert d2["result"] == "ANSWERED" and d2["talk_seconds"] == 125 and d2["ring_seconds"] == 15 and not d2["recorded"]
+    assert by[("D3", e1)]["direction"] == "inbound" and by[("D3", e1)]["line"] == "+966125123075"
+    assert by[("D3", e1)]["number"] == n_mine and by[("D3", e2)]["result"] == "NO ANSWER"
+    assert by[("D4", e1)]["direction"] == "internal" and by[("D4", e1)]["number"] == e2 and by[("D4", e1)]["client"] is None
+    # the supervisor: only the team's extension, and only clients of cases they may see
+    assert {c["extension"] for c in team["calls"]} == {e1}
+    assert all(c["client"] is None or c["number"] == n_mine for c in team["calls"])
+
+
+def test_exports_are_scoped_xlsx_and_audited(mon_app, pgc, monkeypatch):
+    import openpyxl
+    member, other, sup, e1, e2, n_mine, n_theirs, rows = detail_world(pgc)
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi: rows)
+    client = mon_app.test_client()
+    r = client.get("/v2/calling/monitor/calls/export", query_string={"from": "2026-10-14"}, headers=token(mon_app, sup))
+    assert r.status_code == 200 and r.headers["Cache-Control"] == "private, no-store", r.data[:300]
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).worksheets[0]
+    assert ws.cell(1, 1).value == "التاريخ والوقت" and ws.cell(1, 5).value == "الرقم"
+    exts = {ws.cell(i, 3).value for i in range(2, ws.max_row + 1)}
+    assert exts == {e1}                                                                      # the team only
+    results = {ws.cell(i, 9).value for i in range(2, ws.max_row + 1)}
+    assert {"لم يتم الرد", "تم الرد"} <= results
+    r = client.get("/v2/calling/monitor/stats/export", query_string={"from": "2026-10-14", "extension": e2},
+                   headers=token(mon_app, CL.super))
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.data))
+    users = wb.worksheets[0]
+    assert users.cell(1, 1).value == "الموظف" and users.cell(2, 2).value == e2 and users.cell(3, 1).value == "الإجمالي"
+    assert users.cell(2, 4).value == 1 and users.cell(2, 7).value == 1                       # outbound 1, missed 1
+    assert [s.title for s in wb.worksheets] == ["ملخص الموظفين", "حسب الوقت", "معلومات"]
+    assert client.get("/v2/calling/monitor/calls/export", query_string={"from": "2026-10-14", "extension": e2},
+                      headers=token(mon_app, sup)).status_code == 403                       # outside the team
+    assert client.get("/v2/calling/monitor/calls/export", headers=token(mon_app, new_user(pgc, CL.collector_role))
+                      ).status_code == 403
+    n = run_q(pgc, "SELECT count(*) FROM audit_events WHERE action = 'call_monitor.export' AND actor_user_id IN (%s, %s)",
+              sup, CL.super)
+    assert n >= 2
+
+
+def run_q(pgc, sql, *params):
+    with pgc.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchone()[0]

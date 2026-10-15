@@ -2978,6 +2978,8 @@
   },
   "p5": {
     "monitor": {
+      "downloadSummary": "Download users summary",
+      "downloadCalls": "Download call details",
       "user": "User",
       "allUsers": "All users",
       "clearUser": "Show all users",
