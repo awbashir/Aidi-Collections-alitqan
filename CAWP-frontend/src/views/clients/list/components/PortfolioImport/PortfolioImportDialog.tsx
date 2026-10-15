@@ -84,7 +84,7 @@ const PortfolioImportDialog = ({
     const fileInput = useRef<HTMLInputElement>(null)
 
     const [step, setStep] = useState<Step>('setup')
-    const [contracts, setContracts] = useState<Option[]>([])
+    const [contracts, setContracts] = useState<Array<Option & { is_active?: boolean }>>([])
     const [contractId, setContractId] = useState<string>('')
     const [name, setName] = useState('')
     const [catalogue, setCatalogue] = useState<ImportCatalogue | null>(null)
@@ -256,6 +256,13 @@ const PortfolioImportDialog = ({
                                         size="sm"
                                         menuPosition="fixed"
                                         options={contracts}
+                                        /* the API refuses a deactivated contract: show it, but not selectable */
+                                        isOptionDisabled={(o) => (o as { is_active?: boolean }).is_active === false}
+                                        formatOptionLabel={(o) =>
+                                            (o as { is_active?: boolean }).is_active === false
+                                                ? `${(o as Option).label} ${t('p7.import.setup.contractInactive')}`
+                                                : (o as Option).label
+                                        }
                                         placeholder={String(t('p7.import.setup.pickContract'))}
                                         value={contracts.find((o) => o.value === contractId) || null}
                                         onChange={(o) => setContractId((o as Option | null)?.value || '')}

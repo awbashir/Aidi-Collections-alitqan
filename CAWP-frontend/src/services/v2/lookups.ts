@@ -50,8 +50,9 @@ export const lookups = {
         }),
     contracts: () =>
         cached('contracts', async () => {
-            const d = await get<{ contracts?: Named[] }>('/contracts')
-            return (d.contracts || []).map((c) => ({ value: c.id, label: c.name }))
+            const d = await get<{ contracts?: Array<Named & { is_active?: boolean }> }>('/contracts')
+            /* is_active: false for a deactivated contract (pickers that create data disable it) */
+            return (d.contracts || []).map((c) => ({ value: c.id, label: c.name, is_active: c.is_active !== false }))
         }),
     portfolios: () =>
         cached('portfolios', async () => {

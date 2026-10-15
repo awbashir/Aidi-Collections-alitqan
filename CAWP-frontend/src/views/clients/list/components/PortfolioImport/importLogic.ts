@@ -74,6 +74,9 @@ const KNOWN_ERRORS = new Set([
 /** Text for a failed call of this wizard (falls back to the shared v2 messages). */
 export function describeImportError(error: unknown, t: Translate): string {
     if (isV2Error(error) && KNOWN_ERRORS.has(error.code)) return t(`p7.import.err.${error.code}`)
+    if (isV2Error(error) && (error.detail as { contract_id?: string } | null)?.contract_id === 'inactive') {
+        return t('p7.import.err.contractInactive')
+    }
     return describeV2Error(error, t)
 }
 

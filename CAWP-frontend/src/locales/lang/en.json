@@ -5056,6 +5056,7 @@
         "run": "Import"
       },
       "setup": {
+        "contractInactive": "(inactive contract)",
         "contract": "Contract",
         "pickContract": "Choose a contract",
         "portfolioName": "Portfolio name",
@@ -5165,6 +5166,7 @@
         "contact_formula_skipped": "A contact cell with a formula was skipped"
       },
       "err": {
+        "contractInactive": "This contract is inactive. Activate it from Contracts, or choose another contract.",
         "invalid_mapping": "The column choices are not valid. Check the required fields.",
         "already_imported": "This file was already imported. Upload it again only if you want a new portfolio.",
         "import_in_progress": "This file is being imported right now.",
