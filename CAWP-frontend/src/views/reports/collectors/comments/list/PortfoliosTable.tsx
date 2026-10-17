@@ -234,6 +234,16 @@ const PortfoliosTable = () => {
       },
 
       {
+        header: t("p8.reports.subStatus"),
+        accessorKey: "sub_status..name",
+        cell: (props: {
+          row: { original?: { sub_status?: { name?: string } | null } };
+        }) => {
+          return props.row.original?.sub_status?.name || "";
+        },
+      },
+
+      {
         header: t("clients.accountNumber"),
         accessorKey: "clint..accountNumber",
         cell: (props) => {
@@ -546,7 +556,7 @@ const PortfoliosTable = () => {
             status: true,
             label: t("total_amount"),
             value: tableData.totalAmount,
-            place: 8,
+            place: 9,
           }}
         />
       </div>

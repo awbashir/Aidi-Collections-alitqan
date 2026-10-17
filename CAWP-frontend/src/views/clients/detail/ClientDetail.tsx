@@ -30,6 +30,9 @@ import { useV2Query } from "@/utils/v2/hooks";
 import { HiArrowLeft } from "react-icons/hi";
 import { SkeletonLines } from "@/components/v2/States";
 import { backPathFromState } from "@/utils/v2/rowNavigation";
+import { useCaseListNav } from "@/utils/v2/caseListNav";
+import CaseListNavButtons from "./components/CaseListNavButtons";
+import { callDock, useCallDock } from "@/views/phase5/live/callDock";
 
 injectReducer("crmCustomerDetails", reducer);
 
@@ -225,16 +228,21 @@ const Settings = () => {
       navigate(backPath ?? "/clients");
     }
   };
+  /* 2026-10-17: previous / next client of that list (its page's order), same tab. */
+  const listNav = useCaseListNav(requestedId);
   const backButton = (
-    <button
-      type="button"
-      onClick={goBack}
-      className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-extrabold text-azure-600 hover:underline"
-      data-testid="p7-back-to-list"
-    >
-      <HiArrowLeft className="rtl:rotate-180" aria-hidden="true" />
-      {t("p7.nav.backToList")}
-    </button>
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <button
+        type="button"
+        onClick={goBack}
+        className="inline-flex items-center gap-1.5 text-[13px] font-extrabold text-azure-600 hover:underline"
+        data-testid="p7-back-to-list"
+      >
+        <HiArrowLeft className="rtl:rotate-180" aria-hidden="true" />
+        {t("p7.nav.backToList")}
+      </button>
+      <CaseListNavButtons nav={listNav} />
+    </div>
   );
 
   // A case opened from a scrolled list starts at the top.
@@ -300,6 +308,25 @@ const Settings = () => {
     return () => window.removeEventListener("cawp:call-wrapped", onWrapped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseInfo?.id]);
+  /* 2026-10-17: while this page is open, a call of this case is wrapped up
+   * here, in the note tab ("call result"), not in the dock's dialog. When
+   * the call ends the note tab opens (from the tabs where the call was
+   * placed or watched; from any tab when the user asks in the dock). */
+  const dock = useCallDock();
+  useEffect(
+    () => (requestedId ? callDock.claimCase(String(requestedId)) : undefined),
+    [requestedId],
+  );
+  useEffect(() => {
+    if (!dock.focus.tick || !requestedId || dock.resultFor?.caseId !== String(requestedId)) return;
+    if (
+      currentTab !== "comments" &&
+      (dock.focus.force || ["details", "calls"].includes(currentTab))
+    ) {
+      onTabChange("comments");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dock.focus.tick]);
   const canSeeCorrections =
     p1perm.case_corrections_request || p1perm.case_corrections_review;
   /* Pending corrections on this case (exact count), shown under the header. */
@@ -319,7 +346,7 @@ const Settings = () => {
     setCurrentTab(path);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTab]);
+  }, [currentTab, path]);
 
   useEffect(() => {
     fetchData();

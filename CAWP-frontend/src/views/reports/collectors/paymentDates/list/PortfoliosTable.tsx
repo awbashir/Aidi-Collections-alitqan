@@ -251,6 +251,16 @@ const PortfoliosTable = () => {
           return name;
         },
       },
+
+      {
+        header: t("p8.reports.subStatus"),
+        accessorKey: "comment_sub_status..name",
+        cell: (props: {
+          row: { original?: { comment_sub_status?: { name?: string } | null } };
+        }) => {
+          return props.row.original?.comment_sub_status?.name || "";
+        },
+      },
       /* 
       {
         header: t("comments.comment"),
@@ -578,7 +588,7 @@ const PortfoliosTable = () => {
           footerTotalAmount={{
             status: true,
             value: tableData.totalAmount,
-            place: 8,
+            place: 9,
             label: t("total_amount"),
           }}
         />

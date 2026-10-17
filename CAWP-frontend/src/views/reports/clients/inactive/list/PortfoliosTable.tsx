@@ -234,6 +234,15 @@ const PortfoliosTable = () => {
           return name;
         },
       },
+      {
+        header: t("p8.reports.subStatus"),
+        accessorKey: "comment_sub_status..name",
+        cell: ({
+          row,
+        }: {
+          row: { original?: { comment_sub_status?: { name?: string } | null } };
+        }) => row.original?.comment_sub_status?.name || "",
+      },
 
       {
         header: t("clients.accountNumber"),

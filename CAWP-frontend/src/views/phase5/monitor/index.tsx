@@ -8,6 +8,9 @@
  *   extension, by hour (one day) or by day, with a chart per user and a chart over time.
  * - Downloads (XLSX, same period and user filter): the per-user summary and the call detail
  *   (one row per call: time, number, client, line, result, ring/talk time, recorded).
+ * - Talk-time counts (2026-10-17): answered calls longer than 1 / 2 / 3 minutes (strictly), per
+ *   user and in the totals. A user's row opens their calls of the period (UserCalls.tsx), where
+ *   a holder of the recording keys can play and download the recordings.
  *
  * The API decides the scope: SuperAdmin every extension, a supervisor their team's, anyone
  * else their own. The user filter (one extension) narrows both sections; its choices are the
@@ -24,13 +27,14 @@ import Table from '@/components/ui/Table'
 import Chart from '@/components/shared/Chart'
 import { Ltr } from '@/components/v2/Display'
 import { EmptyState, ErrorState, SkeletonLines, SkeletonRows } from '@/components/v2/States'
-import { PageHead, TableFrame } from '@/components/v2/ListParts'
+import { PageHead, TableFrame, rowClass } from '@/components/v2/ListParts'
 import { Segmented } from '@/views/phase1/followUps/parts'
 import { callMonitorApi, describeP5Error } from '@/services/v2'
 import type { MonitorAgent, MonitorLive, MonitorStats, Option, Translate } from '@/services/v2'
 import { useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { Card, Fact, Notice } from '../parts'
+import UserCalls from './UserCalls'
 
 const { THead, TBody, Tr, Th, Td } = Table
 const POLL_MS = 3000
@@ -231,6 +235,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
         return { labels, lines }
     }, [data, t])
     const totals = data?.totals
+    const [opened, setOpened] = useState<MonitorAgent | null>(null)
     const [downloading, setDownloading] = useState<'summary' | 'calls' | null>(null)
     const [downloadError, setDownloadError] = useState<unknown>(null)
     const download = async (kind: 'summary' | 'calls') => {
@@ -303,7 +308,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
             ) : (
                 <>
                     {data.truncated && <Notice tone="warning">{t('p5.monitor.truncated')}</Notice>}
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
                         <Fact label={t('p5.monitor.handled')}>
                             <Ltr>{formatCount(totals.handled)}</Ltr>
                         </Fact>
@@ -318,6 +323,9 @@ const StatsSection = ({ ext }: { ext: string }) => {
                         </Fact>
                         <Fact label={t('p5.monitor.talkTime')}>
                             <Ltr>{clock(totals.talk_seconds)}</Ltr>
+                        </Fact>
+                        <Fact label={t('p8.monitor.overTile')} testId="p8-monitor-talk-over">
+                            <Ltr>{`${formatCount(totals.talk_over_60)} / ${formatCount(totals.talk_over_120)} / ${formatCount(totals.talk_over_180)}`}</Ltr>
                         </Fact>
                     </div>
                     <div className="grid gap-4 xl:grid-cols-2">
@@ -360,13 +368,33 @@ const StatsSection = ({ ext }: { ext: string }) => {
                                     <Th>{t('p5.monitor.inMissed')}</Th>
                                     <Th>{t('p5.monitor.internal')}</Th>
                                     <Th>{t('p5.monitor.talkTime')}</Th>
+                                    <Th title={t('p8.monitor.overHint') as string}>{t('p8.monitor.over60')}</Th>
+                                    <Th title={t('p8.monitor.overHint') as string}>{t('p8.monitor.over120')}</Th>
+                                    <Th title={t('p8.monitor.overHint') as string}>{t('p8.monitor.over180')}</Th>
                                 </Tr>
                             </THead>
                             <TBody>
                                 {data.users.length ? (
                                     data.users.map((u) => (
-                                        <Tr key={u.extension}>
-                                            <Td dir="auto">{agentLabel(u)}</Td>
+                                        <Tr
+                                            key={u.extension}
+                                            className={rowClass(opened?.extension === u.extension)}
+                                            onClick={() => setOpened(u)}
+                                            data-testid="p8-monitor-user-row"
+                                        >
+                                            <Td dir="auto">
+                                                <button
+                                                    type="button"
+                                                    className="text-start font-extrabold text-azure-600 hover:underline"
+                                                    title={t('p8.monitor.openCalls') as string}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setOpened(u)
+                                                    }}
+                                                >
+                                                    {agentLabel(u)}
+                                                </button>
+                                            </Td>
                                             <Td className="font-extrabold">
                                                 <Ltr>{formatCount(u.handled)}</Ltr>
                                             </Td>
@@ -388,13 +416,22 @@ const StatsSection = ({ ext }: { ext: string }) => {
                                             <Td className="tabular-nums">
                                                 <Ltr>{clock(u.talk_seconds)}</Ltr>
                                             </Td>
+                                            <Td>
+                                                <Ltr>{formatCount(u.talk_over_60)}</Ltr>
+                                            </Td>
+                                            <Td>
+                                                <Ltr>{formatCount(u.talk_over_120)}</Ltr>
+                                            </Td>
+                                            <Td>
+                                                <Ltr>{formatCount(u.talk_over_180)}</Ltr>
+                                            </Td>
                                         </Tr>
                                     ))
                                 ) : q.loading ? (
-                                    <SkeletonRows cols={8} rows={3} />
+                                    <SkeletonRows cols={11} rows={3} />
                                 ) : (
                                     <tr>
-                                        <td colSpan={8}>
+                                        <td colSpan={11}>
                                             <EmptyState title={t('p5.monitor.noStats')} />
                                         </td>
                                     </tr>
@@ -402,9 +439,12 @@ const StatsSection = ({ ext }: { ext: string }) => {
                             </TBody>
                         </Table>
                     </TableFrame>
-                    <p className="text-[12px] text-gray-600">{t('p5.monitor.statsNote')}</p>
+                    <p className="text-[12px] text-gray-600">
+                        {t('p5.monitor.statsNote')} {t('p8.monitor.overNote')}
+                    </p>
                 </>
             )}
+            <UserCalls agent={opened} from={data?.from || from} to={data?.to || to} onClose={() => setOpened(null)} />
         </div>
     )
 }

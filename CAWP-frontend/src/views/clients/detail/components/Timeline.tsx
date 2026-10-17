@@ -164,6 +164,7 @@ const TimeLineComment = () => {
         user: { id: n.author?.id, frist_name: n.author?.name || "", last_name: "" },
         contact_method: n.contact_method,
         status: n.status ? { name: n.status.name } : null,
+        sub_status: n.sub_status ? { id: n.sub_status.id, name: n.sub_status.name } : null,
         reachability: n.reachability_id
           ? { name: reachNames[n.reachability_id] }
           : null,

@@ -19,6 +19,7 @@ import {
   apiGetBranches,
 } from "@/services/CollectionsService";
 import MyFilter from "@/components/shared/myComponents/filter";
+import SubStatusFilter from "@/components/shared/myComponents/subStatusFilter";
 import MyField from "@/components/shared/myComponents/field";
 import FilterAmount from "@/components/shared/myComponents/filterAmount";
 import Button from "@/components/ui/Button";
@@ -78,6 +79,8 @@ const PortfoliosTableFilter = () => {
   const [selectedPortfolios_, setSelectedPortfolios_] = useState();
   const [selectedReachability_, setSelectedReachability_] = useState();
   const [selectedCommentStatus_, setSelectedCommentStatus_] = useState();
+  const [selectedCommentSubStatus_, setSelectedCommentSubStatus_] =
+    useState<Array<{ id?: string; name?: string }>>();
   const [selectedUsers_, setSelectedUsers_] = useState();
   const [selectedAccountNumber_, setSelectedAccountNumber_] = useState();
   const [selectedArchiveBy_, setSelectedArchiveBy_] = useState();
@@ -252,6 +255,14 @@ const PortfoliosTableFilter = () => {
         selectedCommentStatus_Type: "string",
 
         //-----------------
+
+        selectedCommentSubStatus_Qkey: selectedCommentSubStatus_?.map(
+          (status) => status.id
+        ),
+        selectedCommentSubStatus_Jkey: "comment.comment_sub_status_id",
+        selectedCommentSubStatus_Type: "string",
+
+        //-----------------
       })
     );
   };
@@ -352,6 +363,13 @@ const PortfoliosTableFilter = () => {
                         title: "الحالة",
                       }}
                       isMulti={true}
+                    />
+                  </div>
+                  <div>
+                    <SubStatusFilter
+                      statuses={comment_status}
+                      selectedMain={selectedCommentStatus_}
+                      filter={setSelectedCommentSubStatus_}
                     />
                   </div>
                 </div>

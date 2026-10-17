@@ -22,8 +22,9 @@ Design rules (review P1/P2/P6, §6):
 import datetime
 import logging
 import os
+import uuid
 
-from sqlalchemy import String, and_, cast, func, text as sa_text
+from sqlalchemy import String, and_, cast, func, literal_column, text as sa_text
 from sqlalchemy.orm import aliased
 
 from core import lookups
@@ -161,6 +162,37 @@ def _excel_column(args, file_key, index_key):
         return None
 
 
+# 0068: the optional sub-status of a note. `"Comments".comment_sub_status_id` is not mapped on
+# the model (its as_dict() is a legacy wire contract), so it is read as a literal column of the
+# unaliased "Comments" in FROM (the `clints.last_comment_id` join or a LATERAL's inner FROM).
+# Every row below gets one added key, `comment_sub_status` ({id, name, color} or null), next to
+# `comment_status`; the name comes from the same batched comment-status map.
+COMMENT_SUB_STATUS_ID = literal_column('"Comments".comment_sub_status_id')
+
+
+def _sub_status_block(maps, sub_id):
+    if not sub_id:
+        return None
+    sid = str(sub_id)
+    cs = maps["comment_statuses"].get(sid)
+    return {"id": sid, "name": cs["name"] if cs else None, "color": cs["color"] if cs else None}
+
+
+_NO_MATCH = "00000000-0000-0000-0000-000000000000"
+
+
+def _uuid_list(values):
+    """Well-formed UUIDs only: a malformed id matches nothing (the nil UUID, never a status id)
+    instead of failing the query, and never widens the filter to "everything"."""
+    out = []
+    for v in values:
+        try:
+            out.append(str(uuid.UUID(str(v).strip())))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return out or ([_NO_MATCH] if values else [])
+
+
 def _latest_comment_lateral(name="latest_comment", filter_deleted=True):
     """`LATERAL (SELECT ... FROM "Comments" WHERE clint_id = clints.id [AND NOT is_deleted]
     ORDER BY create_at DESC LIMIT 1) ON true`.
@@ -178,6 +210,7 @@ def _latest_comment_lateral(name="latest_comment", filter_deleted=True):
         Comments.id.label("id"),
         Comments.comment.label("comment"),
         Comments.comment_status_id.label("comment_status_id"),
+        COMMENT_SUB_STATUS_ID.label("comment_sub_status_id"),
         Comments.next_contact_date.label("next_contact_date"),
         Comments.create_at.label("create_at"),
     ).filter(Comments.clint_id == Clints.id)
@@ -227,6 +260,17 @@ class ListParams(object):
         raw_status = (_list(args, "customeFilterCommentStatusValue[]")
                       or _list(args, "customeFilterStatusesValue"))
         self.comment_statuses = [v for v in raw_status if v and v != "0"]
+        if not self.comment_statuses:
+            # the report screens (with/without payments, neglect, next calls) send the main
+            # status as `selectedCommentStatus_Qkey[]`, which used to be ignored here
+            self.comment_statuses = _uuid_list(_list(args, "selectedCommentStatus_Qkey[]")
+                                               or _list(args, "selectedCommentStatus_Qkey"))
+        # 0068: the latest note's sub-status (the list spelling, then the report screens' Qkey)
+        self.comment_sub_statuses = _uuid_list(
+            _list(args, "customeFilterCommentSubStatusValue[]")
+            or _list(args, "selectedCommentSubStatus_Qkey[]")
+            or _list(args, "selectedCommentSubStatus_Qkey")
+            or _list(args, "SelectedCommentSubStatus_Qkey[]"))
         self.portfolios = _list(args, "customeFilterPortfoliosValue[]")
         self.branches = _list(args, "customeFilterBranchesValue[]")
         self.attribute = args.get("customeFilterAttributeValue")
@@ -365,6 +409,7 @@ def build_clients_query(args, identity, force_user_id=None, page_size_default=20
 
     ClientUser = aliased(User, name="client_user")
     LatestSpecify = aliased(SepcifyUsers, name="latest_specify")
+    SubStatus = aliased(CommentStatuses, name="sub_status")
 
     query = (
         db.session.query(
@@ -376,6 +421,7 @@ def build_clients_query(args, identity, force_user_id=None, page_size_default=20
             Contract.name.label("c_name"),
             Comments.id.label("cm_id"),
             Comments.comment_status_id.label("cm_status_id"),
+            COMMENT_SUB_STATUS_ID.label("cm_sub_status_id"),
             Comments.next_contact_date.label("cm_next_contact"),
             Comments.create_at.label("cm_create_at"),
             LatestSpecify.id.label("sp_id"),
@@ -392,6 +438,7 @@ def build_clients_query(args, identity, force_user_id=None, page_size_default=20
         .outerjoin(ClientUser, Clints.user_id == ClientUser.id)
         .outerjoin(Comments, Comments.id == Clints.last_comment_id)
         .outerjoin(CommentStatuses, Comments.comment_status_id == CommentStatuses.id)
+        .outerjoin(SubStatus, SubStatus.id == COMMENT_SUB_STATUS_ID)
         .outerjoin(LatestSpecify, and_(
             LatestSpecify.clint_id == Clints.id,
             LatestSpecify.is_deleted == False,                   # noqa: E712
@@ -413,6 +460,8 @@ def build_clients_query(args, identity, force_user_id=None, page_size_default=20
             q = q.filter(Clints.user_id.in_(p.users))
         if p.comment_statuses:
             q = q.filter(Comments.comment_status_id.in_(p.comment_statuses))
+        if p.comment_sub_statuses:
+            q = q.filter(COMMENT_SUB_STATUS_ID.in_(p.comment_sub_statuses))
         if p.portfolios:
             q = q.filter(Clints.portfolios_id.in_(p.portfolios))
         if p.branches and user_joined:
@@ -464,6 +513,7 @@ def build_clients_query(args, identity, force_user_id=None, page_size_default=20
         "next_contact_date": Comments.next_contact_date,
         "comment_status.name": CommentStatuses.name,
         "commentStatus.name": CommentStatuses.name,
+        "comment_sub_status.name": SubStatus.name,
         "specifyUser.create_at": LatestSpecify.create_at,
         "specify_user.create_at": LatestSpecify.create_at,
         "provision": provision_sort,
@@ -485,7 +535,7 @@ def build_clients_query(args, identity, force_user_id=None, page_size_default=20
     # ---- count + total: light twin, only the joins the active filters need ----
     # `comment.create_at` now lives on `clints`, so only a comment-status filter still
     # needs the join.
-    needs_comment = bool(p.comment_statuses)
+    needs_comment = bool(p.comment_statuses or p.comment_sub_statuses)
     needs_user = bool(p.branches)
 
     count_query = (
@@ -546,10 +596,12 @@ def serialize_client_row(row, maps):
             "is_active": cs["is_active"] if cs else None,
             "CommentReachability_id": cs["CommentReachability_id"] if cs else None,
         }
+        d["comment_sub_status"] = _sub_status_block(maps, row.cm_sub_status_id)
     else:
         # NEVER null -- review §6: the grid reads `comment.create_at` unconditionally.
         d["comment"] = {"comment": None, "create_at": None}
         d["comment_status"] = None
+        d["comment_sub_status"] = None
 
     dr = maps["delinquency_reasons"].get(str(row.k_delinquencyReason_id)) \
         if row.k_delinquencyReason_id else None
@@ -606,6 +658,7 @@ def build_archive_query(args, identity):
     archiveby = args.get("selectedArchiveBy_Qkey[]")
     archiveby_reason = args.get("SelectedResons_Qkey[]")
     comment_statuses = _list(args, "SelectedCommentStatus_Qkey[]")
+    comment_sub_statuses = p.comment_sub_statuses          # SelectedCommentSubStatus_Qkey[] (0068)
     selected_clients = _excel_column(args, "selectedClients_Qkey[file_name]",
                                      "selectedClients_Qkey[index]")
 
@@ -643,6 +696,8 @@ def build_archive_query(args, identity):
             q = q.filter(Clints.accountNumber.in_(selected_clients))
         if with_comment and comment_statuses:
             q = q.filter(Comments.comment_status_id.in_(comment_statuses))
+        if with_comment and comment_sub_statuses:
+            q = q.filter(COMMENT_SUB_STATUS_ID.in_(comment_sub_statuses))
         return q
 
     query = base(db.session.query(
@@ -658,9 +713,10 @@ def build_archive_query(args, identity):
         ClintArchive.user_id.label("ca_user_id"),
         ClintArchive.archive_reason_id.label("ca_reason_id"),
         Comments.comment_status_id.label("cm_status_id"),
+        COMMENT_SUB_STATUS_ID.label("cm_sub_status_id"),
     ))
     count_query = base(db.session.query(func.count(Clints.id)),
-                       with_comment=bool(comment_statuses),
+                       with_comment=bool(comment_statuses or comment_sub_statuses),
                        with_portfolios=bool(contract_id),
                        with_archive=bool(archiveby or archiveby_reason))
 
@@ -702,6 +758,7 @@ def serialize_archive_row(row, maps):
         },
         "comment_status": {"name": cs["name"] if cs else None,
                            "color": cs["color"] if cs else None},
+        "comment_sub_status": _sub_status_block(maps, row.cm_sub_status_id),      # 0068
         "user": {"id": row.k_user_id, "name": owner["name"] if owner else None},
         "id": row.k_id,
         "accountNumber": row.k_accountNumber,
@@ -737,6 +794,7 @@ def build_payments_flag_query(args, identity, have_payments):
     )
     latest_comment = _latest_comment_lateral()
     ClientUser = aliased(User, name="client_user")
+    SubStatus = aliased(CommentStatuses, name="sub_status")
     payments_count_col = func.coalesce(payments_sq.c.payments_count, 0)
 
     scope_cond = scope_condition(scope, p.contracts)
@@ -758,15 +816,21 @@ def build_payments_flag_query(args, identity, have_payments):
             q = q.filter(cast(Clints.attribute, String).contains(p.attribute))
         if with_comment and p.comment_statuses:
             q = q.filter(latest_comment.c.comment_status_id.in_(p.comment_statuses))
+        if with_comment and p.comment_sub_statuses:
+            q = q.filter(latest_comment.c.comment_sub_status_id.in_(p.comment_sub_statuses))
         return q
 
-    agg_query = apply_filters(
-        db.session.query(func.count(Clints.id), func.coalesce(func.sum(Clints.amount), 0))
-        .select_from(Clints)
-        .join(Portfolios, Clints.portfolios_id == Portfolios.id)
-        .outerjoin(ClientUser, Clints.user_id == ClientUser.id)
-        .outerjoin(payments_sq, Clints.id == payments_sq.c.clint_id),
-        with_comment=False)
+    # the count/total twin joins the latest note only when a (sub-)status filter needs it, so
+    # `countRow`/`totalAmount` agree with the filtered rows
+    needs_comment = bool(p.comment_statuses or p.comment_sub_statuses)
+    agg_base = (db.session.query(func.count(Clints.id), func.coalesce(func.sum(Clints.amount), 0))
+                .select_from(Clints)
+                .join(Portfolios, Clints.portfolios_id == Portfolios.id)
+                .outerjoin(ClientUser, Clints.user_id == ClientUser.id)
+                .outerjoin(payments_sq, Clints.id == payments_sq.c.clint_id))
+    if needs_comment:
+        agg_base = agg_base.outerjoin(latest_comment, sa_text("true"))
+    agg_query = apply_filters(agg_base, with_comment=needs_comment)
 
     query = apply_filters(
         db.session.query(
@@ -778,6 +842,7 @@ def build_payments_flag_query(args, identity, have_payments):
             latest_comment.c.id.label("cm_id"),
             latest_comment.c.comment.label("cm_text"),
             latest_comment.c.comment_status_id.label("cm_status_id"),
+            latest_comment.c.comment_sub_status_id.label("cm_sub_status_id"),
             latest_comment.c.next_contact_date.label("cm_next_contact"),
             latest_comment.c.create_at.label("cm_create_at"),
             payments_count_col.label("payments_count"),
@@ -790,7 +855,8 @@ def build_payments_flag_query(args, identity, have_payments):
         .outerjoin(payments_sq, Clints.id == payments_sq.c.clint_id)
         .outerjoin(latest_comment, sa_text("true"))
         .outerjoin(CommentStatuses,
-                   latest_comment.c.comment_status_id == CommentStatuses.id),
+                   latest_comment.c.comment_status_id == CommentStatuses.id)
+        .outerjoin(SubStatus, SubStatus.id == latest_comment.c.comment_sub_status_id),
         with_comment=True)
 
     col_map = {
@@ -802,6 +868,7 @@ def build_payments_flag_query(args, identity, have_payments):
         "contract.name": Contract.name,
         "comment.create_at": latest_comment.c.create_at,
         "comment_status.name": CommentStatuses.name,
+        "comment_sub_status.name": SubStatus.name,
         "payments": payments_count_col,
     }
     query = apply_mui_filter(query, col_map, p, mode="payments")
@@ -839,9 +906,11 @@ def serialize_payments_flag_row(row, maps):
             "name": cs["name"] if cs else None,
             "color": cs["color"] if cs else None,
         }
+        d["comment_sub_status"] = _sub_status_block(maps, row.cm_sub_status_id)
     else:
         d["comment"] = {"comment": None, "create_at": None}
         d["comment_status"] = None
+        d["comment_sub_status"] = None
     return d
 
 
@@ -862,7 +931,17 @@ def build_neglect_query(args, identity):
     # `clints.last_comment_at` (db/03_last_comment.sql) instead of a `GROUP BY clint_id ->
     # max(create_at)` over 1.27M comments (300-800 ms) plus a second join on that value.
     ClientUser = aliased(User, name="client_user")
+    SubStatus = aliased(CommentStatuses, name="sub_status")
     scope_cond = scope_condition(scope, p.contracts)
+
+    def comment_filters(q):
+        # the latest note's main / sub-status (`selectedCommentStatus_Qkey[]` /
+        # `selectedCommentSubStatus_Qkey[]` from the screen; "Comments" is the last_comment_id join)
+        if p.comment_statuses:
+            q = q.filter(Comments.comment_status_id.in_(p.comment_statuses))
+        if p.comment_sub_statuses:
+            q = q.filter(COMMENT_SUB_STATUS_ID.in_(p.comment_sub_statuses))
+        return q
 
     def common(q, with_user_join):
         if scope_cond is not None:
@@ -889,6 +968,8 @@ def build_neglect_query(args, identity):
         agg_base = agg_base.join(Portfolios, Clints.portfolios_id == Portfolios.id)
     if p.branches:
         agg_base = agg_base.outerjoin(ClientUser, Clints.user_id == ClientUser.id)
+    if p.comment_statuses or p.comment_sub_statuses:
+        agg_base = comment_filters(agg_base.outerjoin(Comments, Comments.id == Clints.last_comment_id))
     agg_query = common(agg_base.filter(Clints.is_archive == False),  # noqa: E712
                        bool(p.branches))
 
@@ -902,6 +983,7 @@ def build_neglect_query(args, identity):
             Comments.id.label("cm_id"),
             Comments.comment.label("cm_text"),
             Comments.comment_status_id.label("cm_status_id"),
+            COMMENT_SUB_STATUS_ID.label("cm_sub_status_id"),
             Comments.next_contact_date.label("cm_next_contact"),
             Comments.create_at.label("cm_create_at"),
             Clints.last_comment_at.label("last_follow_up"),
@@ -912,10 +994,10 @@ def build_neglect_query(args, identity):
         .outerjoin(ClientUser, Clints.user_id == ClientUser.id)
         .outerjoin(Comments, Comments.id == Clints.last_comment_id)
         .outerjoin(CommentStatuses, Comments.comment_status_id == CommentStatuses.id)
+        .outerjoin(SubStatus, SubStatus.id == COMMENT_SUB_STATUS_ID)
         .filter(Clints.is_archive == False),                     # noqa: E712
         True)
-    if p.comment_statuses:
-        query = query.filter(Comments.comment_status_id.in_(p.comment_statuses))
+    query = comment_filters(query)
 
     col_map = {
         "amount": Clints.amount,
@@ -932,6 +1014,7 @@ def build_neglect_query(args, identity):
     sort_map["last_follow_up"] = Clints.last_comment_at
     sort_map["neglect_days"] = Clints.last_comment_at
     sort_map["comment_status.name"] = CommentStatuses.name
+    sort_map["comment_sub_status.name"] = SubStatus.name
     sort_map = _with_underscore_variants(sort_map)
 
     if p.field in sort_map and p.sort:
@@ -966,9 +1049,11 @@ def serialize_neglect_row(row, maps, now=None):
         d["comment_status"] = {"id": cs_id,
                                "name": cs["name"] if cs else None,
                                "color": cs["color"] if cs else None}
+        d["comment_sub_status"] = _sub_status_block(maps, row.cm_sub_status_id)
     else:
         d["comment"] = {"comment": None, "create_at": None}
         d["comment_status"] = None
+        d["comment_sub_status"] = None
 
     last_fu = row.last_follow_up
     d["last_follow_up"] = last_fu
@@ -1014,6 +1099,7 @@ def build_next_calls_query(args, identity, latest_only=False):
                 Comments.id.label("id"),
                 Comments.comment.label("comment"),
                 Comments.comment_status_id.label("comment_status_id"),
+                COMMENT_SUB_STATUS_ID.label("comment_sub_status_id"),
                 Comments.next_contact_date.label("next_contact_date"),
                 Comments.create_at.label("create_at"),
             )
@@ -1024,9 +1110,11 @@ def build_next_calls_query(args, identity, latest_only=False):
             .lateral("latest_comment")
         )
         cmt = latest.c
+        sub_col = latest.c.comment_sub_status_id
         target, join_cond = latest, sa_text("true")
     else:
         cmt = Comments
+        sub_col = COMMENT_SUB_STATUS_ID
         target, join_cond = Comments, Comments.clint_id == Clints.id
 
     date_conds = [cmt.next_contact_date.isnot(None)]
@@ -1034,6 +1122,12 @@ def build_next_calls_query(args, identity, latest_only=False):
         date_conds.append(func.date(cmt.next_contact_date) >= p.date_from)
     if p.date_to is not None:
         date_conds.append(func.date(cmt.next_contact_date) <= p.date_to)
+    # the (sub-)status of the same note (`selectedCommentStatus_Qkey[]` /
+    # `selectedCommentSubStatus_Qkey[]`; the main one used to be ignored here)
+    if p.comment_statuses:
+        date_conds.append(cmt.comment_status_id.in_(p.comment_statuses))
+    if p.comment_sub_statuses:
+        date_conds.append(sub_col.in_(p.comment_sub_statuses))
 
     # "ايام الاسناد" in the export workbook is computed from `specifyUser.create_at`
     # (CAWP-frontend/src/components/shared/myComponents/exportCurrentUserNextCalls.tsx:26),
@@ -1063,6 +1157,7 @@ def build_next_calls_query(args, identity, latest_only=False):
         cmt.id.label("cm_id"),
         cmt.comment.label("cm_text"),
         cmt.comment_status_id.label("cm_status_id"),
+        sub_col.label("cm_sub_status_id"),
         cmt.next_contact_date.label("cm_next_contact"),
         cmt.create_at.label("cm_create_at"),
         cmt.next_contact_date.label("next_call"),
@@ -1112,6 +1207,7 @@ def serialize_next_call_row(row, maps):
                             "is_active": cs["is_active"],
                             "CommentReachability_id": cs["CommentReachability_id"]}
                            if cs else None)
+    d["comment_sub_status"] = _sub_status_block(maps, row.cm_sub_status_id)      # 0068
     dr = maps["delinquency_reasons"].get(str(row.k_delinquencyReason_id)) \
         if row.k_delinquencyReason_id else None
     d["delinquencyReason"] = {"name": dr["name"]} if dr else None

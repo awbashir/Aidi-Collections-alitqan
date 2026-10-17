@@ -36,7 +36,7 @@ COMMENTS = sa.table(
     "Comments", sa.column("id"), sa.column("clint_id"), sa.column("user_id"), sa.column("contactMethod_id"),
     sa.column("comment"), sa.column("comment_status_id"), sa.column("comment_reachability_id"),
     sa.column("next_contact_date"), sa.column("contactNumber"), sa.column("is_deleted"),
-    sa.column("create_at"),
+    sa.column("create_at"), sa.column("comment_sub_status_id"),
 )
 COMMENT_STATUSES = sa.table("CommentStatuses", sa.column("id"), sa.column("name"))
 CONTACT_METHODS = sa.table("ContactMethods", sa.column("id"))
@@ -112,7 +112,8 @@ def _source_note_block(r):
         return {"id": wc.sid(r["source_comment_id"]), "missing": True}
     return {"id": wc.sid(r["note_id"]), "missing": False, "text": r["note_text"],
             "is_deleted": bool(r["note_is_deleted"]), "created_at": wc.iso(r["note_created_at"]),
-            "status": r["note_status_name"]}
+            "status": r["note_status_name"],
+            "sub_status": r["note_sub_status_name"]}      # 0068: name of the optional sub-status, or null
 
 
 # --------------------------------------------------------------------------------------
@@ -147,14 +148,17 @@ def page_statement(flt: wc.CaseFilter, day: wc.Day, bucket=None, limit=50, offse
     owner = USERS.alias("owner_u")
     note = COMMENTS.alias("src_note")
     note_status = COMMENT_STATUSES.alias("src_status")
+    note_sub_status = COMMENT_STATUSES.alias("src_sub_status")
     return (
         sa.select(*FU.c, *wc.case_columns(owner),
                   note.c.id.label("note_id"), note.c.comment.label("note_text"),
                   note.c.is_deleted.label("note_is_deleted"), note.c.create_at.label("note_created_at"),
-                  note_status.c.name.label("note_status_name"))
+                  note_status.c.name.label("note_status_name"),
+                  note_sub_status.c.name.label("note_sub_status_name"))
         .select_from(FU.join(wc.case_join(owner), CLINTS.c.id == FU.c.case_id)
                        .outerjoin(note, note.c.id == FU.c.source_comment_id)
-                       .outerjoin(note_status, note_status.c.id == note.c.comment_status_id))
+                       .outerjoin(note_status, note_status.c.id == note.c.comment_status_id)
+                       .outerjoin(note_sub_status, note_sub_status.c.id == note.c.comment_sub_status_id))
         .where(*_list_where(flt, day, bucket))
         .order_by(FU.c.due_at.asc(), FU.c.id.asc())
         .limit(limit).offset(offset)

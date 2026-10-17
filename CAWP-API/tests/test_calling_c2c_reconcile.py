@@ -170,7 +170,7 @@ def test_cdr_answered_without_bridge_evidence_needs_a_human(cl_app, pgc, cl_clie
     assert d["state"] == "ended" and d["reservation"]["release_source"] == "reconciled"
     assert d["reconciliations"][0]["source"] == "supervisor" and d["flags"] == []
     assert d["timeline"]["bridged_at"] is None                            # still no bridge evidence: no
-    assert d["actions"]["wrapup_outcomes"] == ["no_answer", "busy", "do_not_call"]   # conversation outcome
+    assert d["actions"]["wrapup_outcomes"] == ["no_answer", "busy", "wrong_number", "do_not_call"]   # no conversation outcome
     assert q1(pgc, "SELECT action, reason FROM audit_events WHERE entity_id = %s AND action = 'call.resolve'",
               rig.attempt) == ("call.resolve", "listened to the recording: they talked")
     st, body = post(cl_client, hdr(sup, key=key()), f"/v2/calls/{rig.attempt}/resolve",

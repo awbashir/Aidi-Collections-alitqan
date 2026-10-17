@@ -47,6 +47,7 @@ SUPERVISOR_KEYS = [
     "attention_queue", "follow_ups", "follow_ups_manage", "promises", "promises_cancel", "clints_history",
     "clints_contacts_edit", "case_corrections_request", "requests", "plans", "plans_manage",
     "reports_performance", "reports_calls", "calls", "calls_make", "campaigns",
+    "calls_supervise",          # block/lift clients, release stuck calls (not calling admin)
 ]
 COLLECTOR_KEYS = [
     # reference production role محصل

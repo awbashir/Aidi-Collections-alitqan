@@ -13,7 +13,8 @@
  * Phase 5 adds `calling_any` (the calling workspace: calls_make | campaigns) and
  * `campaigns_any` (the campaigns screen: campaigns | campaigns_manage), mirroring the
  * keys their endpoints accept (`GET /v2/me/calling`, `GET /v2/campaigns`), plus
- * `call_review` and `calling_admin` (both = calls_manage), and `call_monitor` (the call monitor:
+ * `calling_admin` (= calls_manage), `call_review` and `calling_blocks` (= calls_manage | calls_supervise),
+ * and `call_monitor` (the call monitor:
  * reports_calls | calls_manage, as `GET /v2/calling/monitor/*` accepts).
  * Phase 6 adds `quality_any` (the quality workspace: quality_review | quality_approve).
  */
@@ -105,8 +106,11 @@ export const DERIVED_KEYS = {
     calling_any: (p: Record<string, unknown>) => CALLING_KEYS.some((k) => p[k] === true),
     campaigns_any: (p: Record<string, unknown>) => CAMPAIGN_KEYS.some((k) => p[k] === true),
     /* Phase 5: two screens of `calls_manage` (a nav item needs a key of its own). */
-    call_review: (p: Record<string, unknown>) => p.calls_manage === true,
+    /* call review: calls_manage, or calls_supervise (2026-10-17: supervisors without calling admin) */
+    call_review: (p: Record<string, unknown>) => p.calls_manage === true || p.calls_supervise === true,
     calling_admin: (p: Record<string, unknown>) => p.calls_manage === true,
+    /* blocked clients (2026-10-17): only supervisors block or lift a client */
+    calling_blocks: (p: Record<string, unknown>) => p.calls_manage === true || p.calls_supervise === true,
     call_monitor: (p: Record<string, unknown>) => p.reports_calls === true || p.calls_manage === true,
     /* Phase 6: the quality workspace (quality_review | quality_approve). */
     quality_any: (p: Record<string, unknown>) => QUALITY_KEYS.some((k) => p[k] === true),

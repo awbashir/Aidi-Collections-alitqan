@@ -384,7 +384,7 @@ const CallDetailView = ({ callId, onChanged }: { callId: string; onChanged?: () 
                         {t('p5.detail.showLive')}
                     </Button>
                 )}
-                {call.wrapup_pending && (perms.calls_manage || call.collector?.id === myId) && (
+                {call.wrapup_pending && (perms.calls_manage || perms.calls_supervise || call.collector?.id === myId) && (
                     <Button size="sm" variant="solid" onClick={() => callDock.openWrapup(call.id)} data-testid="p5-detail-wrapup">
                         {t('p5.live.wrapup')}
                     </Button>

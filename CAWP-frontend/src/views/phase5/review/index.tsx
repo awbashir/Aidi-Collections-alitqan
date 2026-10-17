@@ -1,5 +1,6 @@
 /**
- * Call review for supervisors (`/call-review`, key `calls_manage`; Intelligence & control).
+ * Call review for supervisors (`/call-review`, key `call_review` = calls_supervise | calls_manage;
+ * Intelligence & control).
  *
  * - Uncertain calls (`GET /v2/calling/uncertain`): the PBX state of these calls is unknown
  *   (lost AMI session, a restart, missing or ambiguous evidence). The reservation stays and
@@ -10,6 +11,11 @@
  *   deferred case changes), late evidence after a wrap-up, evidence conflicts, and
  *   reconciliations the service could not settle. Resolving one needs a reason; apply any
  *   deferred change through the normal screens first.
+ * - Awaiting wrap-up (2026-10-17, `GET /v2/calling/pending-wrapups`): ended calls that still
+ *   hold their reservation without a wrap-up, including ORPHANED calls whose case was
+ *   deleted (they block the collector's next call). Release (`POST /v2/calls/<id>/release`)
+ *   needs a written reason; the call keeps its state and no wrap-up is invented. Every list
+ *   here also shows orphaned calls ("case deleted").
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -26,17 +32,20 @@ import useHashState, { hashCodec } from '@/utils/hooks/useHashState'
 import type { HashSchema } from '@/utils/hooks/useHashState'
 import { callReviewApi, describeP5Error } from '@/services/v2'
 import type { CallDetail, ReviewFlag, Translate } from '@/services/v2'
+import { supervisionApi } from '@/services/v2/callingSupervisionApi'
 import { useV2Query } from '@/utils/v2/hooks'
 import { CallStateBadge, CaseCell, Notice, OutcomeBadge } from '../parts'
 import { reasonLabel } from '../labels'
 
 const { THead, TBody, Tr, Th, Td } = Table
-type Tab = 'uncertain' | 'flags'
+type Tab = 'uncertain' | 'flags' | 'pending'
+type Orphaned = 'any' | 'true'
 type FlagState = 'open' | 'resolved' | 'all'
 const KINDS: ReviewFlag['kind'][] = ['wrapup_needs_review', 'late_evidence', 'evidence_conflict', 'reconciliation_unresolved']
-type HashState = { tab: Tab; fstate: FlagState; kind: string | undefined; page: number }
+type HashState = { tab: Tab; fstate: FlagState; kind: string | undefined; page: number; orphaned: Orphaned }
 const schema: HashSchema<HashState> = {
-    tab: { key: 'tab', codec: hashCodec.oneOf(['uncertain', 'flags'] as Tab[]), default: 'uncertain' },
+    tab: { key: 'tab', codec: hashCodec.oneOf(['uncertain', 'flags', 'pending'] as Tab[]), default: 'uncertain' },
+    orphaned: { key: 'orphaned', codec: hashCodec.oneOf(['any', 'true'] as Orphaned[]), default: 'any' },
     fstate: { key: 'flags', codec: hashCodec.oneOf(['open', 'resolved', 'all'] as FlagState[]), default: 'open' },
     kind: { key: 'kind', codec: hashCodec.text({ maxLength: 40 }), default: undefined },
     page: { key: 'page', codec: hashCodec.int({ min: 1, max: 100000 }), default: 1 },
@@ -191,7 +200,13 @@ const FlagDetail = ({ flag }: { flag: ReviewFlag & { call: CallDetail } }) => {
                     <OutcomeBadge outcome={d.outcome as never} size="row" />
                 </span>
             )}
-            {flag.reason && <span data-reason={flag.reason}>{t(`p5.flag.reason.${flag.reason}`, { defaultValue: flag.reason.replace(/_/g, ' ') })}</span>}
+            {flag.reason && (
+                <span data-reason={flag.reason}>
+                    {t(`p5.flag.reason.${flag.reason}`, {
+                        defaultValue: t(`p8.calling.flagReason.${flag.reason}`, { defaultValue: flag.reason.replace(/_/g, ' ') }),
+                    })}
+                </span>
+            )}
             {d.deferred && d.deferred.length > 0 && (
                 <div className="text-gray-600">
                     {t('p5.wrapup.deferred')}: {d.deferred.map((k) => t(`p5.wrapup.deferredKey.${k}`, { defaultValue: k })).join(String(t('p5.listSep')))}
@@ -331,6 +346,116 @@ const FlagsTab = ({ state, onState }: { state: HashState; onState: (p: Partial<H
     )
 }
 
+/* ------------------------------------------------------------------ awaiting wrap-up */
+
+const PendingTab = ({ state, onState }: { state: HashState; onState: (p: Partial<HashState>) => void }) => {
+    const { t } = useTranslation()
+    const orphaned = state.orphaned === 'true' ? 'true' : undefined
+    const q = useV2Query(
+        (signal) => supervisionApi.pendingWrapups({ orphaned, page: state.page, page_size: PAGE_SIZE }, signal),
+        [orphaned, state.page]
+    )
+    const [releasing, setReleasing] = useState<CallDetail | null>(null)
+    const data = q.data
+    return (
+        <div data-testid="p8-review-pending">
+            <Notice tone="info" className="mb-3">
+                {t('p8.calling.pending.intro')}
+            </Notice>
+            <div className="mb-3">
+                <Segmented<Orphaned>
+                    value={state.orphaned}
+                    onChange={(v) => onState({ orphaned: v, page: 1 })}
+                    testId="p8-review-pending-filter"
+                    options={[
+                        { value: 'any', label: t('p8.calling.pending.all') },
+                        {
+                            value: 'true',
+                            label: data ? t('p8.calling.pending.orphanedCount', { count: data.orphaned }) : t('p8.calling.pending.orphaned'),
+                        },
+                    ]}
+                />
+            </div>
+            <TableFrame footer={data && data.total > 0 ? <PagerFooter page={state.page} pageSize={PAGE_SIZE} total={data.total} onPage={(p) => onState({ page: p })} /> : undefined}>
+                {q.error && !data ? (
+                    <ErrorState error={q.error} onRetry={q.reload} describe={describe} />
+                ) : (
+                    <Table>
+                        <THead>
+                            <Tr>
+                                <Th>{t('p5.col.case')}</Th>
+                                <Th>{t('p5.col.collector')}</Th>
+                                <Th>{t('p5.col.state')}</Th>
+                                <Th>{t('p8.calling.pending.col.ended')}</Th>
+                                <Th>{t('p5.review.col.reservation')}</Th>
+                                <Th />
+                            </Tr>
+                        </THead>
+                        <TBody>
+                            {q.loading && !data ? (
+                                <SkeletonRows cols={6} rows={3} />
+                            ) : data && data.items.length ? (
+                                data.items.map((c) => (
+                                    <Tr key={c.id} data-testid="p8-review-pending-row" data-call={c.id} data-orphaned={c.case.missing ? '1' : '0'}>
+                                        <Td>
+                                            <CaseCell kase={c.case} />
+                                            {c.case.missing && <div className="text-[12px] font-extrabold text-danger">{t('p8.calling.pending.orphanedHint')}</div>}
+                                        </Td>
+                                        <Td>{c.collector?.name || '—'}</Td>
+                                        <Td>
+                                            <CallStateBadge state={c.state} size="row" />
+                                            {c.timeline.bridged_at && <div className="text-[12px] text-success">{t('p5.review.wasBridged')}</div>}
+                                        </Td>
+                                        <Td className="text-[12.5px]">
+                                            <RiyadhTime iso={c.timeline.ended_at || c.created_at} />
+                                        </Td>
+                                        <Td>{c.reservation?.active ? t('p5.review.held') : t('p5.review.released')}</Td>
+                                        <Td>
+                                            {c.reservation?.active && (
+                                                <Button size="xs" variant="solid" onClick={() => setReleasing(c)} data-testid="p8-review-release-open">
+                                                    {t('p8.calling.pending.release')}
+                                                </Button>
+                                            )}
+                                        </Td>
+                                    </Tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan={6}>
+                                        <EmptyState title={t('p8.calling.pending.empty')} />
+                                    </td>
+                                </tr>
+                            )}
+                        </TBody>
+                    </Table>
+                )}
+            </TableFrame>
+            <ReasonDialog
+                isOpen={!!releasing}
+                title={t('p8.calling.pending.releaseTitle')}
+                description={
+                    releasing ? (
+                        <div className="flex flex-col gap-2">
+                            <CaseCell kase={releasing.case} />
+                            <div>{t('p8.calling.pending.releaseHint', { collector: releasing.collector?.name || '—' })}</div>
+                        </div>
+                    ) : undefined
+                }
+                confirmLabel={t('p8.calling.pending.release')}
+                testId="p8-review-release"
+                describeError={describe}
+                onReload={q.reload}
+                onClose={() => setReleasing(null)}
+                onSubmit={async (reason, key) => {
+                    if (!releasing) return
+                    await supervisionApi.release(releasing.id, { expected_revision: releasing.revision, reason }, key)
+                    q.reload()
+                }}
+            />
+        </div>
+    )
+}
+
 const CallReview = () => {
     const { t } = useTranslation()
     const { state, setState } = useHashState(schema)
@@ -342,13 +467,20 @@ const CallReview = () => {
                     tabs={[
                         { value: 'uncertain', label: t('p5.review.tab.uncertain') },
                         { value: 'flags', label: t('p5.review.tab.flags') },
+                        { value: 'pending', label: t('p8.calling.pending.tab') },
                     ]}
                     value={state.tab}
                     onChange={(tab) => setState({ tab, page: 1 })}
                     testId="p5-review-tabs"
                 />
             </div>
-            {state.tab === 'uncertain' ? <UncertainTab page={state.page} onPage={(page) => setState({ page })} /> : <FlagsTab state={state} onState={(p) => setState(p)} />}
+            {state.tab === 'uncertain' ? (
+                <UncertainTab page={state.page} onPage={(page) => setState({ page })} />
+            ) : state.tab === 'pending' ? (
+                <PendingTab state={state} onState={(p) => setState(p)} />
+            ) : (
+                <FlagsTab state={state} onState={(p) => setState(p)} />
+            )}
             <Note className="mt-3">{t('p5.review.footNote')}</Note>
         </div>
     )

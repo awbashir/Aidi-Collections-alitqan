@@ -43,6 +43,7 @@ import { useConfig } from "@/components/ui/ConfigProvider";
 import { useNavigate } from "react-router-dom";
 import {
   openCaseInApp,
+  registerListRows,
   shouldIgnoreRowClick,
   type RowActivateEvent,
 } from "@/utils/v2/rowNavigation";
@@ -371,6 +372,13 @@ function _DataTable<T>(
       .split(".")
       // eslint-disable-next-line  @typescript-eslint/no-explicit-any
       .reduce((acc: any, prop) => acc?.[prop], original);
+
+  /* The case ids of this page, in order: the case screen's previous / next. */
+  useEffect(() => {
+    if (!onRowClick && !clickAbility) return undefined;
+    return registerListRows((data as T[]).map((row) => rowCaseId(row)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, clintID, clickAbility, !!onRowClick]);
 
   const canClickRow = (original: T): boolean => {
     if (!onRowClick && !clickAbility) return false;

@@ -32,6 +32,7 @@ function ExportByExcel({
 
             item?.contract.name,
             item?.comment_status?.name,
+            item?.comment_sub_status?.name || "",
             item?.amount,
 
             item?.user?.name,
@@ -48,6 +49,7 @@ function ExportByExcel({
             "رقم الهوية",
             "اسم العقد",
             "حالة العميل",
+            "الحالة الفرعية",
             "مبلغ المديونية",
 
             "المستخدم",

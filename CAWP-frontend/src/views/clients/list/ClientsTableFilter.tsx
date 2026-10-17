@@ -25,6 +25,7 @@ import {
   apiGetBranches,
 } from "@/services/ClientsService";
 import MyFilter from "@/components/shared/myComponents/filter";
+import SubStatusFilter from "@/components/shared/myComponents/subStatusFilter";
 import MyField from "@/components/shared/myComponents/field";
 import Button from "@/components/ui/Button";
 import FilterAmount from "@/components/shared/myComponents/filterAmount";
@@ -100,6 +101,9 @@ const ClientsTableFilter = () => {
   const [selectedCommentStatus_, setSelectedCommentStatus_] = useState(() =>
     asSelection(applied?.customeFilterCommentStatusValue)
   );
+  const [selectedCommentSubStatus_, setSelectedCommentSubStatus_] = useState<
+    Array<{ id?: string }> | undefined
+  >(() => asSelection(applied?.customeFilterCommentSubStatusValue));
   const [selectedUsers_, setSelectedUsers_] = useState(() =>
     asSelection(applied?.customeFilterUserValue)
   );
@@ -204,6 +208,7 @@ const ClientsTableFilter = () => {
     if (lastStatusScope.current !== statusScope) {
       lastStatusScope.current = statusScope;
       setSelectedCommentStatus_([]);
+      setSelectedCommentSubStatus_([]);
     }
     if (selectedReachability_?.length > 0) {
       const commentstatus_ = comment_status.filter((status) =>
@@ -268,6 +273,9 @@ const ClientsTableFilter = () => {
         customeFilterCommentStatusValue: selectedCommentStatus_?.map(
           (status) => status.id,
         ),
+        customeFilterCommentSubStatusValue: selectedCommentSubStatus_?.map(
+          (status) => status.id,
+        ),
 
         //amount
         customeFilterAmountValue: selectedAmount_,
@@ -282,6 +290,7 @@ const ClientsTableFilter = () => {
     setSelectedPortfolios_(undefined);
     setSelectedReachability_(undefined);
     setSelectedCommentStatus_(undefined);
+    setSelectedCommentSubStatus_(undefined);
     setSelectedUsers_(undefined);
     setSelectedAccountNumber_(undefined);
     setSelectedArchiveBy_(undefined);
@@ -367,6 +376,16 @@ const ClientsTableFilter = () => {
                         title: "الحالة",
                       }}
                       isMulti={true}
+                    />
+                  </div>
+                  <div>
+                    <SubStatusFilter
+                      statuses={comment_status}
+                      selectedMain={selectedCommentStatus_}
+                      filter={setSelectedCommentSubStatus_}
+                      selectedIds={selectionIds(
+                        selectedCommentSubStatus_
+                      ) as string[] | undefined}
                     />
                   </div>
                 </div>

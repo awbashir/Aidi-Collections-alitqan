@@ -12,6 +12,13 @@
 * `POST /v2/calling/review-flags/<id>/resolve` closes a flag with a REQUIRED reason (the
   supervisor applies any deferred change through the normal screens first). A flag that
   blocks calling (a deferred do-not-call / wrong number) stops blocking once resolved.
+* `GET /v2/calling/pending-wrapups` ended/failed calls still holding their reservation without
+  a wrap-up (2026-10-17), and `POST /v2/calls/<id>/release` a supervisor releases one with a
+  REQUIRED reason (source `reconciled`).
+
+Every list here also shows ORPHANED calls whose case was deleted (legacy hard deletes; the
+calls tables have no FK to clints): before 2026-10-17 the `c.id IS NOT NULL` filters hid them,
+so their reservations could never be released.
 """
 from __future__ import annotations
 
@@ -70,10 +77,17 @@ def _flag_json(r) -> dict:
             "resolution_reason": r["resolution_reason"]}
 
 
+def _scope_or_orphan() -> tuple[str, dict]:
+    """Cases in the caller's scope, plus ORPHANED rows whose case was deleted (legacy hard
+    delete; the calls tables have no FK to clints). Every route here needs calls_manage."""
+    cond, params = scope_sql("c")
+    return f"(c.id IS NULL OR {cond})", params
+
+
 # --------------------------------------------------------------------------- uncertain
 def list_uncertain(args, page, size, offset) -> dict:
-    cond, params = scope_sql("c")
-    where = f"a.state = 'uncertain' AND c.id IS NOT NULL AND {cond}"
+    cond, params = _scope_or_orphan()
+    where = f"a.state = 'uncertain' AND {cond}"
     total = sess().execute(text(f"SELECT count(*) FROM call_attempts a LEFT JOIN clints c ON c.id = a.case_id "
                                 f"WHERE {where}"), params).scalar()
     rows = sess().execute(text(f"""
@@ -135,8 +149,8 @@ def resolve(attempt_id, body: dict, expected_revision) -> str:
 
 # --------------------------------------------------------------------------- flags
 def list_review(args, page, size, offset) -> dict:
-    cond, params = scope_sql("c")
-    where = [f"c.id IS NOT NULL AND {cond}"]
+    cond, params = _scope_or_orphan()
+    where = [cond]
     state = args.get("state") or "open"
     if state not in ("open", "resolved", "all"):
         raise ApiError(422, VALIDATION_FAILED, "state must be open, resolved or all", {"state": "invalid"})
@@ -175,11 +189,11 @@ def resolve_flag(flag_id, body: dict) -> dict:
         raise ApiError(422, VALIDATION_FAILED, f"unknown fields: {', '.join(sorted(unknown))}",
                        {k: "unknown" for k in unknown})
     reason = required_text(body, "reason", max_len=1000)
-    cond, params = scope_sql("c")
+    cond, params = _scope_or_orphan()
     row = sess().execute(text(f"""
         SELECT f.id, f.attempt_id, f.case_id, f.kind, f.resolved_at FROM call_review_flags f
           LEFT JOIN clints c ON c.id = f.case_id
-         WHERE f.id = CAST(:id AS uuid) AND c.id IS NOT NULL AND {cond}
+         WHERE f.id = CAST(:id AS uuid) AND {cond}
            FOR UPDATE OF f"""), {**params, "id": str(flag_id)}).mappings().first()
     if row is None:
         raise ApiError(404, "flag_not_found", "review flag not found", {"flag_id": str(flag_id)})
@@ -191,3 +205,76 @@ def resolve_flag(flag_id, body: dict) -> dict:
     audit.record("call.review_flag.resolve", "call_review_flag", str(flag_id), case_id=str(row["case_id"]),
                  before={"open": True, "kind": row["kind"]}, after={"open": False}, reason=reason)
     return {"id": str(flag_id), "attempt_id": str(row["attempt_id"])}
+
+
+# --------------------------------------------------------------------------- awaiting wrap-up
+_PENDING = """a.mode <> 'manual' AND a.state IN ('ended', 'failed') AND a.wrapped_up_at IS NULL
+              AND EXISTS (SELECT 1 FROM call_reservations r WHERE r.attempt_id = a.id AND r.released_at IS NULL)"""
+
+
+def list_pending(args, page, size, offset) -> dict:
+    """Ended/failed calls that still hold their reservation without a wrap-up, in scope or
+    ORPHANED (case deleted). `orphaned=true` lists only the orphaned ones. A supervisor may
+    release them (POST /v2/calls/<id>/release); the collector normally wraps them up."""
+    cond, params = _scope_or_orphan()
+    where = [_PENDING, cond]
+    orphaned = (args.get("orphaned") or "").lower()
+    if orphaned not in ("", "true", "false"):
+        raise ApiError(422, VALIDATION_FAILED, "orphaned must be true or false", {"orphaned": "invalid"})
+    if orphaned == "true":
+        where.append("c.id IS NULL")
+    elif orphaned == "false":
+        where.append("c.id IS NOT NULL")
+    w = " AND ".join(where)
+    base = "FROM call_attempts a LEFT JOIN clints c ON c.id = a.case_id"
+    total = sess().execute(text(f"SELECT count(*) {base} WHERE {w}"), params).scalar()
+    n_orphaned = sess().execute(text(f"SELECT count(*) {base} WHERE {_PENDING} AND {cond} AND c.id IS NULL"),
+                                params).scalar()
+    rows = sess().execute(text(f"""
+        SELECT a.id FROM call_attempts a LEFT JOIN clints c ON c.id = a.case_id
+         WHERE {w} ORDER BY coalesce(a.ended_at, a.created_at), a.id LIMIT :lim OFFSET :off"""),
+        {**params, "lim": size, "off": offset}).all()
+    items = []
+    for (aid,) in rows:
+        d = queries.call_detail(aid, with_evidence=False)
+        d["flags"] = flags_of(aid, open_only=True)
+        items.append(d)
+    return {"items": items, "total": int(total), "orphaned": int(n_orphaned or 0), "page": page, "page_size": size}
+
+
+def release(attempt_id, body: dict, expected_revision) -> str:
+    """A supervisor releases the reservation of an ended/failed call that has no wrap-up -
+    including an ORPHANED call whose case was deleted - with a REQUIRED reason (source
+    `reconciled`, who + why, a supervisor reconciliation row, audited). The call keeps its
+    state; no wrap-up is invented. Never for a live or uncertain call (resolve that first)."""
+    unknown = set(body) - {"expected_revision", "reason"}
+    if unknown:
+        raise ApiError(422, VALIDATION_FAILED, f"unknown fields: {', '.join(sorted(unknown))}",
+                       {k: "unknown" for k in unknown})
+    reason = required_text(body, "reason", max_len=1000)
+    queries.visible_or_404(attempt_id)
+    a = A.lock_attempt(attempt_id)
+    expected = parse_revision(expected_revision)
+    if int(a["revision"]) != expected:
+        raise RevisionConflict("call_attempt", attempt_id, expected, int(a["revision"]))
+    if a["wrapped_up_at"] is not None or a["mode"] == "manual":
+        raise ApiError(409, "wrapup_exists", "this call already has a wrap-up", {"attempt_id": str(attempt_id)})
+    if a["state"] not in ("ended", "failed"):
+        raise ApiError(409, "release_not_allowed",
+                       "only an ended or failed call can be released" +
+                       (" (resolve the uncertain call instead)" if a["state"] == "uncertain" else ""),
+                       {"state": a["state"]})
+    released = A.release_reservation(attempt_id, "reconciled", by=me(), reason=reason)
+    if not released:
+        raise ApiError(409, "reservation_not_held", "the call no longer holds a reservation",
+                       {"attempt_id": str(attempt_id)})
+    case_missing = sess().execute(text("SELECT NOT EXISTS (SELECT 1 FROM clints WHERE id = CAST(:c AS uuid))"),
+                                  {"c": str(a["case_id"])}).scalar()
+    a = dict(a)
+    RC.record(sess(), a, a["state"], "supervisor_release", source="supervisor", actor=me(), reason=reason,
+              released=True)
+    audit.record("call.release", "call_attempt", attempt_id, case_id=str(a["case_id"]),
+                 before={"reservation": "active"},
+                 after={"reservation": "released", "release_source": "reconciled", "state": a["state"],
+                        "case_missing": bool(case_missing)}, reason=reason)
+    return str(attempt_id)

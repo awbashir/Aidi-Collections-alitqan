@@ -185,6 +185,37 @@ def test_legacy_note_form_with_a_sub_status(db):
     assert "sub_status" not in timeline[res[1]["body"]["id"]]
 
 
+def test_legacy_note_form_checks_contract_and_reachability(db):
+    """POST /comments refuses what the wrap-up refuses: another contract's status and a
+    reachability the status does not belong to (legacy 201 {status: false, message, error})."""
+    collector = make_user(db, {"clints": True})
+    reach_a, reach_b = new_reach(db, "T chk reach a"), new_reach(db, "T chk reach b")
+    own = new_status(db, "T chk own", contract=A.contract_a, reach=reach_a)
+    foreign = new_status(db, "T chk foreign", contract=A.contract_b, reach=reach_a)
+    general_any = new_status(db, "T chk general any")                       # no contract, no reachability
+    general_b = new_status(db, "T chk general b", reach=reach_b)
+    case = make_case(db, 100, owner=collector)                              # portfolio_a -> contract_a
+
+    def note(status, reach=None, text="T chk"):
+        body = legacy_note(case, status, collector, text=text)
+        if reach is not None:
+            body["comment_reachability_id"] = reach
+        return body
+
+    res = calls_as(collector, [
+        ("POST", "/comments", note(foreign, reach_a)),                       # 0 another contract
+        ("POST", "/comments", note(own, reach_b)),                           # 1 wrong reachability
+        ("POST", "/comments", note(general_b, reach_a)),                     # 2 wrong reachability (general)
+        ("POST", "/comments", note(own, reach_a, "ok own")),                 # 3
+        ("POST", "/comments", note(own, None, "ok no reach")),               # 4 legacy: no reachability sent
+        ("POST", "/comments", note(general_any, reach_b, "ok general")),     # 5 fits every reachability
+    ])
+    assert [r["status"] for r in res] == [201, 201, 201, 200, 200, 200], res
+    assert [r["body"]["error"] for r in res[:3]] == ["status_not_for_contract", "status_mismatch", "status_mismatch"]
+    assert all(r["body"]["status"] is False and r["body"]["message"] for r in res[:3])
+    assert one(db, 'SELECT count(*) FROM "Comments" WHERE clint_id = %s', (case,)) == 3
+
+
 # --------------------------------------------------------------------------- calling wrap-up
 def now_iso():
     return (dt.datetime.now(dt.timezone(dt.timedelta(hours=3))) - dt.timedelta(minutes=5)).isoformat(timespec="seconds")

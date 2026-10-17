@@ -246,7 +246,10 @@ def test_wrong_number_needs_a_contact(cl_client, hdr, team):
 
 
 def test_do_not_call_blocks_the_case(cl_client, hdr, team, pgc):
-    st, body = manual(cl_client, hdr, team["c1"], team["case1"], outcome="do_not_call",
+    # 2026-10-17: blocking the client is a supervisor decision (calls_manage)
+    st, body = manual(cl_client, hdr, team["c1"], team["case1"], outcome="do_not_call")
+    assert (st, body["code"]) == (403, "outcome_not_allowed")
+    st, body = manual(cl_client, hdr, team["supervisor"], team["case1"], outcome="do_not_call",
                       do_not_call_reason="debtor asked us to stop calling")
     assert st == 201, body
     block = body["data"]["wrapup"]["calling_block_id"]
@@ -255,7 +258,7 @@ def test_do_not_call_blocks_the_case(cl_client, hdr, team, pgc):
     assert st == 200 and blocks["data"]["do_not_call"] is True
     assert blocks["data"]["items"][0]["reason"] == "debtor asked us to stop calling"
     # a second DNC reuses the active block
-    st, body = manual(cl_client, hdr, team["c1"], team["case1"], outcome="do_not_call")
+    st, body = manual(cl_client, hdr, team["supervisor"], team["case1"], outcome="do_not_call")
     assert body["data"]["wrapup"]["calling_block_id"] == block
     assert q1(pgc, "SELECT count(*) FROM calling_blocks WHERE case_id = %s", team["case1"])[0] == 1
     # release: calling admin only, with a reason, once
@@ -336,6 +339,8 @@ def test_wrapup_states_and_evidence(cl_client, hdr, team, pgc):
         st, body = wrap(cl_client, hdr, team["c2"], unbridged, rev(pgc, unbridged), outcome=outcome)
         assert (st, body["code"]) == (409, "conversation_not_evidenced"), outcome
     st, body = wrap(cl_client, hdr, team["c2"], unbridged, rev(pgc, unbridged), outcome="do_not_call")
+    assert (st, body["code"]) == (403, "outcome_not_allowed")       # 2026-10-17: supervisors only
+    st, body = wrap(cl_client, hdr, team["c2"], unbridged, rev(pgc, unbridged), outcome="no_answer")
     assert st == 200
 
 

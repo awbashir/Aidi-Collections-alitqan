@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import Upload from "@/components/ui/Upload";
 import { apiPostSpecifyUsersIdsOne } from "@/services/ClientsService";
 import ToastNotification from "@/components/shared/myComponents/ToastNotification";
+import { skippedOpenCalls } from "@/utils/v2/openCallGuard";
 import { HiOutlineCloudUpload } from "react-icons/hi";
 import Tooltip from "@/components/ui/Tooltip";
 import useThemeClass from "@/utils/hooks/useThemeClass";
@@ -54,10 +55,12 @@ function SepcifyUsersOneButton({
       .then((response) => {
         if (response.status) {
           fetchData();
+          // cases with an open call keep their collector (utils/v2/openCallGuard)
+          const skipped = skippedOpenCalls(response.data);
           ToastNotification(
-            t("clients.SepcifyClientToUserSuccess"),
+            skipped || t("clients.SepcifyClientToUserSuccess"),
             t("clients.SepcifyClientToUser"),
-            "success"
+            skipped ? "warning" : "success"
           );
         } else {
           ToastNotification(

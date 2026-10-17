@@ -37,6 +37,21 @@ and a `wrapup_needs_review` flag lists it for supervisors (GET /v2/calling/revie
 deferred do-not-call or wrong number makes that flag block calling the case until a
 supervisor resolves it. A MANUAL log on a locked/archived case is still refused (409): it
 creates a new call record at the collector's initiative, with no reservation to release.
+
+Customer feedback 2026-10-17 (migration 0071):
+* AUTHORIZATION comes from the attempt (`wrapup_access`, also used by live.live_view's
+  can_wrapup): the attempt's own collector may always wrap it up; anyone else needs
+  calls_manage with the case in their scope, or the case deleted. The calls tables have no FK
+  to clints (legacy hard deletes), so a deleted or reassigned case no longer strands the
+  reservation (it used to answer 404 call_not_found forever).
+* A wrap-up whose case was DELETED (review_reason `case_deleted`) or that left the collector's
+  scope after the call (`case_reassigned`) is saved for review exactly like a locked/archived
+  case: outcome + text recorded, the reservation released, no case change applied, the
+  requested changes kept in `deferred_actions` and a wrapup_needs_review flag raised.
+* `do_not_call` (blocking the client) is a supervisor decision: 403 `outcome_not_allowed`
+  without calls_manage, in the wrap-up and the manual log. `wrong_number` no longer needs a
+  bridged conversation: it blocks only the dialled number (collectors used do-not-call for
+  dead/wrong numbers because wrong number was offered only after a bridge).
 """
 from __future__ import annotations
 
@@ -50,13 +65,26 @@ from core.api_response import NOT_FOUND, VALIDATION_FAILED, ApiError
 from core.revisions import RevisionConflict, parse_revision
 from services import comment_status_tree as status_tree
 from services.calling import attempts as A
-from services.calling.common import (CALLS_MANAGE, OUTCOMES, case_in_scope, iso, me, optional_text,
-                                     parse_uuid, required_text, s, sess)
+from services.calling.common import (OUTCOMES, SUPERVISE_KEYS, can_supervise, case_in_scope, iso, me,
+                                     optional_text, parse_uuid, required_text, s, scope_sql, sess)
 
 NOTE_MAX = 5000
 TRANSCRIPT_MAX = 100_000
-CONVERSATION_OUTCOMES = ("connected", "promise_discussed", "dispute", "wrong_number")
+# outcomes that claim a conversation: they need PBX bridge evidence. `wrong_number` is not one
+# (2026-10-17): a dead or wrong number is usually learned without a bridged conversation.
+CONVERSATION_OUTCOMES = ("connected", "promise_discussed", "dispute")
+SUPERVISOR_OUTCOMES = ("do_not_call",)        # blocking the client: calls_supervise | calls_manage
 WRAPUP_STATES = ("ended", "failed")
+REVIEW_REASONS = ("case_deleted", "case_reassigned", "case_locked", "case_archived")
+
+
+def allowed_outcomes(*, bridged: bool | None) -> list[str]:
+    """The outcomes the caller may record: `bridged` None = a manual log (no PBX evidence rule)."""
+    manager = can_supervise()
+    out = [o for o in OUTCOMES if manager or o not in SUPERVISOR_OUTCOMES]
+    if bridged is False:
+        out = [o for o in out if o not in CONVERSATION_OUTCOMES]
+    return out
 
 
 def _bad(field, message, problem="invalid", code=VALIDATION_FAILED, status=422):
@@ -76,10 +104,17 @@ def _parse_instant(value, field) -> _dt.datetime:
     return ts.astimezone(riyadh.UTC)
 
 
-def validate_wrapup(body: dict, case: dict) -> dict:
+def validate_wrapup(body: dict, case: dict | None) -> dict:
+    """`case` None = the case was deleted: nothing will be written on it, so the note status is
+    not matched against its contract."""
     outcome = body.get("outcome")
     if outcome not in OUTCOMES:
         _bad("outcome", f"outcome must be one of {', '.join(OUTCOMES)}", "required" if outcome is None else "invalid")
+    if outcome in SUPERVISOR_OUTCOMES and not can_supervise():
+        raise ApiError(403, "outcome_not_allowed",
+                       "only a supervisor can block the client from calls; for a wrong or disconnected "
+                       "number choose wrong_number (it blocks only that number)",
+                       {"outcome": outcome, "required_any": list(SUPERVISE_KEYS)})
     note = body.get("note")
     if note is None:
         note = {}
@@ -131,7 +166,7 @@ def validate_wrapup(body: dict, case: dict) -> dict:
                 _bad("note.comment_reachability_id", "the reachability does not match the status", "status_mismatch")
         else:
             reach = st["reach"]
-        if st["contract_id"] is not None and st["contract_id"] != case.get("contract_id"):
+        if case is not None and st["contract_id"] is not None and st["contract_id"] != case.get("contract_id"):
             _bad("note.comment_status_id", "the note status belongs to another contract", "status_not_for_contract")
 
     callback = None
@@ -180,6 +215,51 @@ def _case_row(case_id) -> dict:
     contract = sess().execute(text("SELECT contract_id::text FROM portfolios WHERE id = CAST(:p AS uuid)"),
                               {"p": str(c["portfolios_id"])}).scalar()
     return {**dict(c), "contract_id": contract}
+
+
+def _case_any(case_id) -> dict | None:
+    """The case row whatever the caller's scope (+ contract id), or None when it was deleted."""
+    r = sess().execute(text("""
+        SELECT c.id, c.name, c."identityNumber", c."accountNumber", c.user_id, c.portfolios_id,
+               c.is_locked, c.is_archive, p.contract_id::text AS contract_id
+          FROM clints c LEFT JOIN portfolios p ON p.id = c.portfolios_id
+         WHERE c.id = CAST(:id AS uuid)"""), {"id": str(case_id)}).mappings().first()
+    return dict(r) if r else None
+
+
+def _in_scope(case_id) -> bool:
+    cond, params = scope_sql("c")
+    return sess().execute(text(f"SELECT 1 FROM clints c WHERE c.id = CAST(:id AS uuid) AND {cond}"),
+                          {**params, "id": str(case_id)}).first() is not None
+
+
+def wrapup_access(attempt) -> dict:
+    """Who may wrap up `attempt` (a call_attempts mapping), and how it will be saved.
+
+    allowed  the attempt's own collector; or calls_supervise / calls_manage with the case in scope
+             or deleted
+    visible  the caller may know the call exists (otherwise 404 call_not_found)
+    case     the case row (any scope) or None when it was deleted
+    review_reason  case_deleted | case_reassigned (the collector's case left their scope) |
+             case_locked | case_archived | None (a normal wrap-up)
+    live.live_view's can_wrapup uses the same predicate."""
+    case = _case_any(attempt["case_id"])
+    own = str(attempt["collector_user_id"]) == me()
+    manager = can_supervise()
+    in_scope = case is not None and _in_scope(case["id"])
+    if case is None:
+        reason = "case_deleted"
+    elif own and not in_scope:
+        reason = "case_reassigned"
+    elif case["is_locked"]:
+        reason = "case_locked"
+    elif case["is_archive"]:
+        reason = "case_archived"
+    else:
+        reason = None
+    return {"allowed": own or (manager and (case is None or in_scope)),
+            "visible": own or in_scope or (manager and case is None),
+            "case": case, "review_reason": reason}
 
 
 def _contact(contact_id, case) -> dict | None:
@@ -379,7 +459,6 @@ def log_manual_call(body: dict) -> str:
 
 
 def wrapup(attempt_id, body: dict, expected_revision) -> str:
-    from core.auth import has_permission
     allowed = {"outcome", "note", "callback_at", "promise", "replacement_default_id", "wrong_number_reason",
                "do_not_call_reason", "expected_revision"}
     unknown = set(body) - allowed
@@ -390,13 +469,13 @@ def wrapup(attempt_id, body: dict, expected_revision) -> str:
     not_found = ApiError(404, "call_not_found", "call not found", {"attempt_id": str(attempt_id)})
     if attempt is None:
         raise not_found
-    try:
-        case = _case_row(attempt["case_id"])                      # 404 when out of scope
-    except ApiError:
-        raise not_found from None
-    if str(attempt["collector_user_id"]) != me() and not has_permission(CALLS_MANAGE):
-        raise ApiError(403, "forbidden", "only the collector who made the call (or calling admin) can wrap it up",
-                       {"required_any": [CALLS_MANAGE]})
+    access = wrapup_access(attempt)
+    if not access["visible"]:
+        raise not_found
+    if not access["allowed"]:
+        raise ApiError(403, "forbidden", "only the collector who made the call (or a supervisor) can wrap it up",
+                       {"required_any": list(SUPERVISE_KEYS)})
+    case = access["case"]
     expected = parse_revision(expected_revision)
     if int(attempt["revision"]) != expected:
         raise RevisionConflict("call_attempt", attempt_id, expected, int(attempt["revision"]))
@@ -410,21 +489,35 @@ def wrapup(attempt_id, body: dict, expected_revision) -> str:
     v = validate_wrapup(body, case)
     if v["outcome"] in CONVERSATION_OUTCOMES and attempt["bridged_at"] is None:
         raise ApiError(409, "conversation_not_evidenced",
-                       "the PBX shows no bridged conversation for this call; choose no_answer, busy or do_not_call",
+                       "the PBX shows no bridged conversation for this call; choose no_answer, busy or wrong_number",
                        {"outcome": v["outcome"], "state": attempt["state"]})
+    if case is None:
+        # the case was deleted: its contacts may be gone too; keep the attempt's contact id only
+        contact = {"id": attempt["contact_id"]} if attempt["contact_id"] else None
+        _save_for_review(dict(attempt), {"id": attempt["case_id"]}, contact, v, "case_deleted")
+        return str(attempt_id)
     contact = _contact(attempt["contact_id"], case) if attempt["contact_id"] else None
     state = sess().execute(text("""
         SELECT is_locked, is_archive FROM clints WHERE id = CAST(:id AS uuid) FOR NO KEY UPDATE"""),
         {"id": str(attempt["case_id"])}).mappings().first()
-    if state is not None and (state["is_locked"] or state["is_archive"]):
-        _save_for_review(dict(attempt), case, contact, v, "case_locked" if state["is_locked"] else "case_archived")
+    if state is None:                                             # deleted meanwhile
+        reason = "case_deleted"
+    elif access["review_reason"] == "case_reassigned":
+        reason = "case_reassigned"
+    elif state["is_locked"] or state["is_archive"]:
+        reason = "case_locked" if state["is_locked"] else "case_archived"
+    else:
+        reason = None
+    if reason is not None:
+        _save_for_review(dict(attempt), case, contact, v, reason)
     else:
         _save(dict(attempt), case, contact, v)
     return str(attempt_id)
 
 
 def _save_for_review(attempt: dict, case: dict, contact: dict | None, v: dict, review_reason: str) -> dict:
-    """The locked/archived-case wrap-up: record the facts, apply no protected case change."""
+    """The wrap-up saved for review (case locked, archived, deleted or reassigned): record the
+    facts, release the reservation, apply no protected case change."""
     import json
 
     from flask import request
@@ -491,3 +584,29 @@ def release_block(block_id, body) -> dict:
     audit.record("calling.block.release", "calling_block", block_id, case_id=row["case_id"],
                  before={"active": True}, after={"active": False}, reason=reason)
     return {"id": s(row["id"]), "case_id": s(row["case_id"])}
+
+
+def create_block(body) -> dict:
+    """A supervisor blocks a client from calls (POST /v2/calling-blocks, calls_manage): an active
+    do-not-call block on the case, source `manual`, with a required reason. 409 block_exists when
+    the case already has one. Out-of-scope cases answer 404."""
+    unknown = set(body) - {"case_id", "reason"}
+    if unknown:
+        raise ApiError(422, VALIDATION_FAILED, f"unknown fields: {', '.join(sorted(unknown))}",
+                       {k: "unknown" for k in unknown})
+    case_id = parse_uuid(body.get("case_id"), "case_id")
+    reason = required_text(body, "reason", max_len=1000)
+    case_in_scope(case_id, lock=True)                             # 404 out of scope; serializes blocks
+    existing = sess().execute(text("""
+        SELECT id FROM calling_blocks WHERE case_id = CAST(:c AS uuid) AND kind = 'do_not_call'
+           AND released_at IS NULL"""), {"c": case_id}).first()
+    if existing is not None:
+        raise ApiError(409, "block_exists", "the client is already blocked from calls",
+                       {"case_id": case_id, "block_id": str(existing[0])})
+    bid = sess().execute(text("""
+        INSERT INTO calling_blocks (case_id, kind, reason, source, attempt_id, created_by)
+        VALUES (CAST(:c AS uuid), 'do_not_call', :why, 'manual', NULL, CAST(:by AS uuid))
+        RETURNING id"""), {"c": case_id, "why": reason, "by": me()}).scalar()
+    audit.record("calling.block.create", "calling_block", bid, case_id=case_id,
+                 after={"kind": "do_not_call", "source": "manual"}, reason=reason)
+    return {"id": str(bid), "case_id": case_id}

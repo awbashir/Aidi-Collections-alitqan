@@ -17,13 +17,14 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from core.auth import has_permission
 from services.calling import review
-from services.calling.common import CALLS_MANAGE, OUTCOMES, iso, me, sess
+from services.calling import wrapup as W
+from services.calling.common import can_supervise, iso, me, sess
 
 LIVE_STATES = ("prepared", "authorized", "dispatched", "agent_ringing", "agent_answered", "customer_dialing",
                "customer_answered", "bridged")
-NO_CONVERSATION_OUTCOMES = ("no_answer", "busy", "do_not_call")
+# without bridge evidence (do_not_call only for calls_manage; wrapup.allowed_outcomes decides)
+NO_CONVERSATION_OUTCOMES = ("no_answer", "busy", "wrong_number", "do_not_call")
 AGENT_STATES = {"4": "agent_ringing", "5": "agent_ringing", "6": "agent_answered"}
 CUSTOMER_STATES = {"4": "customer_ringing", "5": "customer_ringing", "6": "customer_answered"}
 
@@ -131,10 +132,13 @@ def live_view(attempt_id) -> dict:
                               "WHERE id = CAST(:a AS uuid)"), {"a": str(attempt_id)}).mappings().first()
     dispatch = _dispatch(attempt_id)
     own = d["collector"] and d["collector"]["id"] == me()
-    manager = has_permission(CALLS_MANAGE)
+    manager = can_supervise()                     # calls_supervise | calls_manage
     bridged = raw["bridged_at"] is not None
-    can_wrapup = (state in ("ended", "failed") and d["wrapup"] is None and d["mode"] != "manual"
-                  and (own or manager))
+    # the same predicate as the wrap-up itself (wrapup.wrapup_access, 2026-10-17): the attempt's
+    # own collector always; others need calls_manage with the case in scope or deleted
+    access = W.wrapup_access({"case_id": d["case"]["id"], "collector_user_id": (d["collector"] or {}).get("id")})
+    awaiting = state in ("ended", "failed") and d["wrapup"] is None and d["mode"] != "manual"
+    can_wrapup = awaiting and access["allowed"]
     d["dispatch"] = dispatch
     d["live"] = state in LIVE_STATES
     d["conversation"] = {
@@ -150,8 +154,12 @@ def live_view(attempt_id) -> dict:
         "can_cancel": (state in ("prepared", "authorized") and (dispatch is None or dispatch["state"] == "queued")
                        and (own or manager)),
         "can_wrapup": can_wrapup,
-        "wrapup_outcomes": (list(OUTCOMES) if bridged else list(NO_CONVERSATION_OUTCOMES)) if can_wrapup else [],
+        "wrapup_outcomes": W.allowed_outcomes(bridged=bridged) if can_wrapup else [],
+        # saved for supervisor review without case changes: case_deleted | case_reassigned |
+        # case_locked | case_archived (null = a normal wrap-up)
+        "wrapup_review_reason": access["review_reason"] if can_wrapup else None,
         "can_resolve": state == "uncertain" and manager,
+        "can_release": bool(awaiting and manager and d["reservation"] and d["reservation"]["active"]),
     }
     d["events"] = timeline(attempt_id, agent)
     d["poll_after_ms"] = 1000 if d["live"] else (5000 if state == "uncertain" else None)

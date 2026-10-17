@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk, current } from "@reduxjs/toolkit";
+import { openCallRefusal } from "@/utils/v2/openCallGuard";
 import {
   apiGetClientsDetails,
   apPutClient,
@@ -162,9 +163,16 @@ export const getCustomer = createAsyncThunk(
 
 export const putClient = createAsyncThunk(
   SLICE_NAME + "/putClient",
-  async (data: User) => {
-    const response = await apPutClient(data);
-    return response.data;
+  async (data: User, { rejectWithValue }) => {
+    try {
+      const response = await apPutClient(data);
+      return response.data;
+    } catch (err) {
+      // 409: the collector cannot change while the case has an open call (utils/v2/openCallGuard)
+      const openCallMessage = openCallRefusal(err);
+      if (openCallMessage) return rejectWithValue({ openCallMessage });
+      throw err;
+    }
   }
 );
 

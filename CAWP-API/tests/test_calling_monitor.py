@@ -46,6 +46,14 @@ def own(pgc, user, ext):
     run(pgc, "INSERT INTO user_extensions (extension, user_id, assign_reason) VALUES (%s, %s, 'test')", ext, user)
 
 
+def fresh_ext(pgc, first: str) -> str:
+    """A 4-digit extension starting with `first` that no active user_extensions row holds."""
+    while True:
+        ext = f"{first}{uuid.uuid4().int % 900 + 100}"
+        if not run_q(pgc, "SELECT count(*) FROM user_extensions WHERE extension = %s AND released_at IS NULL", ext):
+            return ext
+
+
 def frame(uid, channel, *, linked=None, state="Up", bridge=None, dur="00:01:05", caller="", connected="", app="Dial"):
     return {"Uniqueid": uid, "Linkedid": linked or uid, "Channel": channel, "ChannelStateDesc": state,
             "CallerIDNum": caller, "ConnectedLineNum": connected, "BridgeId": bridge or "", "Duration": dur,
@@ -176,7 +184,7 @@ def test_user_filter_narrows_within_scope_only(mon_app, pgc):
 def detail_world(pgc):
     member, other = new_user(pgc), new_user(pgc)
     sup = new_supervisor(pgc, users=[member])
-    e1, e2 = f"2{uuid.uuid4().int % 900 + 100}", f"1{uuid.uuid4().int % 900 + 100}"
+    e1, e2 = fresh_ext(pgc, "2"), fresh_ext(pgc, "1")
     own(pgc, member, e1)
     own(pgc, other, e2)
     _, portfolio = new_contract(pgc, "monitor detail")
@@ -234,7 +242,7 @@ def test_call_detail_merges_rows_and_matches_clients_in_scope(mon_app, pgc):
 def test_exports_are_scoped_xlsx_and_audited(mon_app, pgc, monkeypatch):
     import openpyxl
     member, other, sup, e1, e2, n_mine, n_theirs, rows = detail_world(pgc)
-    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi: rows)
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi, ext=None: rows)
     client = mon_app.test_client()
     r = client.get("/v2/calling/monitor/calls/export", query_string={"from": "2026-10-14"}, headers=token(mon_app, sup))
     assert r.status_code == 200 and r.headers["Cache-Control"] == "private, no-store", r.data[:300]
@@ -251,6 +259,10 @@ def test_exports_are_scoped_xlsx_and_audited(mon_app, pgc, monkeypatch):
     users = wb.worksheets[0]
     assert users.cell(1, 1).value == "الموظف" and users.cell(2, 2).value == e2 and users.cell(3, 1).value == "الإجمالي"
     assert users.cell(2, 4).value == 1 and users.cell(2, 7).value == 1                       # outbound 1, missed 1
+    # talk-time buckets: e2's one answered call talked 125 s -> > 1 min and > 2 min, not > 3 min
+    assert [users.cell(1, c).value for c in (11, 12, 13)] == list(monitor.OVER_AR_SUMMARY)
+    assert [users.cell(2, c).value for c in (11, 12, 13)] == [1, 1, 0]
+    assert [users.cell(3, c).value for c in (11, 12, 13)] == [1, 1, 0]                     # the totals row
     assert [s.title for s in wb.worksheets] == ["ملخص الموظفين", "حسب الوقت", "معلومات"]
     assert client.get("/v2/calling/monitor/calls/export", query_string={"from": "2026-10-14", "extension": e2},
                       headers=token(mon_app, sup)).status_code == 403                       # outside the team
@@ -265,3 +277,94 @@ def run_q(pgc, sql, *params):
     with pgc.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchone()[0]
+
+
+def run_role(pgc, name, perms: dict) -> str:
+    import json
+    rid = str(uuid.uuid4())
+    run(pgc, "INSERT INTO roles (id, name, permission) VALUES (%s, %s, %s)", rid, f"{name} {rid[:8]}", json.dumps(perms))
+    return rid
+
+
+def test_talk_time_buckets_are_strictly_longer_and_answered_only(mon_app, pgc):
+    member = new_user(pgc)
+    ext = fresh_ext(pgc, "9")
+    own(pgc, member, ext)
+    at = dt.datetime(2026, 10, 16, 9)
+
+    def row(n, billsec, disposition="ANSWERED"):
+        return {"calldate": at + dt.timedelta(minutes=n), "channel": f"PJSIP/{ext}-{n}", "dstchannel": f"SIP/ITC-{n}",
+                "disposition": disposition, "billsec": billsec, "duration": billsec + 5, "linkedid": f"B{n}"}
+    rows = [row(1, 60), row(2, 61), row(3, 120), row(4, 121), row(5, 180), row(6, 181), row(7, 0, "NO ANSWER"),
+            row(8, 500, "NO ANSWER"),                                     # not answered: never counted
+            # one call, two rows: the longest answered row counts once
+            row(9, 50), {**row(9, 190), "calldate": at + dt.timedelta(minutes=9, seconds=1)}]
+    from extensions import db
+    with mon_app.app_context():
+        st = monitor.stats({"from": "2026-10-16", "extension": ext}, user_id=CL.super, rows=rows)
+        detail = monitor.calls({"from": "2026-10-16", "extension": ext}, user_id=CL.super, rows=rows)
+        db.session.remove()
+    u = st["users"][0]
+    assert (u["talk_over_60"], u["talk_over_120"], u["talk_over_180"]) == (6, 4, 2)
+    assert {k: st["totals"][k] for k in ("talk_over_60", "talk_over_120", "talk_over_180")} == \
+        {"talk_over_60": 6, "talk_over_120": 4, "talk_over_180": 2}
+    assert len(detail["calls"]) == 9 and sum(monitor._over(c["talk_seconds"], c["answered"])["talk_over_60"]
+                                             for c in detail["calls"]) == 6
+
+
+def test_call_detail_export_has_talk_time_columns(mon_app, pgc, monkeypatch):
+    import openpyxl
+    member, other, sup, e1, e2, n_mine, n_theirs, rows = detail_world(pgc)
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi, ext=None: rows)
+    r = mon_app.test_client().get("/v2/calling/monitor/calls/export", query_string={"from": "2026-10-14"},
+                                  headers=token(mon_app, CL.super))
+    assert r.status_code == 200
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).worksheets[0]
+    head = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+    cols = [head.index(h) + 1 for h in monitor.OVER_AR_DETAIL]
+    assert head[cols[0] - 2] == "مدة المحادثة (ثانية)" and head[-2:] == ["مسجلة", "معرف المكالمة"]
+    by_id = {(ws.cell(i, len(head)).value, ws.cell(i, 3).value): [ws.cell(i, c).value for c in cols]
+             for i in range(2, ws.max_row + 1)}
+    assert len(by_id) == 5 and by_id[("D2", e2)] == ["نعم", "نعم", "لا"]                      # answered, 125 s
+    assert by_id[("D3", e2)] == ["لا", "لا", "لا"] and by_id[("D4", e1)] == ["لا", "لا", "لا"]   # missed / 5 s
+
+
+def test_calls_endpoint_pages_newest_first_scoped_with_recording(mon_app, pgc, monkeypatch):
+    member, other, sup, e1, e2, n_mine, n_theirs, rows = detail_world(pgc)
+    seen = []
+
+    def fake_rows(lo, hi, ext=None):
+        seen.append(ext)
+        return rows
+    monkeypatch.setattr(monitor, "_cdr_rows", fake_rows)
+    client = mon_app.test_client()
+    url = "/v2/calling/monitor/calls"
+    # SuperAdmin role of the seed has no recording key: the recording value is withheld
+    r = client.get(url, query_string={"from": "2026-10-14", "extension": e1, "page_size": 2}, headers=token(mon_app, CL.super))
+    assert r.status_code == 200, r.data[:300]
+    d = r.get_json()["data"]
+    assert seen[-1] == e1                                                                    # the CDR query is narrowed
+    assert d["total"] == 3 and d["page"] == 1 and d["page_size"] == 2 and len(d["items"]) == 2
+    assert [c["call_id"] for c in d["items"]] == ["D4", "D3"]                                 # newest first
+    assert d["items"][0]["at"] == "2026-10-14T12:00:00+03:00"
+    assert all(c["recording"] is None for c in d["items"])
+    p2 = client.get(url, query_string={"from": "2026-10-14", "extension": e1, "page_size": 2, "page": 2},
+                    headers=token(mon_app, CL.super)).get_json()["data"]
+    assert [c["call_id"] for c in p2["items"]] == ["D1"] and p2["items"][0]["recorded"] is True
+    assert p2["items"][0]["client"]["account_number"]
+    # a supervisor with the recording keys: the team's calls, with the CDR recordingfile
+    listener = run_role(pgc, "cl supervisor with recordings", {"calls": True, "calls_manage": True,
+                                                                "clints_callsRecords_play": True})
+    sup2 = new_supervisor(pgc, role=listener, users=[member])
+    d = client.get(url, query_string={"from": "2026-10-14"}, headers=token(mon_app, sup2)).get_json()["data"]
+    assert d["scope"] == "team" and {c["extension"] for c in d["items"]} == {e1} and d["total"] == 3
+    d1 = next(c for c in d["items"] if c["call_id"] == "D1")
+    assert d1["recording"] == "out-1.wav" and d1["result"] == "NO ANSWER" and d1["ring_seconds"] == 40
+    assert next(c for c in d["items"] if c["call_id"] == "D4")["recording"] is None
+    # outside the team, a collector, bad paging
+    assert client.get(url, query_string={"from": "2026-10-14", "extension": e2}, headers=token(mon_app, sup2)).status_code == 403
+    assert client.get(url, headers=token(mon_app, new_user(pgc, CL.collector_role))).status_code == 403
+    for bad in ({"page_size": 0}, {"page_size": 201}, {"page": "x"}):
+        assert client.get(url, query_string={"from": "2026-10-14", **bad}, headers=token(mon_app, CL.super)).status_code == 422
+    beyond = client.get(url, query_string={"from": "2026-10-14", "page": 9}, headers=token(mon_app, CL.super)).get_json()["data"]
+    assert beyond["items"] == [] and beyond["total"] == 5

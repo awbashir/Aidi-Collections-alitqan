@@ -46,3 +46,29 @@ export function subStatusesOf<T extends StatusLike>(
         (s) => isLiveStatus(s) && s.parent_id === parentId
     )
 }
+
+/**
+ * THE status list of a new case note: the wrap-up dialog, the client page's call-result form
+ * and the legacy note form all use this one rule (customer decision 2026-10-17).
+ *
+ * - Contract: the case's contract statuses + the general ones (live main statuses only). An
+ *   UNKNOWN contract (`null`, e.g. a case the screen could not read) offers the general ones
+ *   only, never every contract's statuses (the API refuses another contract's status).
+ * - Reachability: a status WITHOUT a reachability fits every reachability, so it is offered
+ *   always (also while none is chosen); a status WITH one is offered only while that
+ *   reachability is chosen. This is exactly what the API accepts (wrap-up and POST /comments).
+ */
+export function noteStatusOptions<
+    T extends StatusLike & { reachability_id?: string | null }
+>(
+    list: T[] | null | undefined,
+    contractId: string | null | undefined,
+    reach: string | null | undefined
+): T[] {
+    return (list || []).filter(
+        (s) =>
+            isMainStatus(s) &&
+            (s.contract_id == null || (!!contractId && s.contract_id === contractId)) &&
+            (s.reachability_id == null || (!!reach && s.reachability_id === reach))
+    )
+}

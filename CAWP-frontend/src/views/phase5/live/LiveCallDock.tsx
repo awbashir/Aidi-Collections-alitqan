@@ -3,7 +3,10 @@
  * `calls` or `calls_make`. It shows the call the collector just placed (click-to-call), a
  * campaign call dispatched to them, or any attempt that still holds their reservation
  * (`GET /v2/me/calls/active`, polled every 15 s while the tab is visible), with the live
- * view polled at the API's pace. When the call ends it opens the wrap-up by itself, once.
+ * view polled at the API's pace. When the call ends it asks for the wrap-up by itself, once:
+ * in the call's client page (note tab, "call result") when that page is open in this tab
+ * (customer decision 2026-10-17: no dialog then, the dock only points to the page), else in
+ * the wrap-up dialog (campaign calls, other screens).
  *
  * It sits on the inline-end edge at the bottom and moves beside the softphone panel when
  * that one is open, so both stay usable; it stays under modal dialogs (their scrim is
@@ -16,10 +19,10 @@ import { ChevronDown, ChevronUp, PhoneCall, X } from 'lucide-react'
 import { callsApi } from '@/services/v2'
 import { useAppSelector } from '@/store'
 import { usePermissions } from '@/utils/v2/hooks'
-import { CallStateBadge } from '../parts'
+import { CallStateBadge, Notice } from '../parts'
 import WrapupDialog from '../wrapup/WrapupDialog'
 import LiveCallPanel from './LiveCallPanel'
-import { CALL_WRAPPED_EVENT, callDock, useCallDock } from './callDock'
+import { CALL_WRAPPED_EVENT, callDock, dialedOf, useCallDock } from './callDock'
 import type { CallWrappedDetail } from './callDock'
 import { useLiveCall } from './useLiveCall'
 
@@ -56,10 +59,15 @@ const DockBody = () => {
         return () => window.removeEventListener(CALL_WRAPPED_EVENT, on)
     }, [reload])
 
-    /* The call ended and may be wrapped up: open the wrap-up once, by itself. */
+    /* The call ended and may be wrapped up: ask for the wrap-up once, by itself. */
+    const caseId = view?.case && !view.case.missing ? view.case.id : null
     useEffect(() => {
-        if (view && view.actions.can_wrapup) callDock.openWrapup(view.id, true)
-    }, [view])
+        if (!view) return
+        /* The number dialed: the client page's note form starts with it. */
+        if (caseId) callDock.rememberDialed(caseId, dialedOf(view))
+        if (view.actions.can_wrapup) callDock.openWrapup(view.id, true, caseId)
+    }, [view, caseId])
+    const inPage = !!view && dock.resultFor?.attemptId === view.id
 
     if (!dock.attemptId) return null
     const busy = !!view && (view.live || view.state === 'uncertain' || view.wrapup_pending || view.actions.can_wrapup)
@@ -112,8 +120,23 @@ const DockBody = () => {
             </header>
             {!dock.minimized && (
                 <div className="max-h-[calc(100vh-9rem)] overflow-y-auto px-4 py-3">
+                    {inPage && view?.actions.can_wrapup && (
+                        <div className="mb-3" data-testid="p8-dock-in-page">
+                            <Notice tone="info">
+                                {t('p8.clientpage.dockHint')}{' '}
+                                <button
+                                    type="button"
+                                    className="font-extrabold text-azure-600 hover:underline"
+                                    onClick={() => callDock.focusResult()}
+                                    data-testid="p8-dock-go-to-result"
+                                >
+                                    {t('p8.clientpage.dockGo')}
+                                </button>
+                            </Notice>
+                        </div>
+                    )}
                     {view ? (
-                        <LiveCallPanel view={view} compact onChanged={live.seed} onWrapup={() => callDock.openWrapup(view.id)} />
+                        <LiveCallPanel view={view} compact onChanged={live.seed} onWrapup={() => callDock.openWrapup(view.id, false, caseId)} />
                     ) : live.error ? (
                         <div className="text-[13px] text-danger">{t('p5.dock.loadFailed')}</div>
                     ) : (

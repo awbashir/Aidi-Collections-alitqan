@@ -79,7 +79,18 @@ const Profile = ({
   ) => {
     let newValues = { ...values, attribute: clint.attribute };
     dispatch(putClient(newValues))
-      .then(() => {
+      .then((action) => {
+        if (putClient.rejected.match(action)) {
+          // e.g. 409 case_has_open_call: the server's Arabic message (utils/v2/openCallGuard)
+          const message = (action.payload as { openCallMessage?: string } | undefined)?.openCallMessage;
+          toast.push(
+            <Notification title={String(t("clients.updatedFail"))} type="danger">
+              {message}
+            </Notification>,
+            { placement: "top-center" }
+          );
+          return;
+        }
         toast.push(
           <Notification title={t("clients.updatedSuccess")} type="success" />,
           {

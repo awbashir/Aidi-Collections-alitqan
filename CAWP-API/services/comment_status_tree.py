@@ -11,7 +11,9 @@ Rules
 * DELETE is a soft delete of the status and its sub-statuses (`deleted_at`, `deleted_by`, one
   audit event each). Existing notes keep pointing at the row, so they keep showing its name.
 * New notes refuse a deleted status (`status_deleted`) and a sub-status given as the main
-  status (`is_sub_status`). The optional sub-status of a note must be a live child of the
+  status (`is_sub_status`); the legacy note form also refuses another contract's status
+  (`status_not_for_contract`) and a reachability the status does not belong to
+  (`status_mismatch`), like the calling wrap-up. The optional sub-status of a note must be a live child of the
   note's main status (`not_a_sub_status`). `"Comments".comment_status_id` stays the MAIN
   status, so reports and filters that group by it are unchanged.
 
@@ -47,6 +49,8 @@ MESSAGES = {
     "is_sub_status": "هذه حالة فرعية؛ اختر الحالة الرئيسية ثم الحالة الفرعية",
     "not_a_sub_status": "الحالة الفرعية لا تتبع الحالة المختارة",
     "unknown_sub_status": "الحالة الفرعية غير موجودة",
+    "status_not_for_contract": "حالة التعليق لا تتبع عقد هذا العميل",
+    "status_mismatch": "حالة التعليق لا تتبع حالة الاتصال المختارة",
 }
 
 
@@ -172,6 +176,28 @@ def legacy_note_problem(status_id, sub_id) -> tuple[str, str] | None:
         if problem:
             code = "unknown_sub_status" if problem == "unknown" else problem
             return code, MESSAGES[code]
+    return None
+
+
+def legacy_note_case_problem(status_id, reach_id, clint_id) -> tuple[str, str] | None:
+    """POST /comments, the same two checks as the calling wrap-up (services/calling/wrapup.py):
+    * a status WITH a reachability needs that reachability when one is sent (a status without
+      one fits every reachability; no reachability sent = the legacy behaviour, accepted);
+    * a contract status (`contract_id` set) only on a case of that contract (general = any).
+    An unknown status, reachability or case is left to the existing checks (the database)."""
+    row = load(status_id)
+    if row is None:
+        return None
+    reach = as_uuid(reach_id)
+    if reach is not None and row["reach"] is not None and row["reach"] != reach:
+        return "status_mismatch", MESSAGES["status_mismatch"]
+    case_id = as_uuid(clint_id)
+    if row["contract_id"] is not None and case_id is not None:
+        found = _s().execute(text("""
+            SELECT p.contract_id::text FROM clints c LEFT JOIN portfolios p ON p.id = c.portfolios_id
+             WHERE c.id = CAST(:id AS uuid)"""), {"id": case_id}).first()
+        if found is not None and found[0] != row["contract_id"]:
+            return "status_not_for_contract", MESSAGES["status_not_for_contract"]
     return None
 
 

@@ -709,6 +709,13 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/phase5/admin")),
     authority: [],
   },
+  /* Blocked clients (do-not-call is a supervisor decision; `calling_blocks` = calls_supervise | calls_manage). */
+  {
+    key: "calling_blocks",
+    path: "/calling-blocks",
+    component: lazy(() => import("@/views/phase5/blocks")),
+    authority: [],
+  },
   {
     key: "call_monitor",
     path: "/call-monitor",

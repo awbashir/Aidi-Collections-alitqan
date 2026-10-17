@@ -406,6 +406,11 @@ def deleteClints():
     try:
         data = request.get_json()
         clints_ids = data['clints_ids']
+        # refused up front (also for ?async=1) while a case has an open call; rechecked in the run
+        from services.calling import guards as call_guards
+        open_call_cases = call_guards.open_cases(clints_ids if isinstance(clints_ids, list) else [])
+        if open_call_cases:
+            return jsonify(call_guards.delete_refusal(len(open_call_cases))), 409
         return _dispatch("delete-clints", bulk_actions.run_delete_clints,
                          get_jwt_identity(), clints_ids, want_async=_wants_async(data))
     except Exception as e:  # noqa: BLE001

@@ -20,7 +20,8 @@ Modules:
     reconcile     missing evidence -> uncertain; channel inventory + CDR -> ended/failed/kept
     cdr_lookup    CDR lookup by attempt id (CSV on the test PBX, MySQL on Issabel)
     live          the live-call panel view (ETag) and my active attempt
-    review        supervisor lists: uncertain attempts, resolve, review flags
+    review        supervisor lists: uncertain attempts, resolve, review flags, awaiting wrap-up + release
+    guards        open calls that block deleting / reassigning a case (legacy routes, bulk hook)
   P2 (progressive campaigns, review/phase5-campaigns.md):
     campaign          campaigns, roster, readiness leases, lifecycle, member/supervisor views
     campaign_pool     the pool definition (saved clients-list filter), order, exclusions, contact

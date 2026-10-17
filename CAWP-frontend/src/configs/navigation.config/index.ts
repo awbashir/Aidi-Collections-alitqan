@@ -468,6 +468,19 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* Blocked clients ("العملاء الممنوع الاتصال بهم"): only supervisors block or lift
+   * (`calling_blocks` = calls_supervise | calls_manage, derived). */
+  {
+    key: "calling_blocks",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/calling-blocks",
+    title: "Blocked clients",
+    translateKey: "p8.calling.nav.blocks",
+    icon: "calling_blocks",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* Call monitor: live calls and calls by user over time (`call_monitor` = reports_calls |
    * calls_manage, derived; the API scopes it to the user's team). */
   {

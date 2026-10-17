@@ -31,7 +31,12 @@ export const SourceCell = ({ fu, snippet = true }: { fu: FollowUp; snippet?: boo
             )}
             {snippet && note && !note.missing && note.text && (
                 <span dir="auto" title={note.text} className="block max-w-[170px] truncate text-[12px] text-gray-600">
-                    {note.status ? <span className="font-extrabold">{note.status.trim()} · </span> : null}
+                    {note.status ? (
+                        <span className="font-extrabold">
+                            {note.status.trim()}
+                            {note.sub_status ? ` › ${note.sub_status.trim()}` : ''} ·{' '}
+                        </span>
+                    ) : null}
                     {note.text}
                 </span>
             )}

@@ -533,6 +533,15 @@ const ClientsTable = () => {
         },
       },
       {
+        header: t("p8.reports.subStatus"),
+        accessorKey: "comment_sub_status..name",
+        cell: ({
+          row,
+        }: {
+          row: { original?: { comment_sub_status?: { name?: string } | null } };
+        }) => row.original?.comment_sub_status?.name || "",
+      },
+      {
         header: t("contracts.contract"),
         accessorKey: "contract..id",
         cell: (props) => {

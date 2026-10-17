@@ -22,7 +22,7 @@ _COLS = f"""
     a.customer_answered_at, a.bridged_at, a.ended_at, a.duration_seconds, a.duration_source, a.pbx_epoch,
     a.pbx_channel_id, a.reason_code, a.hangup_cause, (a.transcript IS NOT NULL) AS has_transcript,
     a.wrapped_up_at, a.revision,
-    c.name AS case_name, c."accountNumber" AS account_number,
+    c.name AS case_name, c."accountNumber" AS account_number, cp.contract_id AS case_contract_id,
     w.id AS wrapup_id, w.outcome, w.note_id, w.follow_up_id, w.callback_at, w.promise_id, w.contact_blocked,
     w.calling_block_id, w.reviewed_by, {USER_NAME_SQL.format(a='ru')} AS reviewed_by_name, w.reviewed_at,
     w.needs_review, w.review_reason, w.note_text AS wrapup_note_text, w.deferred_actions,
@@ -31,6 +31,7 @@ _COLS = f"""
 """
 _JOINS = """
     LEFT JOIN clints c ON c.id = a.case_id
+    LEFT JOIN portfolios cp ON cp.id = c.portfolios_id
     LEFT JOIN users cu ON cu.id = a.collector_user_id
     LEFT JOIN call_wrapups w ON w.attempt_id = a.id
     LEFT JOIN users ru ON ru.id = w.reviewed_by
@@ -52,8 +53,10 @@ def serialize(r, *, show_numbers: bool) -> dict:
                 "deferred_actions": r["deferred_actions"]}
     return {
         "id": s(r["id"]), "mode": r["mode"], "direction": r["direction"], "state": r["state"],
+        # contract_id (2026-10-17): the wrap-up form loads the contract's note statuses even when
+        # the caller does not own the case (campaign calls); null when the case was deleted
         "case": {"id": s(r["case_id"]), "name": r["case_name"], "account_number": r["account_number"],
-                 "missing": r["case_name"] is None},
+                 "contract_id": s(r["case_contract_id"]), "missing": r["case_name"] is None},
         "contact": ({"id": s(r["contact_id"]), "value": r["contact_value"] if show_numbers else None}
                     if r["contact_id"] else None),
         "destination": r["destination"] if show_numbers else None,
@@ -159,13 +162,24 @@ def visible_or_404(attempt_id):
     return _visible(attempt_id)
 
 
+def visibility_sql(alias_case: str = "c") -> tuple[str, dict]:
+    """Calls the caller may see: case in scope, or made by the caller, or - with calls_supervise /
+    calls_manage -
+    an ORPHANED call whose case was deleted (legacy hard delete; 2026-10-17: a supervisor must
+    be able to see and release it)."""
+    cond, params = scope_sql(alias_case)
+    from services.calling.common import can_supervise
+    orphan = f" OR {alias_case}.id IS NULL" if can_supervise() else ""
+    return (f"(({alias_case}.id IS NOT NULL AND {cond}) OR a.collector_user_id = CAST(:me AS uuid){orphan})",
+            {**params, "me": me()})
+
+
 def _visible(attempt_id):
-    cond, params = scope_sql("c")
+    cond, params = visibility_sql("c")
     r = sess().execute(text(f"""
         SELECT {_COLS} FROM call_attempts a {_JOINS}
-         WHERE a.id = CAST(:id AS uuid)
-           AND ((c.id IS NOT NULL AND {cond}) OR a.collector_user_id = CAST(:me AS uuid))"""),
-        {**params, "id": str(attempt_id), "me": me()}).mappings().first()
+         WHERE a.id = CAST(:id AS uuid) AND {cond}"""),
+        {**params, "id": str(attempt_id)}).mappings().first()
     if r is None:
         raise ApiError(404, "call_not_found", "call not found", {"attempt_id": str(attempt_id)})
     return r
@@ -261,31 +275,64 @@ def case_blocks(case_id) -> dict:
 
 
 def list_blocks(args, page, size, offset) -> dict:
-    """Do-not-call blocks on cases in the caller's scope; `active=true|false` (default: active)."""
+    """Do-not-call blocks on cases in the caller's scope (the supervisor screen "blocked clients").
+
+    Filters: `active=true|false|all` (default true), `contract_id`, `owner_id` (the case's
+    collector), `source=wrapup|manual`, `q` (literal name / account / identity number)."""
     cond, params = scope_sql("c")
     where = [cond]
     active = (args.get("active") or "true").lower()
+    if active not in ("true", "false", "all"):
+        raise ApiError(422, VALIDATION_FAILED, "active must be true, false or all", {"active": "invalid"})
     if active == "true":
         where.append("b.released_at IS NULL")
     elif active == "false":
         where.append("b.released_at IS NOT NULL")
+    for name, col in (("contract_id", "p.contract_id"), ("owner_id", "c.user_id")):
+        raw = args.get(name)
+        if raw:
+            v = valid_uuid(raw)
+            if v is None:
+                raise ApiError(422, VALIDATION_FAILED, f"{name} must be a UUID", {name: "invalid"})
+            where.append(f"{col} = CAST(:{name} AS uuid)")
+            params[name] = v
+    source = args.get("source")
+    if source:
+        if source not in ("wrapup", "manual"):
+            raise ApiError(422, VALIDATION_FAILED, "source must be wrapup or manual", {"source": "invalid"})
+        where.append("b.source = :source")
+        params["source"] = source
+    q = (args.get("q") or "").strip()
+    if q:
+        where.append("""(c.name ILIKE :q ESCAPE '\\' OR c."accountNumber" ILIKE :q ESCAPE '\\'
+                         OR c."identityNumber" ILIKE :q ESCAPE '\\')""")
+        params["q"] = "%" + q[:100].replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_") + "%"
     base = f"""FROM calling_blocks b JOIN clints c ON c.id = b.case_id
+               LEFT JOIN portfolios p ON p.id = c.portfolios_id LEFT JOIN contracts k ON k.id = p.contract_id
+               LEFT JOIN users ou ON ou.id = c.user_id
                LEFT JOIN users cu ON cu.id = b.created_by LEFT JOIN users ru ON ru.id = b.released_by
               WHERE {' AND '.join(where)}"""
     total = sess().execute(text(f"SELECT count(*) {base}"), params).scalar()
     rows = sess().execute(text(f"""
-        SELECT b.id, b.case_id, c.name AS case_name, c."accountNumber" AS account, b.kind, b.reason, b.source,
+        SELECT b.id, b.case_id, c.name AS case_name, c."accountNumber" AS account,
+               c."identityNumber" AS identity_number, c.user_id AS owner_id,
+               {USER_NAME_SQL.format(a='ou')} AS owner_name, p.contract_id, k.name AS contract_name,
+               p.name AS portfolio_name, b.kind, b.reason, b.source,
                b.attempt_id, b.created_by, {USER_NAME_SQL.format(a='cu')} AS cname, b.created_at,
                b.released_at, b.released_by, {USER_NAME_SQL.format(a='ru')} AS rname, b.release_reason
           {base} ORDER BY b.created_at DESC, b.id LIMIT :lim OFFSET :off"""),
         {**params, "lim": size, "off": offset}).mappings().all()
-    items = [{"id": s(r["id"]), "case": {"id": s(r["case_id"]), "name": r["case_name"], "accountNumber": r["account"]},
+    items = [{"id": s(r["id"]), "case": {"id": s(r["case_id"]), "name": r["case_name"], "accountNumber": r["account"],
+                                         "identityNumber": r["identity_number"]},
+              "owner": user_ref(r["owner_id"], r["owner_name"]),
+              "contract": {"id": s(r["contract_id"]), "name": r["contract_name"]} if r["contract_id"] else None,
+              "portfolio_name": r["portfolio_name"],
               "kind": r["kind"], "reason": r["reason"], "source": r["source"], "attempt_id": s(r["attempt_id"]),
               "created_by": user_ref(r["created_by"], r["cname"]), "created_at": iso(r["created_at"]),
               "active": r["released_at"] is None, "released_at": iso(r["released_at"]),
               "released_by": user_ref(r["released_by"], r["rname"]), "release_reason": r["release_reason"]}
              for r in rows]
-    return {"items": items, "total": int(total or 0), "page": page, "page_size": size}
+    return {"items": items, "total": int(total or 0), "page": page, "page_size": size, "active": active}
 
 
 def service_status() -> dict:

@@ -14,8 +14,9 @@ import { DialogField } from '@/components/v2/ActionDialog'
 import { Note } from '@/components/v2/States'
 import type { Option, Outcome } from '@/services/v2'
 import { OUTCOMES } from '@/services/v2'
-import { mainStatusesFor, subStatusesOf } from '@/utils/commentStatusTree'
+import { noteStatusOptions, subStatusesOf } from '@/utils/commentStatusTree'
 import { riyadhToday } from '@/utils/v2/format'
+import { usePermissions } from '@/utils/v2/hooks'
 import { Notice } from '../parts'
 import { MOBILE_METHOD_ID, useNoteLookups } from './draft'
 import type { CallbackDraft, NoteDraft, PromiseDraft } from './draft'
@@ -37,10 +38,15 @@ export const OutcomePicker = ({
     testId?: string
 }) => {
     const { t } = useTranslation()
+    const perms = usePermissions()
+    /* 2026-10-17: "do not call" is a supervisor's decision (`calls_manage`; the API answers 403
+       outcome_not_allowed to anyone else), and "wrong number" may be chosen after any call that
+       may be wrapped up, bridged or not (it blocks that number only). */
+    const shown = OUTCOMES.filter((o) => o !== 'do_not_call' || perms.calls_manage || value === o)
     return (
         <div role="radiogroup" aria-label={String(t('p5.wrapup.outcome'))} className="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid={testId}>
-            {OUTCOMES.map((o) => {
-                const enabled = !allowed || allowed.includes(o)
+            {shown.map((o) => {
+                const enabled = !allowed || allowed.includes(o) || (o === 'wrong_number' && allowed.length > 0)
                 const active = value === o
                 return (
                     <button
@@ -89,7 +95,7 @@ export const NoteFields = ({
 }: {
     value: NoteDraft
     onChange: (v: NoteDraft) => void
-    /** The case's contract: note statuses are filtered like the legacy note form. */
+    /** The case's contract (null = unknown: only the general statuses are offered). */
     contractId: string | null
     active: boolean
     testId?: string
@@ -106,13 +112,11 @@ export const NoteFields = ({
         if (active && !value.method && lk.methods.some((m) => m.value === MOBILE_METHOD_ID)) onChange({ ...value, method: MOBILE_METHOD_ID })
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lk.methods, active])
-    // 0068: main statuses only (the contract's own + the general ones, none deleted); a
-    // sub-status is picked in its own select under its main status
+    // The shared note-status rule (utils/commentStatusTree.noteStatusOptions): the contract's
+    // main statuses + the general ones; a status without a reachability fits every
+    // reachability. A sub-status is picked in its own select under its main status.
     const statusOptions = useMemo(
-        () =>
-            mainStatusesFor(lk.statuses, contractId).filter(
-                (s) => s.reachability_id === (value.reach ?? null) && (!activeOnly || s.is_active === true)
-            ),
+        () => noteStatusOptions(lk.statuses, contractId, value.reach).filter((s) => !activeOnly || s.is_active === true),
         [lk.statuses, contractId, value.reach, activeOnly]
     )
     const subOptions = useMemo(() => subStatusesOf(lk.statuses, value.status), [lk.statuses, value.status])

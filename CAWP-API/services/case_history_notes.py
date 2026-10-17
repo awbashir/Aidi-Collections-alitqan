@@ -30,7 +30,8 @@ _HIDDEN_DIFF = {"revision", "update_at"}
 _NOTE_SELECT = f"""
     SELECT m.id, m.clint_id, m.user_id, {USER_NAME_SQL.format(a='u')} AS author_name,
            m.create_at, m.update_at, m.comment, m.is_deleted, m.comment_status_id,
-           cs.name AS status_name, m."contactMethod_id", cm.name AS contact_method_name,
+           cs.name AS status_name, m.comment_sub_status_id, ss.name AS sub_status_name,
+           m."contactMethod_id", cm.name AS contact_method_name,
            m.comment_reachability_id, m.next_contact_date, m."contactNumber", m.call_id,
            m.revision,
            (SELECT count(*) FROM note_revisions r
@@ -40,6 +41,7 @@ _NOTE_SELECT = f"""
       FROM "Comments" m
       LEFT JOIN users u ON u.id = m.user_id
       LEFT JOIN "CommentStatuses" cs ON cs.id = m.comment_status_id
+      LEFT JOIN "CommentStatuses" ss ON ss.id = m.comment_sub_status_id
       LEFT JOIN "ContactMethods" cm ON cm.id = m."contactMethod_id"
 """
 
@@ -58,6 +60,9 @@ def _note_json(r) -> dict:
         "correction_count": corrections,
         "retired": bool(r["is_deleted"]),
         "status": {"id": s(r["comment_status_id"]), "name": r["status_name"]},
+        # 0068: the optional sub-status (null when the note has none)
+        "sub_status": ({"id": s(r["comment_sub_status_id"]), "name": r["sub_status_name"]}
+                       if r["comment_sub_status_id"] is not None else None),
         "contact_method": {"id": s(r["contactMethod_id"]), "name": r["contact_method_name"]},
         "reachability_id": s(r["comment_reachability_id"]),
         "next_contact_date": iso(r["next_contact_date"]),

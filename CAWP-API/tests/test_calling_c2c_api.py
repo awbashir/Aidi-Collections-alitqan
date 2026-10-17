@@ -79,7 +79,8 @@ def test_live_view_shows_uncertainty_and_actions(cl_client, hdr, c2c, pgc):
     run(pgc, "UPDATE call_attempts SET state = 'uncertain', reason_code = 'ami_connection_lost' WHERE id = %s", a)
     d = get(cl_client, hdr(c2c.c1), f"/v2/calls/{a}/live")[1]["data"]
     assert d["uncertain"]["reason"] == "ami_connection_lost" and d["poll_after_ms"] == 5000 and d["live"] is False
-    assert d["actions"] == {"can_cancel": False, "can_wrapup": False, "wrapup_outcomes": [], "can_resolve": False}
+    assert d["actions"] == {"can_cancel": False, "can_wrapup": False, "wrapup_outcomes": [], "can_resolve": False,
+                            "wrapup_review_reason": None, "can_release": False}
     d = get(cl_client, hdr(c2c.supervisor), f"/v2/calls/{a}/live")[1]["data"]
     assert d["actions"]["can_resolve"] is True
 
@@ -138,7 +139,8 @@ def test_wrapup_on_a_locked_case_records_the_facts_and_applies_nothing_protected
 def test_wrapup_on_an_archived_case_defers_do_not_call_and_blocks_calling_until_reviewed(cl_client, hdr, c2c, pgc):
     a = ended_pbx_call(pgc, c2c)
     run(pgc, "UPDATE clints SET is_archive = true WHERE id = %s", c2c.case)
-    st, body = wrap(cl_client, hdr, pgc, c2c.c1, a, "do_not_call", do_not_call_reason="asked not to be called")
+    # do-not-call is a supervisor decision (2026-10-17): the supervisor wraps up the collector's call
+    st, body = wrap(cl_client, hdr, pgc, c2c.supervisor, a, "do_not_call", do_not_call_reason="asked not to be called")
     assert st == 200, body
     w = body["data"]["wrapup"]
     assert (w["needs_review"], w["review_reason"], w["calling_block_id"]) == (True, "case_archived", None)

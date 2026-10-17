@@ -229,6 +229,11 @@ def run_sepcify_users_by_ids(job_id, identity, clint_ids, user_id):
         return Result({"message": str(user_id) + " المستخدم غير موجود", "status": False}, 201)
 
     existing = {_uuid_key(c.id): c for c in fetch_clints_by(Clints.id, clint_ids)}
+    # A case with an open call keeps its owner (services/calling/guards.py): it is skipped and
+    # the message says how many were skipped. A case already owned by the target is unaffected.
+    from services.calling import guards as call_guards
+    held = call_guards.open_cases([c.id for c in existing.values() if str(c.user_id) != str(user.id)])
+    skipped = set()
     ok_ids = []
     for clint_id in clint_ids:
         clint = existing.get(_uuid_key(clint_id))
@@ -236,9 +241,16 @@ def run_sepcify_users_by_ids(job_id, identity, clint_ids, user_id):
             _assign(ok_ids, user.id, identity, job_id)
             return Result({"message": str(clint_id) + " الحساب غير موجود",
                            "status": False}, 201)
+        if str(clint.id) in held:
+            skipped.add(str(clint.id))
+            continue
         ok_ids.append(clint.id)
 
     _assign(ok_ids, user.id, identity, job_id)
+    if skipped:
+        return Result({"message": "تم تحديد المستخدمين بنجاح"
+                                  + call_guards.ARABIC_REASSIGN_SKIPPED.format(n=len(skipped)),
+                       "status": True, "skipped_open_calls": len(skipped)}, 200)
     return Result({"message": "تم تحديد المستخدمين بنجاح", "status": True}, 200)
 
 
@@ -322,6 +334,12 @@ def run_delete_clints(job_id, identity, clints_ids):
     SepcifyUsers / client_lock_history / clint_documents all cascade in the database.
     """
     existing = {_uuid_key(c.id): c for c in fetch_clints_by(Clints.id, clints_ids)}
+    # Nothing is deleted while any selected case has an open call (services/calling/guards.py):
+    # its reservation would be stranded. 409 with the count, before any row is touched.
+    from services.calling import guards as call_guards
+    open_call_cases = call_guards.open_cases([c.id for c in existing.values()])
+    if open_call_cases:
+        return Result(call_guards.delete_refusal(len(open_call_cases)), 409)
     ok_ids = []
     for clint_id in clints_ids:
         clint = existing.get(_uuid_key(clint_id))

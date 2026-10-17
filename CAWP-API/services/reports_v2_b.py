@@ -61,6 +61,12 @@ if "comment_status" not in _options._ENTITIES:
         "comment_status", '"CommentStatuses" e', "e.name",
         "(SELECT sc.name FROM contracts sc WHERE sc.id = e.contract_id)", "coalesce(e.is_active, false)",
         ("e.name",)))
+# 0068 sub-statuses (same guard; the secondary label is the main status they belong to)
+if "comment_sub_status" not in _options._ENTITIES:
+    _options.register_entity(_options.Entity(
+        "comment_sub_status", '"CommentStatuses" e', "e.name",
+        '(SELECT pe.name FROM "CommentStatuses" pe WHERE pe.id = e.parent_id)', "e.deleted_at IS NULL",
+        ("e.name",)))
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -134,6 +140,13 @@ def _f_note_status(col="ln.comment_status_id", label=("Latest note status", "ح�
                depends_on=("contract",))
 
 
+def _f_note_sub_status(col="ln.comment_sub_status_id", label=("Latest note sub-status", "الحالة الفرعية")):
+    """0068: the note's optional sub-status; its selector lists the sub-statuses found under the
+    chosen main status(es) (`note_status`)."""
+    return Ids("note_sub_status", label[0], label[1], "comment_sub_status", col,
+               depends_on=("contract", "note_status"))
+
+
 def _case_columns(owner=True):
     cols = [
         Column("case_id", "Case ID", "معرف العميل", "uuid", "c.id"),
@@ -160,11 +173,13 @@ _CASE_JOINS = """
     LEFT JOIN branches ob ON ob.id = ou.branch_id
     LEFT JOIN "Comments" ln ON ln.id = c.last_comment_id
     LEFT JOIN "CommentStatuses" ls ON ls.id = ln.comment_status_id
+    LEFT JOIN "CommentStatuses" lss ON lss.id = ln.comment_sub_status_id
 """
 
 _LATEST_NOTE_COLUMNS = (
     Column("last_note_at", "Latest note at", "تاريخ آخر متابعة", "datetime", "c.last_comment_at"),
     Column("last_note_status", "Latest note status", "حالة العميل", "text", "ls.name"),
+    Column("last_note_sub_status", "Latest note sub-status", "الحالة الفرعية", "text", "lss.name"),
 )
 _DEBT = _money("c.amount")
 
@@ -302,6 +317,7 @@ class TeamPromises(_Promises):
             depends_on=("recorder_branch", "contract", "portfolio")),
         Ids("recorder_branch", "Recorder branch", "فرع المسجل", "branch", "ru.branch_id"),
         _f_owner(), _f_owner_branch(), _f_contract(), _f_portfolio(), _f_case_state(),
+        _f_note_status(), _f_note_sub_status(),
         _f_promise_amount(), _f_account(), _f_q(),
     )
 
@@ -324,7 +340,7 @@ class MyRecordedPromises(_Promises):
     fixed = ({"en": "Recorded by you", "ar": "المسجلة بواسطتك"},
              {"en": "Includes cases now owned by others", "ar": "تشمل العملاء المنقولين إلى محصلين آخرين"})
     filters = (_f_due(), _f_state(), _f_entered(), _f_contract(), _f_portfolio(), _f_case_state(),
-               _f_promise_amount(), _f_account(), _f_q())
+               _f_note_status(), _f_note_sub_status(), _f_promise_amount(), _f_account(), _f_q())
 
     def build(self, ctx):
         # Recorder rule (lead decision): the caller's own recorded rows, regardless of the
@@ -348,7 +364,8 @@ class MyCasesPromises(_Promises):
              {"en": "Any recorder", "ar": "أي مستخدم مسجل"})
     filters = (_f_due(), _f_state(), _f_entered(),
                Ids("recorder", "Recorded by", "المستخدم المسجل", "user", "pd.user_id", depends_on=("contract", "portfolio")),
-               _f_contract(), _f_portfolio(), _f_promise_amount(), _f_account(), _f_q())
+               _f_contract(), _f_portfolio(), _f_note_status(), _f_note_sub_status(), _f_promise_amount(),
+               _f_account(), _f_q())
 
     def build(self, ctx):
         scope, params = ctx.scope_sql("c")
@@ -527,7 +544,7 @@ _NO_PAYMENT_RECORD = ('NOT EXISTS (SELECT 1 FROM "Payments" np WHERE np.clint_id
 
 def _case_filters(extra=()):
     return (_f_owner(), _f_owner_branch(), _f_contract(), _f_portfolio(), _f_assignment(), _f_note_status(),
-            *extra, _f_account(), _f_q())
+            _f_note_sub_status(), *extra, _f_account(), _f_q())
 
 
 def _case_sorts(extra=()):
@@ -738,6 +755,7 @@ _CALLBACK_FROM = """
     LEFT JOIN users nu ON nu.id = n.user_id
     LEFT JOIN branches nb ON nb.id = nu.branch_id
     LEFT JOIN "CommentStatuses" ns ON ns.id = n.comment_status_id
+    LEFT JOIN "CommentStatuses" nss ON nss.id = n.comment_sub_status_id
     LEFT JOIN "ContactMethods" nm ON nm.id = n."contactMethod_id"
     LEFT JOIN LATERAL (SELECT s.create_at FROM "SepcifyUsers" s WHERE s.clint_id = c.id AND s.is_deleted = false
                         ORDER BY s.create_at DESC LIMIT 1) sp ON true
@@ -779,6 +797,7 @@ class MyCallbacks(ReportDefinition):
         Column("current_follow_up_at", "Case's current follow-up", "المتابعة الحالية للعميل", "datetime", "cf.due_at"),
         Column("note_created_at", "Note written at", "تاريخ المتابعة", "datetime", "n.create_at"),
         Column("note_status", "Note status", "حالة العميل", "text", "ns.name"),
+        Column("note_sub_status", "Note sub-status", "الحالة الفرعية", "text", "nss.name"),
         Column("contact_method", "Contact method", "طريقة التواصل", "text", "nm.name"),
         Column("note_text", "Note", "نص المتابعة", "text", "n.comment"),
         Column("recorder_id", "Note author ID", "معرف كاتب المتابعة", "uuid", "n.user_id", hidden=True),
@@ -794,6 +813,7 @@ class MyCallbacks(ReportDefinition):
         TimestampRange("note_created", "Note date", "تاريخ المتابعة", "n.create_at"),
         Ids("recorder", "Note written by", "كاتب المتابعة", "user", "n.user_id", depends_on=("contract", "portfolio")),
         _f_note_status("n.comment_status_id", ("Note status", "حالة المتابعة")),
+        _f_note_sub_status("n.comment_sub_status_id", ("Note sub-status", "الحالة الفرعية")),
         _f_contract(), _f_portfolio(),
         Text("q", "Search customer, account, ID or note", "بحث بالاسم أو الحساب أو الهوية أو النص",
              _CASE_Q + ("n.comment",)),

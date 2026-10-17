@@ -25,6 +25,17 @@ Downloads (customer request 2026-10-15), same scope, period and user filter as t
   line (caller ID) used, the result, ring and talk seconds and whether it was recorded. The
   number is matched to a client ONLY among the cases the downloader may see (money.scope_sql),
   through the normalised-mobile index; otherwise the client columns stay empty.
+
+Talk-time buckets (customer request 2026-10-17): per user, in the totals and in both downloads,
+the ANSWERED calls whose talk time (CDR billsec, the merged call's longest) is STRICTLY longer
+than 60, 120 and 180 seconds (`talk_over_60` / `talk_over_120` / `talk_over_180`; any direction,
+like talk_seconds). The call detail has one yes/no column per bucket.
+
+One user's calls (customer request 2026-10-17, calls_page(); GET /v2/calling/monitor/calls): the
+calls() rows of the period, newest first, paged, with the CDR `recording` value (recordingfile,
+the merged call's first non-empty one). The recording itself is played/downloaded through the
+legacy GET /cdr/recording, which authorizes it again (a visible CDR record naming the file) under
+its own keys; the page only shows the buttons with those keys.
 """
 from __future__ import annotations
 
@@ -42,6 +53,8 @@ AGENT_RE = re.compile(r"^PJSIP/([0-9]{2,6})-")
 AGENT_EXT_RE = re.compile(r"^[0-9]{2,6}$")
 MAX_DAYS = 31
 MAX_CDR_ROWS = 200_000
+TALK_BUCKETS = (60, 120, 180)            # answered calls with talk time strictly longer than these (seconds)
+PAGE_SIZE, MAX_PAGE_SIZE = 50, 200
 
 
 # --------------------------------------------------------------------------- scope
@@ -182,7 +195,9 @@ def _date(value, field, default):
         raise ApiError(422, VALIDATION_FAILED, f"{field} must be YYYY-MM-DD", {field: "invalid"}) from None
 
 
-def _cdr_rows(lo, hi):
+def _cdr_rows(lo, hi, ext=None):
+    """The agent CDR rows of the period; `ext` (an already validated extension) narrows them to the
+    rows that involve it (the same calls: classify() only counts the extensions on a row)."""
     from services import reports_v2_cdr as cdrsrc
     try:
         conn = cdrsrc._connect()
@@ -191,12 +206,16 @@ def _cdr_rows(lo, hi):
     try:
         cur = conn.cursor(dictionary=True)
         try:
-            cur.execute("""
+            if ext:
+                agent, params = "(channel LIKE %s OR dstchannel LIKE %s)", (f"PJSIP/{ext}-%", f"PJSIP/{ext}-%")
+            else:
+                agent, params = "(channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')", ()
+            cur.execute(f"""
                 SELECT calldate, channel, dstchannel, disposition, billsec, duration, linkedid, uniqueid,
                        src, dst, userfield, recordingfile
                   FROM asteriskcdrdb.cdr
-                 WHERE calldate >= %s AND calldate < %s AND (channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')
-                 ORDER BY calldate LIMIT %s""", (lo, hi, MAX_CDR_ROWS + 1))
+                 WHERE calldate >= %s AND calldate < %s AND {agent}
+                 ORDER BY calldate LIMIT %s""", (lo, hi, *params, MAX_CDR_ROWS + 1))
             return cur.fetchall()
         finally:
             cur.close()
@@ -226,6 +245,20 @@ def _range(args):
     return start, end, lo, hi
 
 
+def _rows_for(sc, lo, hi, rows):
+    if rows is not None:
+        return rows
+    exts = sc["extensions"]
+    if exts is not None and not exts:
+        return []                                         # no extension in scope: nothing to read
+    return _cdr_rows(lo, hi, next(iter(exts))) if exts is not None and len(exts) == 1 else _cdr_rows(lo, hi)
+
+
+def _over(seconds, answered=True) -> dict:
+    """{"talk_over_60": 0|1, ...} for one call."""
+    return {f"talk_over_{b}": int(bool(answered) and seconds > b) for b in TALK_BUCKETS}
+
+
 def stats(args, user_id=None, rows=None) -> dict:
     full = scope(user_id)
     sc = narrow(full, args.get("extension"))
@@ -233,7 +266,7 @@ def stats(args, user_id=None, rows=None) -> dict:
     gran = args.get("granularity") or ("hour" if start == end else "day")
     if gran not in ("hour", "day"):
         raise ApiError(422, VALIDATION_FAILED, "granularity must be hour or day", {"granularity": "invalid"})
-    cdr = rows if rows is not None else _cdr_rows(lo, hi)
+    cdr = _rows_for(sc, lo, hi, rows)
     allowed = sc["extensions"]
     calls: dict[tuple, dict] = {}
     for r in cdr[:MAX_CDR_ROWS]:
@@ -258,7 +291,8 @@ def stats(args, user_id=None, rows=None) -> dict:
     series = {b: {"bucket": b, "total": 0, "by_extension": {}} for b in buckets}
     for c in calls.values():
         u = per_user.setdefault(c["ext"], {**_agent(c["ext"], sc["owners"]), "outbound": 0, "outbound_answered": 0,
-                                           "inbound_answered": 0, "inbound_missed": 0, "internal": 0, "talk_seconds": 0})
+                                           "inbound_answered": 0, "inbound_missed": 0, "internal": 0, "talk_seconds": 0,
+                                           **_over(0)})
         if c["direction"] == "outbound":
             u["outbound"] += 1
             u["outbound_answered"] += c["answered"]
@@ -267,6 +301,8 @@ def stats(args, user_id=None, rows=None) -> dict:
         else:
             u["internal"] += 1
         u["talk_seconds"] += c["billsec"] if c["answered"] else 0
+        for k, v in _over(c["billsec"], c["answered"]).items():
+            u[k] += v
         b = series.get(c["at"].strftime(fmt))
         if b is not None and (c["direction"] != "inbound" or c["answered"]):   # calls handled, not every ring
             b["total"] += 1
@@ -281,7 +317,8 @@ def stats(args, user_id=None, rows=None) -> dict:
                        "outbound_answered": sum(u["outbound_answered"] for u in users),
                        "inbound_answered": sum(u["inbound_answered"] for u in users),
                        "inbound_missed": sum(u["inbound_missed"] for u in users),
-                       "talk_seconds": sum(u["talk_seconds"] for u in users)}}
+                       "talk_seconds": sum(u["talk_seconds"] for u in users),
+                       **{k: sum(u[k] for u in users) for k in _over(0)}}}
 
 
 # --------------------------------------------------------------------------- call detail + downloads
@@ -289,6 +326,10 @@ DIRECTION_AR = {"outbound": "صادرة", "inbound": "واردة", "internal": "
 RESULT_AR = {"ANSWERED": "تم الرد", "NO ANSWER": "لم يتم الرد", "BUSY": "مشغول", "FAILED": "فشل",
              "CONGESTION": "تعذر الاتصال"}
 SCOPE_AR = {"all": "كل التحويلات", "team": "الفريق", "own": "تحويلتي"}
+# the talk-time buckets (TALK_BUCKETS): summary = counts, call detail = yes/no per call
+OVER_AR_SUMMARY = ("مكالمات تم الرد عليها أطول من دقيقة", "مكالمات تم الرد عليها أطول من دقيقتين",
+                   "مكالمات تم الرد عليها أطول من 3 دقائق")
+OVER_AR_DETAIL = ("محادثة أطول من دقيقة", "محادثة أطول من دقيقتين", "محادثة أطول من 3 دقائق")
 
 
 def _other_party(r, direction):
@@ -304,12 +345,12 @@ def _other_party(r, direction):
     return (peer.group(1) if peer else dst), ""
 
 
-def calls(args, user_id=None, rows=None) -> dict:
-    """One row per call and agent (the CDR rows of one linkedid merged), oldest first."""
+def _merged(args, user_id=None, rows=None):
+    """(scope, start, end, truncated, items): one item per call and agent, oldest first."""
     full = scope(user_id)
     sc = narrow(full, args.get("extension"))
     start, end, lo, hi = _range(args)
-    cdr = rows if rows is not None else _cdr_rows(lo, hi)
+    cdr = _rows_for(sc, lo, hi, rows)
     allowed = sc["extensions"]
     merged: dict[tuple, dict] = {}
     for r in cdr[:MAX_CDR_ROWS]:
@@ -326,7 +367,8 @@ def calls(args, user_id=None, rows=None) -> dict:
                 merged[key] = {"at": r["calldate"], "extension": ext, "direction": direction, "answered": answered,
                                "result": disp, "_rank": rank, "number": number, "line": line,
                                "talk_seconds": billsec if answered else 0, "ring_seconds": max(duration - billsec, 0),
-                               "recorded": bool((r.get("recordingfile") or "").strip()), "call_id": key[0]}
+                               "recorded": bool((r.get("recordingfile") or "").strip()),
+                               "recording": (r.get("recordingfile") or "").strip() or None, "call_id": key[0]}
                 continue
             c["at"] = min(c["at"], r["calldate"])
             if rank > c["_rank"]:
@@ -337,15 +379,53 @@ def calls(args, user_id=None, rows=None) -> dict:
             c["ring_seconds"] = max(c["ring_seconds"], duration - billsec)
             c["number"], c["line"] = c["number"] or number, c["line"] or line
             c["recorded"] = c["recorded"] or bool((r.get("recordingfile") or "").strip())
+            c["recording"] = c["recording"] or (r.get("recordingfile") or "").strip() or None
     items = sorted(merged.values(), key=lambda c: (c["at"], c["extension"]))
     for c in items:
         c.pop("_rank")
         c.update({k: v for k, v in _agent(c["extension"], sc["owners"]).items() if k != "extension"})
+    return sc, start, end, len(cdr) > MAX_CDR_ROWS, items
+
+
+def _with_clients(items, user_id=None):
     clients = _clients_for([c["number"] for c in items if c["direction"] != "internal"], user_id)
     for c in items:
         c["client"] = clients.get(c["number"]) if c["direction"] != "internal" else None
+    return items
+
+
+def calls(args, user_id=None, rows=None) -> dict:
+    """One row per call and agent (the CDR rows of one linkedid merged), oldest first."""
+    sc, start, end, truncated, items = _merged(args, user_id, rows)
     return {"scope": sc["kind"], "extension": sc.get("filtered"), "from": start.isoformat(), "to": end.isoformat(),
-            "truncated": len(cdr) > MAX_CDR_ROWS, "calls": items}
+            "truncated": truncated, "calls": _with_clients(items, user_id)}
+
+
+def _page_arg(value, field, default, hi):
+    if value in (None, ""):
+        return default
+    try:
+        n = int(str(value))
+    except ValueError:
+        raise ApiError(422, VALIDATION_FAILED, f"{field} must be a whole number", {field: "invalid"}) from None
+    if n < 1 or n > hi:
+        raise ApiError(422, VALIDATION_FAILED, f"{field} must be 1..{hi}", {field: "out_of_range"})
+    return n
+
+
+def calls_page(args, user_id=None, rows=None) -> dict:
+    """calls() newest first, one page (clients matched for that page only), with the period's
+    talk-time counts of the same calls. Paged like the v2 lists: items, total, page, page_size."""
+    page = _page_arg(args.get("page"), "page", 1, 1_000_000)
+    size = _page_arg(args.get("page_size"), "page_size", PAGE_SIZE, MAX_PAGE_SIZE)
+    sc, start, end, truncated, items = _merged(args, user_id, rows)
+    items.reverse()
+    chunk = _with_clients(items[(page - 1) * size: page * size], user_id)
+    for c in chunk:                                       # the PBX writes Riyadh wall clock
+        c["at"] = c["at"].replace(tzinfo=riyadh.RIYADH).isoformat(timespec="seconds") if c["at"].tzinfo is None \
+            else c["at"].isoformat(timespec="seconds")
+    return {"scope": sc["kind"], "extension": sc.get("filtered"), "from": start.isoformat(), "to": end.isoformat(),
+            "truncated": truncated, "items": chunk, "total": len(items), "page": page, "page_size": size}
 
 
 def _clients_for(numbers, user_id=None) -> dict:
@@ -402,16 +482,17 @@ def export_summary(args, dest_dir: str, user_id=None, rows=None) -> tuple[str, s
     sh = wb.add_sheet("ملخص الموظفين", freeze_header=True)
     sh.append([("s", h) for h in ("الموظف", "التحويلة", "المكالمات المنجزة", "صادرة", "صادرة تم الرد عليها",
                                   "واردة تم الرد عليها", "واردة فائتة", "داخلية", "مدة المحادثة",
-                                  "مدة المحادثة (ثانية)")], header=True)
+                                  "مدة المحادثة (ثانية)") + OVER_AR_SUMMARY], header=True)
     for u in data["users"]:
         sh.append([("s", u["name"] or "—"), ("s", u["extension"]), ("int", u["handled"]), ("int", u["outbound"]),
                    ("int", u["outbound_answered"]), ("int", u["inbound_answered"]), ("int", u["inbound_missed"]),
-                   ("int", u["internal"]), ("s", _clock(u["talk_seconds"])), ("int", u["talk_seconds"])])
+                   ("int", u["internal"]), ("s", _clock(u["talk_seconds"])), ("int", u["talk_seconds"])]
+                  + [("int", u[f"talk_over_{b}"]) for b in TALK_BUCKETS])
     tot = data["totals"]
     sh.append([("s", "الإجمالي"), None, ("int", tot["handled"]), ("int", tot["outbound"]),
                ("int", tot["outbound_answered"]), ("int", tot["inbound_answered"]), ("int", tot["inbound_missed"]),
                ("int", sum(u["internal"] for u in data["users"])), ("s", _clock(tot["talk_seconds"])),
-               ("int", tot["talk_seconds"])], header=True)
+               ("int", tot["talk_seconds"])] + [("int", tot[f"talk_over_{b}"]) for b in TALK_BUCKETS], header=True)
     ts = wb.add_sheet("حسب الوقت", freeze_header=True)
     exts = [u["extension"] for u in data["users"]]
     ts.append([("s", "الساعة" if data["granularity"] == "hour" else "اليوم"), ("s", "الإجمالي")]
@@ -434,15 +515,18 @@ def export_calls(args, dest_dir: str, user_id=None, rows=None) -> tuple[str, str
     sh = wb.add_sheet("تفاصيل المكالمات", freeze_header=True)
     sh.append([("s", h) for h in ("التاريخ والوقت", "الموظف", "التحويلة", "الاتجاه", "الرقم", "العميل",
                                   "رقم الحساب", "الخط", "النتيجة", "مدة الرنين (ثانية)", "مدة المحادثة",
-                                  "مدة المحادثة (ثانية)", "مسجلة", "معرف المكالمة")], header=True)
+                                  "مدة المحادثة (ثانية)") + OVER_AR_DETAIL + ("مسجلة", "معرف المكالمة")],
+              header=True)
     for c in data["calls"]:
         client = c["client"] or {}
+        over = _over(c["talk_seconds"], c["answered"])
         sh.append([("datetime", c["at"]), ("s", c["name"] or "—"), ("s", c["extension"]),
                    ("s", DIRECTION_AR[c["direction"]]), ("s", c["number"] or None), ("s", client.get("name")),
                    ("s", client.get("account_number")), ("s", c["line"] or None),
                    ("s", RESULT_AR.get(c["result"], c["result"] or "—")), ("int", c["ring_seconds"]),
-                   ("s", _clock(c["talk_seconds"])), ("int", c["talk_seconds"]), ("s", "نعم" if c["recorded"] else "لا"),
-                   ("s", c["call_id"])])
+                   ("s", _clock(c["talk_seconds"])), ("int", c["talk_seconds"])]
+                  + [("s", "نعم" if over[f"talk_over_{b}"] else "لا") for b in TALK_BUCKETS]
+                  + [("s", "نعم" if c["recorded"] else "لا"), ("s", c["call_id"])])
     _info_sheet(wb, data, owners, "تفاصيل المكالمات")
     wb.save()
     return path, name, len(data["calls"])

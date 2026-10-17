@@ -3701,6 +3701,7 @@
         "!=": "≠"
       },
       "filterKey": {
+        "customeFilterCommentSubStatusValue": "Note sub-statuses",
         "customeFilterContractValue": "Contracts",
         "customeFilterPortfoliosValue": "Portfolios",
         "customeFilterUserValue": "Collectors",
@@ -4053,7 +4054,7 @@
     "err": {
       "already_dispatching": "The call was already handed to the PBX; it can no longer be cancelled. Hang up on your phone.",
       "call_not_found": "Call not found (or not in your scope).",
-      "conversation_not_evidenced": "The PBX shows no bridged conversation for this call. Choose no answer, busy or do not call.",
+      "conversation_not_evidenced": "The PBX shows no bridged conversation for this call. Without a conversation only no answer, busy or wrong number can be recorded.",
       "wrapup_exists": "This call already has a wrap-up.",
       "wrapup_not_allowed": "A wrap-up is possible once the call ended or failed (an uncertain call needs reconciliation first).",
       "promise_discussed_is_not_a_promise": "“Promise discussed” never creates a promise. Use “Connected” with an agreed promise.",
@@ -5249,6 +5250,180 @@
       "deleteKeepsNotes": "Notes already recorded keep showing this status. It can no longer be chosen for new notes.",
       "deleteSuccess": "The status was deleted",
       "deleteFail": "The status could not be deleted"
+    }
+  },
+  "p8": {
+    "calling": {
+      "nav": {
+        "blocks": "Blocked clients"
+      },
+      "err": {
+        "outcome_not_allowed": "Only a supervisor can block a client from calls. For a wrong or disconnected number choose “Wrong number”: it blocks only that number.",
+        "release_not_allowed": "Only an ended or failed call can be released.",
+        "release_uncertain": "This call is uncertain: resolve it first (Uncertain calls tab).",
+        "reservation_not_held": "This call no longer holds a reservation; reload the list.",
+        "block_exists": "This client is already blocked from calls.",
+        "case_has_open_call": "This client has an open call (live or awaiting its wrap-up). The collector must save the wrap-up, or a supervisor must release the call from Call review, first."
+      },
+      "flagReason": {
+        "case_deleted": "The case was deleted after the call",
+        "case_reassigned": "The case was reassigned after the call"
+      },
+      "reviewReason": {
+        "case_deleted": "Case deleted",
+        "case_reassigned": "Case reassigned",
+        "case_locked": "Case locked",
+        "case_archived": "Case archived"
+      },
+      "wrapup": {
+        "reviewNotice": {
+          "case_deleted": "This client's case was deleted. Your wrap-up is still saved and the call is released; the note, callback and any promise are kept for a supervisor to review.",
+          "case_reassigned": "This case was reassigned to another collector after your call. Your wrap-up is still saved and the call is released; the note, callback and any promise are kept for a supervisor to review.",
+          "case_locked": "This case is locked. Your wrap-up is saved for a supervisor to review; no case change is applied.",
+          "case_archived": "This case is archived. Your wrap-up is saved for a supervisor to review; no case change is applied."
+        },
+        "wrongNumberHint": "Wrong or disconnected number: blocks only this number. The client can still be called on other numbers.",
+        "doNotCallSupervisorOnly": "Blocking the client from all calls is a supervisor decision."
+      },
+      "pending": {
+        "tab": "Awaiting wrap-up",
+        "intro": "Calls that ended without a wrap-up and still hold their reservation, so the collector cannot place another call. Normally the collector saves the wrap-up. Release a call only when that is not possible (for example, its case was deleted). Releasing never invents a wrap-up.",
+        "all": "All",
+        "orphaned": "Case deleted",
+        "orphanedCount": "Case deleted ({{count}})",
+        "orphanedHint": "Case deleted",
+        "col": {
+          "ended": "Ended"
+        },
+        "release": "Release",
+        "releaseTitle": "Release this call",
+        "releaseHint": "{{collector}} can place calls again. The call keeps its state and stays without a wrap-up; your reason is recorded.",
+        "empty": "No calls are awaiting a wrap-up"
+      },
+      "blocks": {
+        "title": "Blocked clients",
+        "subtitle": "{{total}} blocks",
+        "intro": "Clients blocked from all calls (do not call). Only supervisors block or lift a block. A wrong or disconnected number is not a client block: collectors mark it “Wrong number”, which blocks only that number.",
+        "state": {
+          "active": "Blocked",
+          "lifted": "Lifted",
+          "all": "All",
+          "activeOne": "Blocked",
+          "liftedOne": "Lifted"
+        },
+        "owner": "Collector",
+        "unassigned": "Unassigned",
+        "source": "Source",
+        "sourceLabel": {
+          "wrapup": "From a call wrap-up",
+          "manual": "By a supervisor"
+        },
+        "search": "Search",
+        "searchHint": "Name, account or ID number",
+        "col": {
+          "client": "Client",
+          "contract": "Contract",
+          "reason": "Reason",
+          "blockedBy": "Blocked by",
+          "state": "State"
+        },
+        "lift": "Lift block",
+        "liftTitle": "Lift the block on this client",
+        "liftHint": "The client can be called again (other rules still apply). Write why the block is lifted.",
+        "empty": "No blocked clients",
+        "emptyFiltered": "No blocked clients match these filters",
+        "footNote": "Block a client from the case's Calls tab. Every block and lift is recorded with who, when and why."
+      },
+      "block": {
+        "open": "Block client",
+        "title": "Block this client from calls",
+        "hint": "No one will be able to call this client until a supervisor lifts the block. For a wrong or disconnected number, use “Wrong number” in the wrap-up instead. Write the reason.",
+        "confirm": "Block client"
+      }
+    },
+    "clientpage": {
+      "resultTitle": "Call result",
+      "resultIntro": "Enter the call's result and the note once: saving closes the call and adds the note to the client.",
+      "number": "Number",
+      "numberHidden": "Hidden",
+      "duration": "Duration",
+      "callOutcome": "Call",
+      "answered": "The customer answered (PBX evidence)",
+      "notAnswered": "No conversation (PBX evidence)",
+      "saveResult": "Save the result",
+      "backToNote": "Back to the note form",
+      "savedTitle": "Call result saved",
+      "savedBody": "The call is closed and the note was added to the client.",
+      "callNext": "Call the next number",
+      "noNextNumber": "This client has no other number that can be called now.",
+      "newNote": "Write another note",
+      "prevClient": "Previous client",
+      "nextClient": "Next client",
+      "position": "{{n}} of {{m}}",
+      "caseDeleted": "The client was deleted — the call result will be saved for review.",
+      "bridgeRule": "Outcomes that claim a conversation (connected, promise discussed, dispute) need the PBX's bridge evidence, otherwise they are refused. \"Wrong number\" may be chosen after any call: it blocks that number only.",
+      "dockHint": "Enter this call's result in the client page (notes tab).",
+      "dockGo": "Open the form"
+    },
+    "monitor": {
+      "over60": "Talk > 1 min",
+      "over120": "Talk > 2 min",
+      "over180": "Talk > 3 min",
+      "overTile": "Answered, talk > 1 / 2 / 3 min",
+      "overHint": "Answered calls whose talk time is longer than this (any direction).",
+      "overNote": "\"Talk > 1 / 2 / 3 min\" counts answered calls whose talk time is longer than 60, 120 or 180 seconds. Click a user to see their calls.",
+      "openCalls": "Show this user's calls",
+      "userCallsTitle": "Calls of {{name}}",
+      "userCallsNote": "{{total}} calls in this period, newest first. Recordings are played from the PBX; every play and download is logged.",
+      "time": "Time",
+      "client": "Client",
+      "line": "Line",
+      "ring": "Ring time",
+      "recording": "Recording",
+      "notRecorded": "Not recorded",
+      "result": {
+        "title": "Result",
+        "answered": "Answered",
+        "noAnswer": "No answer",
+        "busy": "Busy",
+        "failed": "Failed",
+        "congestion": "Could not connect"
+      }
+    },
+    "reports": {
+      "subStatus": "Sub-status",
+      "subStatuses": "Sub-statuses",
+      "statusClass": "Status class"
+    },
+    "sameid": {
+      "title": "Other accounts of this customer",
+      "subtitle": "Accounts with the same identity number:",
+      "showArchived": "Show archived accounts",
+      "count": "Accounts",
+      "amount": "Total amount",
+      "paid": "Total paid",
+      "remaining": "Total remaining",
+      "show": "Show accounts",
+      "hide": "Hide accounts",
+      "empty": "This customer has no other active accounts.",
+      "emptyWithArchived": "This customer has no other accounts.",
+      "archived": "Archived",
+      "readOnly": "Outside your scope: shown read-only",
+      "noNote": "No notes",
+      "unassigned": "Unassigned",
+      "truncated": "Showing the first {{shown}} of {{total}} accounts. The totals include all of them.",
+      "note": "Paid counts approved payments only; pending, rejected and reversed payments are not included. You can open only the accounts inside your scope.",
+      "col": {
+        "account": "Account number",
+        "contract": "Contract",
+        "portfolio": "Portfolio",
+        "amount": "Amount",
+        "paid": "Paid",
+        "remaining": "Remaining",
+        "lastStatus": "Last note status",
+        "lastNoteAt": "Last note date",
+        "owner": "Collector"
+      }
     }
   }
 }

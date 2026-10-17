@@ -35,6 +35,8 @@ const get = async <T>(url: string) => (await ApiService.fetchData<T>({ url, meth
 type Named = { id: string; name: string }
 
 export const lookups = {
+    /** Drop cached lists so the next call reads them again (a note form shows the current statuses). */
+    forget: (...keys: string[]) => keys.forEach((k) => cache.delete(k)),
     users: () =>
         cached('users', async () => {
             const d = await get<{

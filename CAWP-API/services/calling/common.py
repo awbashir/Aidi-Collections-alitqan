@@ -32,6 +32,16 @@ E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 CALLS = "calls"                  # call log, my calls, manual log + wrap-up
 CALLS_MAKE = "calls_make"        # click-to-call and the softphone (P1/P3)
 CALLS_MANAGE = "calls_manage"    # calling admin: extensions, windows, blocks, others' wrap-ups
+# 2026-10-17: supervision without calling admin: do-not-call (block / lift a client), call
+# review (uncertain calls, flags, release a stuck call), others' wrap-ups. calls_manage keeps it all.
+CALLS_SUPERVISE = "calls_supervise"
+SUPERVISE_KEYS = (CALLS_SUPERVISE, CALLS_MANAGE)
+
+
+def can_supervise() -> bool:
+    """calls_supervise or calls_manage (request-bound)."""
+    from core.auth import has_permission
+    return any(has_permission(k) for k in SUPERVISE_KEYS)
 
 
 def sess():

@@ -38,7 +38,7 @@ import logging
 
 from flask import Blueprint, Response, request, stream_with_context
 from flask_jwt_extended import get_jwt_identity, jwt_required
-from sqlalchemy import func, select, text, true
+from sqlalchemy import func, literal_column, select, text, true
 from sqlalchemy.orm import aliased
 
 from core.auth import required_roles
@@ -145,10 +145,25 @@ C_CR = aliased(CommentReachability, name="ccr")
 C_CL = aliased(Clints, name="ccl")
 C_PF = aliased(Portfolios, name="cpf")
 C_CT = aliased(Contract, name="cct")
+C_SS = aliased(CommentStatuses, name="css")
+
+# 0068: the note's optional sub-status. `"Comments".comment_sub_status_id` is not mapped on the
+# model (as_dict()/model_cols() feed these very wire contracts), so it is read as a literal
+# column of the unaliased "Comments" in FROM; the row gets one extra key, `sub_status`.
+C_SUB_ID = literal_column('"Comments".comment_sub_status_id')
+SUB_STATUS_COLS = [C_SS.id.label("ss__id"), C_SS.name.label("ss__name"), C_SS.color.label("ss__color")]
 
 COMMENT_COLS = (model_cols(Comments, "c") + model_cols(C_U, "u") + model_cols(C_CS, "cs")
                 + model_cols(C_CM, "cm") + model_cols(C_CR, "cr") + model_cols(C_CL, "cl")
-                + model_cols(C_PF, "pf") + model_cols(C_CT, "ct"))
+                + model_cols(C_PF, "pf") + model_cols(C_CT, "ct") + SUB_STATUS_COLS)
+
+
+def _sub_status(row, prefix="ss"):
+    """`{id, name, color}` of the note's sub-status, or None (0068)."""
+    sid = getattr(row, "%s__id" % prefix, None)
+    if sid is None:
+        return None
+    return {"id": sid, "name": getattr(row, "%s__name" % prefix), "color": getattr(row, "%s__color" % prefix)}
 
 
 def _comment_map():
@@ -160,6 +175,9 @@ def _comment_map():
     m["user.name"] = _full_name(C_U, strip=True)
     # legacy also exposes `comment_status`/`commentStatuses` spellings through getKey
     _paths(m, [("comment_status", C_CS), ("commentStatuses", C_CS)])
+    # 0068 sub-status: the filter (`selectedCommentSubStatus_Jkey=comment_sub_status_id`) and sort
+    m["comment_sub_status_id"] = C_SUB_ID
+    _paths(m, [("sub_status", C_SS)])
     return m
 
 
@@ -176,7 +194,8 @@ def _comments_query():
             .outerjoin(C_CR, Comments.comment_reachability_id == C_CR.id)
             .outerjoin(C_CL, Comments.clint_id == C_CL.id)
             .outerjoin(C_PF, C_CL.portfolios_id == C_PF.id)
-            .outerjoin(C_CT, C_PF.contract_id == C_CT.id))
+            .outerjoin(C_CT, C_PF.contract_id == C_CT.id)
+            .outerjoin(C_SS, C_SS.id == C_SUB_ID))
 
 
 def _serialize_comment_list(row):
@@ -202,7 +221,9 @@ def _serialize_comment_list(row):
             clint["portfolios"] = pf
             d["portfolios"] = pf          # legacy stores the *same* dict in both places
         d["clint"] = clint
-    return _normalize(d, "comment")
+    d = _normalize(d, "comment")
+    d["sub_status"] = _sub_status(row)    # 0068: added key, null when the note has none
+    return d
 
 
 def _serialize_comment_export(row):
@@ -231,6 +252,7 @@ def _serialize_comment_export(row):
             if ct:
                 pf["contract"] = ct
             d["portfolios"] = pf
+    d["sub_status"] = _sub_status(row)    # 0068
     return d
 
 
@@ -247,6 +269,7 @@ def _serialize_comment_current_user(row):
     if pf:
         pf["contract"] = take(row, C_CT, "ct")
         d["portfolios"] = pf
+    d["sub_status"] = _sub_status(row)    # 0068
     return d
 
 
@@ -716,11 +739,14 @@ D_CL = aliased(Clints, name="dcl")
 D_PF = aliased(Portfolios, name="dpf")
 D_CT = aliased(Contract, name="dct")
 D_LCS = aliased(CommentStatuses, name="dlcs")
+D_LSS = aliased(CommentStatuses, name="dlss")
 
 # one latest comment per client, as a LATERAL join instead of the legacy
-# `Comments...order_by(create_at.desc()).first()` run **twice** per row (review bug 18)
+# `Comments...order_by(create_at.desc()).first()` run **twice** per row (review bug 18).
+# 0068: the lateral also carries the note's (unmapped) sub-status id; `D_LC` maps only the
+# model's columns, so the legacy `comment` dict is unchanged.
 _latest_comment_sq = (
-    select(Comments)
+    select(Comments, literal_column('"Comments".comment_sub_status_id').label("comment_sub_status_id"))
     .where(Comments.clint_id == D_CL.id, Comments.is_deleted == False)
     .order_by(Comments.create_at.desc())
     .limit(1)
@@ -731,7 +757,8 @@ D_LC = aliased(Comments, _latest_comment_sq, name="dlc")
 
 PD_COLS = (model_cols(PaymentDates, "pd") + model_cols(D_U, "u") + model_cols(D_CL, "cl")
            + model_cols(D_PF, "pf") + model_cols(D_CT, "ct") + model_cols(D_LC, "lc")
-           + model_cols(D_LCS, "ls"))
+           + model_cols(D_LCS, "ls")
+           + [D_LSS.id.label("lss__id"), D_LSS.name.label("lss__name"), D_LSS.color.label("lss__color")])
 
 
 def _pd_map():
@@ -740,6 +767,9 @@ def _pd_map():
                ("portfolios.contract", D_CT), ("comment", D_LC), ("comment_status", D_LCS),
                ("clint.portfolios", D_PF), ("clint.portfolios.contract", D_CT)])
     m["user.name"] = _full_name(D_U)
+    # 0068: sub-status of the latest note (filter `comment.comment_sub_status_id`, sort)
+    m["comment.comment_sub_status_id"] = _latest_comment_sq.c.comment_sub_status_id
+    _paths(m, [("comment_sub_status", D_LSS)])
     return m
 
 
@@ -755,7 +785,8 @@ def _payment_dates_query():
             .outerjoin(D_PF, D_CL.portfolios_id == D_PF.id)
             .outerjoin(D_CT, D_PF.contract_id == D_CT.id)
             .outerjoin(D_LC, true())
-            .outerjoin(D_LCS, D_LC.comment_status_id == D_LCS.id))
+            .outerjoin(D_LCS, D_LC.comment_status_id == D_LCS.id)
+            .outerjoin(D_LSS, D_LSS.id == _latest_comment_sq.c.comment_sub_status_id))
 
 
 def _serialize_payment_date(row):
@@ -764,6 +795,7 @@ def _serialize_payment_date(row):
     lc = take(row, D_LC, "lc")
     d["comment"] = lc
     d["comment_status"] = take(row, D_LCS, "ls") if lc is not None else None
+    d["comment_sub_status"] = _sub_status(row, "lss") if lc is not None else None   # 0068
     d["user"] = with_name(take(row, D_U, "u"))
     d["clint"] = take(row, D_CL, "cl")
     pf = take(row, D_PF, "pf")

@@ -15,6 +15,7 @@ import {
   apiPostClintSepcifyUsersByExcel,
 } from "@/services/ClientsService";
 import ToastNotification from "@/components/shared/myComponents/ToastNotification";
+import { skippedOpenCalls } from "@/utils/v2/openCallGuard";
 import { HiOutlineCloudUpload, HiPlusCircle, HiOutlineUserAdd } from "react-icons/hi";
 import Input from "@/components/ui/Input";
 import { useAppSelector, useAppDispatch, getContracts } from "../store";
@@ -114,11 +115,13 @@ function SepcifyUsersByExcelButton({
   const handleResult = (body, fromJob = false) => {
     const prefix = fromJob ? `${t("job.completed")}: ` : "";
     if (body?.status) {
+      // rows whose case has an open call were skipped (utils/v2/openCallGuard)
+      const skipped = skippedOpenCalls(body);
       ToastNotification(
         prefix +
-          (fromJob && body?.message ? body.message : t("clients.SepcifyClientToUserByExcelSuccess")),
+          (skipped || (fromJob && body?.message ? body.message : t("clients.SepcifyClientToUserByExcelSuccess"))),
         t("clients.SepcifyClientToUserByExcel"),
-        "success"
+        skipped ? "warning" : "success"
       );
       setIsLoading(false);
       handleClose();

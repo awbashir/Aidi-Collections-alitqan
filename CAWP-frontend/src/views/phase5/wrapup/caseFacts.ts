@@ -1,4 +1,5 @@
-/** What the wrap-up needs to know about the case before saving (legacy GET /clints/<id>). */
+/** What the wrap-up needs to know about the case before saving (legacy GET /clints/<id>, or the
+ *  record the client page already loaded). */
 import { apiGetClientsDetails } from '@/services/ClientsService'
 
 export type CaseFacts = {
@@ -23,3 +24,19 @@ export async function loadCaseFacts(caseId: string): Promise<CaseFacts> {
     }
 }
 
+
+/** The same facts from a case record the screen already holds (the client page's clientData). */
+export function factsFromCase(d: {
+    identityNumber?: string | null
+    contract?: { id?: string | null } | null
+    portfolios?: { contract_id?: string | null } | null
+    is_locked?: boolean | null
+    is_archive?: boolean | null
+} | null | undefined): CaseFacts {
+    return {
+        identityNumber: d?.identityNumber || null,
+        contractId: d?.contract?.id || d?.portfolios?.contract_id || null,
+        isLocked: !!d?.is_locked,
+        isArchived: !!d?.is_archive,
+    }
+}

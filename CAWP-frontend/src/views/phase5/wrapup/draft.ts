@@ -28,6 +28,10 @@ export function useNoteLookups(active: boolean): NoteLookups {
     useEffect(() => {
         if (!active) return undefined
         let alive = true
+        /* Read the lists again each time a form opens: a status added or deleted in the
+           settings since this session started must show (or disappear) now. */
+        lookups.forget('contactMethods', 'reachability', 'commentStatuses')
+        setState((s) => ({ ...s, loading: true }))
         Promise.allSettled([lookups.contactMethods(), lookups.reachability(), lookups.commentStatuses()]).then(([m, r, s]) => {
             if (!alive) return
             setState({

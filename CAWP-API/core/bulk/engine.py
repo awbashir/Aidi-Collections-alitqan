@@ -685,7 +685,8 @@ def _run_batch(session, job, kind, acting, rows: list[BulkRow]):
     in_scope = {r[0] for r in session.execute(text(
         f"SELECT c.id::text FROM clints c WHERE c.id = ANY(CAST(:ids AS uuid[])) AND {pred}"),
         {"ids": list(cases), **params})} if cases else set()
-    reserved = {str(x) for x in (call_reservations(list(cases)) or ())}
+    reserved = ({str(x) for x in (call_reservations(list(cases)) or ())}
+                if getattr(kind, "call_reservation_guard", True) else set())
 
     runnable = []
     for r in rows:

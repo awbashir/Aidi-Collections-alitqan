@@ -268,6 +268,15 @@ const PortfoliosTable = () => {
         cell: (props) => props.row.original?.comment_status?.name || "",
       },
       {
+        header: t("p8.reports.subStatus"),
+        accessorKey: "comment_sub_status_name",
+        enableSorting: false,
+        // The table's rows are untyped; a typed row here would narrow them.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cell: (props: any) =>
+          props.row.original?.comment_sub_status?.name || "",
+      },
+      {
         header: t("clients.accountNumber"),
         accessorKey: "clint_accountNumber",
         enableSorting: false,

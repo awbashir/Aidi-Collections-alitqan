@@ -141,7 +141,7 @@ const Calls = () => {
                 refreshing={list.loading && !!data}
                 actions={
                     <>
-                        {perms.calls_manage && (
+                        {perms.call_review && (
                             <Link to="/call-review" className="text-[13px] font-extrabold text-azure-600 hover:underline" data-testid="p5-calls-review-link">
                                 {t('p5.calls.reviewLink')}
                             </Link>

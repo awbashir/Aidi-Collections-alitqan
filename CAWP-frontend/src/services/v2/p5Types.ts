@@ -81,7 +81,8 @@ export type CallWrapup = {
     reviewed_by: UserRef
     reviewed_at: Iso | null
     needs_review: boolean
-    review_reason: 'case_locked' | 'case_archived' | null
+    /** 0071: case_deleted / case_reassigned = saved for review because the case was deleted or left the collector's scope */
+    review_reason: 'case_locked' | 'case_archived' | 'case_deleted' | 'case_reassigned' | null
     deferred_actions: Record<string, unknown> | null
     note_text?: string | null
 }
@@ -100,7 +101,8 @@ export type Call = {
     mode: CallMode
     direction: 'outbound' | 'inbound'
     state: CallState
-    case: { id: string; name: string | null; account_number: string | null; missing: boolean }
+    /** contract_id: the case's contract (null when the case was deleted) */
+    case: { id: string; name: string | null; account_number: string | null; contract_id?: string | null; missing: boolean }
     contact: { id: string; value: string | null } | null
     destination: string | null
     collector: UserRef
@@ -238,7 +240,16 @@ export type LiveCall = CallDetail & {
     uncertain: { reason: string | null; since: Iso | null; note: string } | null
     flags: ReviewFlag[]
     reconciliations: Reconciliation[]
-    actions: { can_cancel: boolean; can_wrapup: boolean; wrapup_outcomes: Outcome[]; can_resolve: boolean }
+    actions: {
+        can_cancel: boolean
+        can_wrapup: boolean
+        wrapup_outcomes: Outcome[]
+        can_resolve: boolean
+        /** 2026-10-17: the wrap-up will be saved for supervisor review without case changes (null = normal) */
+        wrapup_review_reason?: 'case_deleted' | 'case_reassigned' | 'case_locked' | 'case_archived' | null
+        /** calls_supervise | calls_manage: release the reservation of this ended call without a wrap-up (POST /v2/calls/<id>/release) */
+        can_release?: boolean
+    }
     events: LiveEvent[]
     poll_after_ms: number | null
     etag: string
@@ -287,6 +298,10 @@ export type MyCallingInfo = {
     can_call: boolean
     reason: string | null
     active_attempt_id: string | null
+    /** 2026-10-17: only calls_supervise / calls_manage may record do_not_call or block a client */
+    can_block_clients?: boolean
+    /** outcomes the caller may choose in a manual log */
+    manual_outcomes?: Outcome[]
 }
 
 export type CaseBlocks = {
@@ -437,15 +452,19 @@ export type MonitorLive = {
     agents: Array<MonitorAgent & { status: 'on_call' | 'ringing' | 'free' }>
 }
 
-export type MonitorUserStats = MonitorAgent & {
-    outbound: number
-    outbound_answered: number
-    inbound_answered: number
-    inbound_missed: number
-    internal: number
-    talk_seconds: number
-    handled: number
-}
+/** Answered calls whose talk time is strictly longer than 60 / 120 / 180 seconds. */
+export type MonitorTalkOver = { talk_over_60: number; talk_over_120: number; talk_over_180: number }
+
+export type MonitorUserStats = MonitorAgent &
+    MonitorTalkOver & {
+        outbound: number
+        outbound_answered: number
+        inbound_answered: number
+        inbound_missed: number
+        internal: number
+        talk_seconds: number
+        handled: number
+    }
 
 export type MonitorStats = {
     scope: MonitorScope
@@ -457,7 +476,41 @@ export type MonitorStats = {
     truncated: boolean
     users: MonitorUserStats[]
     series: Array<{ bucket: string; total: number; by_extension: Record<string, number> }>
-    totals: { handled: number; outbound: number; outbound_answered: number; inbound_answered: number; inbound_missed: number; talk_seconds: number }
+    totals: MonitorTalkOver & {
+        handled: number
+        outbound: number
+        outbound_answered: number
+        inbound_answered: number
+        inbound_missed: number
+        talk_seconds: number
+    }
+}
+
+/** One call of one agent (`GET /v2/calling/monitor/calls`, newest first, paged). */
+export type MonitorCall = MonitorAgent & {
+    /** ISO time with the Riyadh offset (the PBX call record's start). */
+    at: Iso
+    direction: 'inbound' | 'outbound' | 'internal'
+    answered: boolean
+    /** The PBX disposition: ANSWERED, NO ANSWER, BUSY, FAILED, CONGESTION. */
+    result: string
+    number: string | null
+    line: string | null
+    client: { name: string | null; account_number: string | null } | null
+    ring_seconds: number
+    talk_seconds: number
+    recorded: boolean
+    /** The CDR recording file for GET /cdr/recording; null without a recording key. */
+    recording: string | null
+    call_id: string
+}
+
+export type MonitorCallsPage = Paged<MonitorCall> & {
+    scope: MonitorScope
+    extension: string | null
+    from: string
+    to: string
+    truncated: boolean
 }
 
 /** Post-call IVR survey (`/v2/calling/surveys*`, migration 0066). */

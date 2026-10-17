@@ -6,6 +6,7 @@ import { HiOutlineTrash } from "react-icons/hi";
 import { deletePortfolios } from "../store";
 import ToastNotification from "@/components/shared/myComponents/ToastNotification";
 import ConfirmDialog from "@/components/shared/myComponents/ConfirmDialog";
+import { openCallRefusal } from "@/utils/v2/openCallGuard";
 
 const DeleteButton = ({
   row,
@@ -31,7 +32,16 @@ const DeleteButton = ({
 
   const handleConfirm = async () => {
     setLoading(true);
-    const { status } = await api(row.id);
+    let status;
+    try {
+      ({ status } = await api(row.id));
+    } catch (err) {
+      // 409: cases of the portfolio have an open call (utils/v2/openCallGuard)
+      ToastNotification(openCallRefusal(err) || t(notificationFailedMessage), t(notificationTitle), "danger");
+      setLoading(false);
+      setDialogOpen(false);
+      return;
+    }
 
     if (status) {
       ToastNotification(

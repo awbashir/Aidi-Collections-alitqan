@@ -14,9 +14,11 @@ My calls and the call log                                  permission
   GET  /v2/cases/<case_id>/calls     a case's calls         calls | calls_make
   POST /v2/calls/manual              log a manual call + wrap-up           calls
   POST /v2/calls/<id>/wrapup         wrap up a PBX call (own; others: calls_manage)  calls
-Calling blocks
+Calling blocks ("blocked clients"; do-not-call is a supervisor decision since 2026-10-17)
   GET  /v2/cases/<case_id>/calling-blocks                   calls | calls_make
-  POST /v2/calling-blocks/<id>/release                      calls_manage
+  GET  /v2/calling-blocks             list (active, contract_id, owner_id, source, q)   calls_supervise | calls_manage
+  POST /v2/calling-blocks             block a client {case_id, reason}                  calls_supervise | calls_manage
+  POST /v2/calling-blocks/<id>/release  lift {reason}                                   calls_supervise | calls_manage
 Calling settings (mine)
   GET  /v2/me/calling                extension, preferences, window status, can_call   calls | calls_make
   PUT  /v2/me/calling/preferences    auto-answer + devices                            calls | calls_make
@@ -37,10 +39,12 @@ Click-to-call (P1, review/phase5-click-to-call.md)
   GET  /v2/calls/<id>/live           live-call panel view (ETag / 304)       calls | calls_make
   POST /v2/calls/<id>/cancel         cancel before the dispatcher claimed it  calls_make (own) | calls_manage
   GET  /v2/me/calls/active           my attempt that holds a reservation      calls | calls_make
-  GET  /v2/calling/uncertain         uncertain attempts in scope              calls_manage
-  POST /v2/calls/<id>/resolve        resolve an uncertain attempt (reason)    calls_manage
-  GET  /v2/calling/review            review flags in scope                    calls_manage
-  POST /v2/calling/review-flags/<id>/resolve   close a flag (reason)          calls_manage
+  GET  /v2/calling/uncertain         uncertain attempts in scope              calls_manage | calls_supervise
+  POST /v2/calls/<id>/resolve        resolve an uncertain attempt (reason)    calls_manage | calls_supervise
+  GET  /v2/calling/review            review flags in scope                    calls_manage | calls_supervise
+  POST /v2/calling/review-flags/<id>/resolve   close a flag (reason)          calls_manage | calls_supervise
+  GET  /v2/calling/pending-wrapups   ended calls holding a reservation, no wrap-up (incl. orphaned)  calls_manage | calls_supervise
+  POST /v2/calls/<id>/release        release that reservation (reason, expected_revision)            calls_manage | calls_supervise
 
 No route here talks to the PBX: POST /v2/calls writes a dispatch row that the `calling`
 service (the only AMI owner) claims, rechecks and sends. AMI Success = submitted.
@@ -62,7 +66,8 @@ from services.calling import review as review_svc
 from services.calling import rules
 from services.calling import settings as settings_svc
 from services.calling import wrapup as wrap_svc
-from services.calling.common import CALLS, CALLS_MAKE, CALLS_MANAGE, me, page_args, permission_required
+from services.calling.common import (CALLS, CALLS_MAKE, CALLS_MANAGE, SUPERVISE_KEYS, can_supervise, me, page_args,
+                                     permission_required)
 
 bp = Blueprint("calling", __name__)
 register_api_errors(bp)
@@ -163,7 +168,7 @@ def my_active_call():
 
 @bp.get("/v2/calling/uncertain")
 @jwt_required()
-@permission_required(CALLS_MANAGE)
+@permission_required(*SUPERVISE_KEYS)
 def uncertain_calls():
     page, size, offset = page_args()
     return ok(review_svc.list_uncertain(request.args, page, size, offset))
@@ -171,16 +176,33 @@ def uncertain_calls():
 
 @bp.post("/v2/calls/<uuid:attempt_id>/resolve")
 @jwt_required()
-@permission_required(CALLS_MANAGE)
+@permission_required(*SUPERVISE_KEYS)
 @idempotent()
 def resolve_call(attempt_id):
     review_svc.resolve(attempt_id, json_body(), expected_revision_from_request())
     return ok(live_svc.live_view(attempt_id), "call resolved")
 
 
+@bp.get("/v2/calling/pending-wrapups")
+@jwt_required()
+@permission_required(*SUPERVISE_KEYS)
+def pending_wrapups():
+    page, size, offset = page_args()
+    return ok(review_svc.list_pending(request.args, page, size, offset))
+
+
+@bp.post("/v2/calls/<uuid:attempt_id>/release")
+@jwt_required()
+@permission_required(*SUPERVISE_KEYS)
+@idempotent()
+def release_call(attempt_id):
+    review_svc.release(attempt_id, json_body(), expected_revision_from_request())
+    return ok(live_svc.live_view(attempt_id), "reservation released")
+
+
 @bp.get("/v2/calling/review")
 @jwt_required()
-@permission_required(CALLS_MANAGE)
+@permission_required(*SUPERVISE_KEYS)
 def review_flags():
     page, size, offset = page_args()
     return ok(review_svc.list_review(request.args, page, size, offset))
@@ -188,7 +210,7 @@ def review_flags():
 
 @bp.post("/v2/calling/review-flags/<uuid:flag_id>/resolve")
 @jwt_required()
-@permission_required(CALLS_MANAGE)
+@permission_required(*SUPERVISE_KEYS)
 @idempotent()
 def resolve_review_flag(flag_id):
     out = review_svc.resolve_flag(flag_id, json_body())
@@ -205,15 +227,24 @@ def case_blocks(case_id):
 
 @bp.get("/v2/calling-blocks")
 @jwt_required()
-@permission_required(CALLS_MANAGE)
+@permission_required(*SUPERVISE_KEYS)
 def list_blocks():
     page, size, offset = page_args()
     return ok(queries.list_blocks(request.args, page, size, offset))
 
 
+@bp.post("/v2/calling-blocks")
+@jwt_required()
+@permission_required(*SUPERVISE_KEYS)
+@idempotent()
+def create_block():
+    out = wrap_svc.create_block(json_body())
+    return created(queries.case_blocks(out["case_id"]), "client blocked from calls")
+
+
 @bp.post("/v2/calling-blocks/<uuid:block_id>/release")
 @jwt_required()
-@permission_required(CALLS_MANAGE)
+@permission_required(*SUPERVISE_KEYS)
 @idempotent()
 def release_block(block_id):
     out = wrap_svc.release_block(block_id, json_body())
@@ -239,7 +270,10 @@ def _my_calling() -> dict:
         reason = None                                  # P1: click-to-call is enabled (rechecked per call)
     return {"user_id": user_id, "extension": extension, "preferences": settings_svc.get_preferences(user_id),
             "window": window, "can_call": reason is None, "reason": reason,
-            "active_attempt_id": queries.my_active_attempt_id(user_id)}
+            "active_attempt_id": queries.my_active_attempt_id(user_id),
+            # 2026-10-17: blocking a client (do_not_call) is a supervisor decision
+            "can_block_clients": can_supervise(),
+            "manual_outcomes": wrap_svc.allowed_outcomes(bridged=None)}
 
 
 @bp.get("/v2/me/calling")

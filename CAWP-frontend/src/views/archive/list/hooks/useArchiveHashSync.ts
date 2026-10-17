@@ -21,6 +21,7 @@ type ArchiveFilters = {
   contract: Ids;
   portfolio: Ids;
   status: Ids;
+  subStatus: Ids;
   user: Ids;
   reason: Ids;
   by: Ids;
@@ -38,6 +39,7 @@ const schema: HashSchema<ListHashBase & ArchiveFilters> = {
   contract: ids("contract"),
   portfolio: ids("portfolio"),
   status: ids("status"),
+  subStatus: ids("substatus"),
   user: ids("user"),
   reason: ids("reason"),
   by: ids("by"),
@@ -52,6 +54,7 @@ const filterKeys = {
   contract: "selectedContracts_Qkey",
   portfolio: "SelectedPortfolios_Qkey",
   status: "SelectedCommentStatus_Qkey",
+  subStatus: "SelectedCommentSubStatus_Qkey",
   user: "selectedUsers_Qkey",
   reason: "SelectedResons_Qkey",
   by: "selectedArchiveBy_Qkey",

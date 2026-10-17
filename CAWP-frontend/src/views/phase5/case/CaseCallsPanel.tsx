@@ -3,10 +3,13 @@
  * (`GET /v2/cases/<id>/calls`), "Log a call" (`calls`), the case's do-not-call block
  * (`GET /v2/cases/<id>/calling-blocks`; lifting it needs `calls_manage` and a reason) and
  * the selected call's detail. The legacy PBX call-records tab stays as it is.
+ * 2026-10-17: blocking the client from calls is a supervisor decision: with `calls_supervise`
+ * (or `calls_manage`),
+ * "Block client" (`POST /v2/calling-blocks`, reason required) when no block is active.
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { HiOutlinePlus } from 'react-icons/hi'
+import { HiOutlineBan, HiOutlinePlus } from 'react-icons/hi'
 import Button from '@/components/ui/Button'
 import Table from '@/components/ui/Table'
 import { RiyadhTime } from '@/components/v2/Display'
@@ -15,6 +18,7 @@ import { EmptyState, ErrorState, SkeletonRows } from '@/components/v2/States'
 import { PagerFooter, TableFrame, rowClass } from '@/components/v2/ListParts'
 import { SidePanel } from '@/views/phase1/money/listParts'
 import { callsApi, describeP5Error } from '@/services/v2'
+import { supervisionApi } from '@/services/v2/callingSupervisionApi'
 import type { Translate } from '@/services/v2'
 import type { CasePanelProps } from '@/views/phase1/caseTypes'
 import { usePermissions, useV2Query } from '@/utils/v2/hooks'
@@ -34,6 +38,9 @@ const CaseCallsPanel = ({ caseData, onChanged }: CasePanelProps) => {
     const [selected, setSelected] = useState<string | null>(null)
     const [logging, setLogging] = useState(false)
     const [lifting, setLifting] = useState<string | null>(null)
+    const [blocking, setBlocking] = useState(false)
+    /* blocking / lifting a client: calls_supervise or calls_manage (2026-10-17) */
+    const supervise = !!(perms.calls_manage || perms.calls_supervise)
     const list = useV2Query((signal) => callsApi.caseCalls(caseData.id, { page, page_size: PAGE_SIZE }, signal), [caseData.id, page])
     const blocks = useV2Query((signal) => callsApi.caseBlocks(caseData.id, signal), [caseData.id])
     const reloadList = list.reload
@@ -56,11 +63,18 @@ const CaseCallsPanel = ({ caseData, onChanged }: CasePanelProps) => {
         <div data-testid="p5-case-calls">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h5 className="mb-0">{t('p5.case.callsTitle')}</h5>
-                {perms.calls && (
-                    <Button size="sm" icon={<HiOutlinePlus />} onClick={() => setLogging(true)} data-testid="p5-case-log-call">
-                        {t('p5.log.open')}
-                    </Button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                    {supervise && blocks.data && !activeBlock && (
+                        <Button size="sm" icon={<HiOutlineBan />} onClick={() => setBlocking(true)} data-testid="p8-case-block">
+                            {t('p8.calling.block.open')}
+                        </Button>
+                    )}
+                    {perms.calls && (
+                        <Button size="sm" icon={<HiOutlinePlus />} onClick={() => setLogging(true)} data-testid="p5-case-log-call">
+                            {t('p5.log.open')}
+                        </Button>
+                    )}
+                </div>
             </div>
             {activeBlock && (
                 <Notice tone="danger" className="mb-3" title={t('p5.block.activeTitle')} testId="p5-case-dnc">
@@ -68,7 +82,7 @@ const CaseCallsPanel = ({ caseData, onChanged }: CasePanelProps) => {
                     <div className="mt-1 text-[12px] text-gray-600">
                         {activeBlock.created_by?.name || '—'} · <RiyadhTime iso={activeBlock.created_at} />
                     </div>
-                    {perms.calls_manage && (
+                    {supervise && (
                         <Button size="xs" className="mt-2" onClick={() => setLifting(activeBlock.id)} data-testid="p5-case-dnc-lift">
                             {t('p5.block.lift')}
                         </Button>
@@ -188,6 +202,22 @@ const CaseCallsPanel = ({ caseData, onChanged }: CasePanelProps) => {
                 onSubmit={async (reason, key) => {
                     if (!lifting) return
                     await callsApi.releaseBlock(lifting, reason, key)
+                    blocks.reload()
+                    onChanged?.()
+                }}
+            />
+            <ReasonDialog
+                isOpen={blocking}
+                title={t('p8.calling.block.title')}
+                description={t('p8.calling.block.hint')}
+                confirmLabel={t('p8.calling.block.confirm')}
+                tone="danger"
+                testId="p8-case-block-dialog"
+                describeError={describe}
+                onClose={() => setBlocking(false)}
+                onReload={blocks.reload}
+                onSubmit={async (reason, key) => {
+                    await supervisionApi.block({ case_id: caseData.id, reason }, key)
                     blocks.reload()
                     onChanged?.()
                 }}

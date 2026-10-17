@@ -136,6 +136,7 @@ def _money(v) -> str | None:
 
 class InquiryKind(BulkKind):
     key = "inquiry"
+    call_reservation_guard = False   # read-only lookup
     label_en, label_ar = "Spreadsheet inquiry", "استعلام بملف"
     permissions = ("client_query",)
     sources = ("spreadsheet",)

@@ -5,7 +5,7 @@ The legacy routes keep their wire contracts; only what they return is narrowed:
 
     GET /cdr                    today's Asterisk CDR (Issable_db.GetSubscription)
     GET /cdr_by_date            Asterisk + call-center rows for the case numbers (GetCombinedCalls)
-    GET /cdr/recording          the recording file (SFTP under RECORDINGS_ROOT)
+    GET /cdr/recording          the recording file (under RECORDINGS_ROOT on the PBX)
 
 Visibility of one CDR record for a viewer (`visible()`), using the Phase 4 attribution
 (services/reports_v2_cdr.attribute: the last 9 digits of src/dst against the live contacts of
@@ -33,10 +33,19 @@ caller may see. There is no path-guess access, not even for SuperAdmin. If the C
 cannot be read the answer is refused (fail closed). Every request, served or refused, writes one
 `audit_events` row (`cdr.recording.served` / `cdr.recording.refused`) in its own transaction.
 
-Reading the file: `RECORDINGS_READER` = `sftp` (default: the legacy
-Issable_db.download_call_recording, unchanged) or `local` (the path below RECORDINGS_ROOT is read
-from RECORDINGS_LOCAL_DIR, e.g. the test PBX's recordings volume mounted read-only; used by the
-tests instead of SFTP). Settings are read at call time.
+Bare names (no YYYY/MM/DD/ directory) resolve through the legacy path builder, which finds the
+day in the name (out-/exten-: YYYYMMDD; in-ivr-<epoch>: the epoch in Asia/Riyadh) or, for a name
+without one (cawp-<attempt>.wav), in the CDR calldate of the record naming it.
+
+Reading the file: `RECORDINGS_READER` =
+  * `sftp` (default: the legacy Issable_db.download_call_recording, unchanged);
+  * `http` (customer decision 2026-10-17: the read-only file server on the PBX, deploy/README.md):
+    GET RECORDINGS_HTTP_BASE + <path below RECORDINGS_ROOT> with the header X-CAWP-Token =
+    RECORDINGS_HTTP_TOKEN; no proxy, no redirects, RECORDINGS_HTTP_TIMEOUT seconds,
+    RECORDINGS_HTTP_MAX_MB at most (a larger file is refused); 404 or an empty file = missing;
+  * `local` (the path below RECORDINGS_ROOT is read from RECORDINGS_LOCAL_DIR, e.g. the test PBX's
+    recordings volume mounted read-only; used by the tests instead of SFTP).
+Settings are read at call time.
 """
 from __future__ import annotations
 
@@ -45,6 +54,9 @@ import hashlib
 import logging
 import os
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from sqlalchemy import text
 
@@ -235,14 +247,15 @@ def _root() -> str:
     return root if root.endswith("/") else root + "/"
 
 
-def resolve_path(path) -> str | None:
+def resolve_path(path, calldate=None) -> str | None:
     """The full remote path the legacy download would read (genrate_call_path +
-    _validate_remote_path, unchanged), or None when the legacy code would refuse it."""
+    _validate_remote_path), or None when the legacy code would refuse it. `calldate`: the CDR
+    calldate of the record naming the file (for a bare name without a day, e.g. cawp-<id>.wav)."""
     if not path or not isinstance(path, str):
         return None
     from issable.db_connection import Issable_db
     try:
-        full = _legacy_helper().genrate_call_path(path)
+        full = _legacy_helper().genrate_call_path(path, calldate)
     except Exception:  # noqa: BLE001 - e.g. an empty or odd value: the legacy code would fail too
         return None
     return Issable_db._validate_remote_path(full)
@@ -304,7 +317,7 @@ def recording_records(path: str, full: str) -> list[dict]:
             cur.execute(_REC_CDR_SQL.format(marks=marks, window=window.format(col="calldate")),
                         (*candidates, *wparams))
             for r in cur.fetchall():
-                if resolve_path((r.get("recordingfile") or "").strip()) != full:
+                if resolve_path((r.get("recordingfile") or "").strip(), r.get("calldate")) != full:
                     continue
                 a = cdrsrc._cdr_row(r, zone)
                 a["attempt_tag"] = attempt_tag(r.get("uniqueid"), r.get("userfield"), r.get("linkedid"))
@@ -313,7 +326,8 @@ def recording_records(path: str, full: str) -> list[dict]:
             if Config.CDR_CALL_CENTER:
                 cur.execute(_REC_CC_SQL.format(marks=marks, window=window.format(col="cr.datetime_entry")),
                             (*candidates, *wparams))
-                cc = [r for r in cur.fetchall() if resolve_path((r.get("recordingfile") or "").strip()) == full]
+                cc = [r for r in cur.fetchall()
+                      if resolve_path((r.get("recordingfile") or "").strip(), r.get("start_time")) == full]
                 for a in cdrsrc._cc_rows(cc, zone):
                     a["attempt_tag"] = None
                     out.append(a)
@@ -338,9 +352,11 @@ def authorize_recording(user_id, path) -> dict:
     from services import reports_v2_cdr as cdrsrc
     full = resolve_path(path)
     res = {"allowed": False, "reason": "invalid_path", "full_path": full, "records": [], "visible": []}
-    if full is None:
-        return res
     try:
+        if full is None and _bare_name(path):
+            full = res["full_path"] = resolve_path(path, _calldate_of(path))
+        if full is None:
+            return res
         records = recording_records(path, full)
     except cdrsrc.CdrUnavailable:
         res["reason"] = "cdr_unavailable"
@@ -357,12 +373,101 @@ def authorize_recording(user_id, path) -> dict:
     return res
 
 
+_BARE_NAME = re.compile(r"^[A-Za-z0-9_.+-]+$")
+
+
+def _bare_name(path) -> bool:
+    return isinstance(path, str) and bool(_BARE_NAME.match(path)) and ".." not in path
+
+
+def _calldate_of(name: str):
+    """The calldate of the latest CDR record naming this bare recording file, or None.
+    Raises reports_v2_cdr.CdrUnavailable when the CDR cannot be read."""
+    from services import reports_v2_cdr as cdrsrc
+    conn = cdrsrc._connect()
+    try:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute("SELECT calldate FROM asteriskcdrdb.cdr WHERE recordingfile = %s ORDER BY calldate DESC LIMIT 1",
+                        (name,))
+            row = cur.fetchone()
+        finally:
+            cur.close()
+    except Exception as e:  # noqa: BLE001
+        log.warning("recording calldate lookup failed: %s", e)
+        raise cdrsrc.CdrUnavailable(f"the CDR query failed: {type(e).__name__}") from None
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return row["calldate"] if row else None
+
+
 def read_recording(path: str) -> bytes | None:
-    """The file behind a legacy recording path: SFTP (legacy, default) or a local directory."""
+    """The file behind a legacy recording path (or its resolved full path): SFTP (legacy,
+    default), the PBX file server over HTTP, or a local directory."""
     mode = (os.getenv("RECORDINGS_READER") or "sftp").strip().lower()
     if mode == "local":
         return _read_local(path)
+    if mode == "http":
+        return _read_http(path)
     return _legacy_helper().download_call_recording(path)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ARG002 - the token never follows a redirect
+        return None
+
+
+def _read_http(path: str) -> bytes | None:
+    """GET <RECORDINGS_HTTP_BASE><path below RECORDINGS_ROOT> with X-CAWP-Token, streamed with a
+    size cap. None when the file is missing (404), empty, too large, or the server fails."""
+    from core.config import Config
+    base = (os.getenv("RECORDINGS_HTTP_BASE") or Config.RECORDINGS_HTTP_BASE or "").strip()
+    token = os.getenv("RECORDINGS_HTTP_TOKEN") or Config.RECORDINGS_HTTP_TOKEN or ""
+    full = resolve_path(path)
+    if not base or not token or full is None:
+        if not base or not token:
+            log.warning("RECORDINGS_READER=http needs RECORDINGS_HTTP_BASE and RECORDINGS_HTTP_TOKEN")
+        return None
+    try:
+        timeout = float(os.getenv("RECORDINGS_HTTP_TIMEOUT") or Config.RECORDINGS_HTTP_TIMEOUT)
+        cap = int(float(os.getenv("RECORDINGS_HTTP_MAX_MB") or Config.RECORDINGS_HTTP_MAX_MB) * 1024 * 1024)
+    except ValueError:
+        timeout, cap = 15.0, 200 * 1024 * 1024
+    url = base.rstrip("/") + "/" + urllib.parse.quote(full[len(_root()):], safe="/")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+    req = urllib.request.Request(url, headers={"X-CAWP-Token": token, "Accept": "*/*"}, method="GET")
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                log.warning("recording HTTP %s for %s", resp.status, full)
+                return None
+            length = resp.headers.get("Content-Length")
+            if length and length.isdigit() and int(length) > cap:
+                log.warning("recording too large (%s bytes): %s", length, full)
+                return None
+            chunks, size = [], 0
+            while True:
+                chunk = resp.read(256 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > cap:
+                    log.warning("recording larger than %s bytes: %s", cap, full)
+                    return None
+                chunks.append(chunk)
+            return b"".join(chunks) or None              # the legacy reader treats an empty file as missing
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            log.info("recording not found on the PBX: %s", full)
+        else:
+            log.warning("recording HTTP %s for %s", e.code, full)
+        return None
+    except Exception as e:  # noqa: BLE001 - unreachable, timeout, reset: missing for the caller
+        log.warning("recording HTTP read failed: %s", type(e).__name__)
+        return None
 
 
 def _read_local(path: str) -> bytes | None:
@@ -417,7 +522,7 @@ def scoped_recording(user_id, recording_path) -> bytes | None:
         _audit(user_id, None, {"reason": "invalid_path"}, "invalid_path", None)
         raise ValueError("recordingPath is required")
     decision = authorize_recording(user_id, recording_path)
-    data = read_recording(recording_path) if decision["allowed"] else None
+    data = read_recording(decision["full_path"]) if decision["allowed"] else None
     if decision["allowed"]:
         outcome = "served" if data else "file_not_found"
     else:

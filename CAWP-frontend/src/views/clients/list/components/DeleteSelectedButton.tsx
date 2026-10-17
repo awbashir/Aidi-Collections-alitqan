@@ -11,6 +11,7 @@ import {
 } from "../store";
 import ToastNotification from "@/components/shared/myComponents/ToastNotification";
 import ConfirmDialog from "@/components/shared/myComponents/ConfirmDialog";
+import { openCallRefusal } from "@/utils/v2/openCallGuard";
 import { Button } from "@/components/ui/Button";
 import { useFetchClients } from "../hooks/GetClientHook";
 
@@ -40,7 +41,16 @@ const DeleteSelectedButton = ({
 
   const handleConfirm = async () => {
     setLoading(true);
-    const { status } = await api(row);
+    let status;
+    try {
+      ({ status } = await api(row));
+    } catch (err) {
+      // 409: selected cases have an open call; nothing was deleted (utils/v2/openCallGuard)
+      ToastNotification(openCallRefusal(err) || t(notificationFailedMessage), t(notificationTitle), "danger");
+      setLoading(false);
+      setDialogOpen(false);
+      return;
+    }
 
     if (status) {
       setLoading(false);

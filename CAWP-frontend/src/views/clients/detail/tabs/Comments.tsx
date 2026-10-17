@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Field, Form, Formik } from "formik";
 import * as Yup from "yup";
 import { useTranslation } from "react-i18next";
@@ -34,7 +34,15 @@ import {
   putClintsDelinquencyByID,
 } from "../store";
 
-import { mainStatusesFor, subStatusesOf } from "@/utils/commentStatusTree";
+import { noteStatusOptions, subStatusesOf } from "@/utils/commentStatusTree";
+import { useCaseListNav } from "@/utils/v2/caseListNav";
+import { callDock, useCallDock } from "@/views/phase5/live/callDock";
+import type { DialedNumber } from "@/views/phase5/live/callDock";
+import { factsFromCase } from "@/views/phase5/wrapup/caseFacts";
+import {
+  CallResultDone,
+  CallResultForm,
+} from "@/views/phase5/wrapup/CallResultForm";
 
 // Types
 import type { FieldProps } from "formik";
@@ -103,7 +111,29 @@ const Comments = ({ data }: NotificationSettingProps) => {
   const [commentStatus, setCommentStatus] = useState([]);
   const [commentStatusLoading, setCommentStatusLoading] = useState(false);
   const [call, setCall] = useState([]);
-  const [filteredCalls, setFilteredCalls] = useState([]);
+
+  /* 2026-10-17, one entry: while a call of this case waits for its wrap-up,
+   * this form is the call's result ("نتيجة المكالمة"): one save closes the
+   * call and writes the note (POST /v2/calls/<id>/wrapup). Then: call the
+   * next number, go to the previous / next client, or write another note. */
+  const dock = useCallDock();
+  const caseKey = clint?.id ? String(clint.id) : null;
+  const resultAttempt =
+    caseKey && dock.resultFor?.caseId === caseKey
+      ? dock.resultFor.attemptId
+      : null;
+  const [resultDone, setResultDone] = useState<DialedNumber | null>(null);
+  const listNav = useCaseListNav(caseKey);
+  /* The case as this page loaded it: contract (statuses), lock, archive. */
+  const facts = factsFromCase(clint as never);
+  const formTop = useRef<HTMLDivElement>(null);
+  useEffect(() => setResultDone(null), [caseKey]);
+  useEffect(() => {
+    if (resultAttempt && dock.focus.tick)
+      formTop.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [dock.focus.tick, resultAttempt]);
+  /* The number just dialed on this case (the dock's live view) starts the form. */
+  const dialed = callDock.lastDialed(caseKey);
 
   // Validation Schema
   const validationSchema = Yup.object().shape({
@@ -131,11 +161,48 @@ const Comments = ({ data }: NotificationSettingProps) => {
   const PHONE_METHOD_ID = "b55aa031-9349-4a3a-ad14-1f9d6821a342";
   const MOBILE_METHOD_ID = "ff081c7e-4500-4a75-ae36-580f2ae90834";
 
-  // 0068: the main statuses this case may use (its contract's + the general ones, none
-  // deleted); the last note's status is only preselected while it is still one of them
+  const clintContactsOptions = clintContacts
+    ?.filter((option: any) => option.contact?.trim())
+    ?.map((option: any) => ({
+      label: option.contact,
+      value: option.id,
+      type: option.contact_type?.name,
+    }));
+
+  // @ts-ignore - API response contains these properties
+  const commentsStatusOptions = commentStatus?.map((option: any) => ({
+    label: option.name,
+    value: option.id,
+    reachability_id: option.CommentReachability_id,
+    contract_id: option.contract_id,
+    parent_id: option.parent_id ?? null,
+    deleted_at: option.deleted_at ?? null,
+  }));
+
+  // The shared note-status rule (utils/commentStatusTree.noteStatusOptions, the same as
+  // the wrap-up's): the contract's main statuses + the general ones; a status without a
+  // reachability fits every reachability. The last note's status is preselected only while
+  // it is still one of them.
+  const statusesFor = (reach: string | null | undefined) =>
+    noteStatusOptions(commentsStatusOptions, facts.contractId, reach);
   const liveMainIds = new Set(
-    mainStatusesFor(commentStatus, clint?.contract?.id).map((s: any) => s.id)
+    statusesFor(lastComment?.comment_reachability_id).map((s: any) => s.value)
   );
+  /* The number field: every number of the client (mobile, landline...), or
+   * the e-mails for the e-mail method; the value sent is the chosen one. */
+  const contactsFor = (method: string) =>
+    (clintContactsOptions || []).filter((option: any) =>
+      method === EMAIL_METHOD_ID ? option.type === "email" : option.type !== "email"
+    );
+  const last9 = (v?: string | null) => (v || "").replace(/\D/g, "").slice(-9);
+  const dialedContact =
+    dialed &&
+    (clintContactsOptions || []).find(
+      (option: any) =>
+        option.type !== "email" &&
+        (option.value === dialed.contactId ||
+          (!!dialed.value && last9(option.label) === last9(dialed.value)))
+    );
 
   // Form Initial Values
   const initialValues = {
@@ -146,7 +213,7 @@ const Comments = ({ data }: NotificationSettingProps) => {
         : "",
     comment_sub_status_id: "",
     contactMethod_id: MOBILE_METHOD_ID,
-    contact: "",
+    contact: dialedContact?.value || "",
     nextContactTime: "",
     nextContactDate: "",
     comment: "",
@@ -216,14 +283,14 @@ const Comments = ({ data }: NotificationSettingProps) => {
     }
   };
 
-  // Handlers
-  const handleChangeNumber = (phoneNumber: string) => {
-    const last9Digits = phoneNumber?.slice(-9);
-    const filteredCalls = call.filter(
+  // The PBX calls (CDR) to the chosen number, for the "phone call" method
+  const callsToNumber = (phoneNumber?: string | null) => {
+    if (!phoneNumber) return [];
+    const last9Digits = phoneNumber.slice(-9);
+    return call.filter(
       (callItem: any) =>
         callItem.dst?.slice(-9) === last9Digits && callItem.duration > 0
     );
-    setFilteredCalls(filteredCalls);
   };
 
   const onFormSubmit = async (
@@ -263,9 +330,14 @@ const Comments = ({ data }: NotificationSettingProps) => {
       }
     }
 
-    // Get contact number from DOM element
-    const contactNumberElement = document.getElementById("contactNumber");
-    sendValues.contactNumber = contactNumberElement?.textContent || null;
+    // The chosen number itself (not the select's text, which could be its placeholder)
+    const chosen = (clintContactsOptions || []).find(
+      (option: any) => option.value === values.contact
+    );
+    sendValues.contactNumber = chosen?.label || null;
+    // No reachability chosen: none is sent (a blank id is refused by the database)
+    if (!sendValues.comment_reachability_id)
+      delete (sendValues as Partial<ProfileFormModel>).comment_reachability_id;
 
     // Clean up unnecessary fields
     delete sendValues.nextContactTime;
@@ -312,14 +384,6 @@ const Comments = ({ data }: NotificationSettingProps) => {
     value: option.id,
   }));
 
-  const clintContactsOptions = clintContacts
-    ?.filter((option: any) => option.contact?.trim())
-    ?.map((option: any) => ({
-      label: option.contact,
-      value: option.id,
-      type: option.contact_type.name,
-    }));
-
   const commentsReachabilityOptions = commentReachability?.map(
     (option: any) => ({
       label: option.name,
@@ -334,20 +398,11 @@ const Comments = ({ data }: NotificationSettingProps) => {
     })
   );
 
-  // @ts-ignore - API response contains these properties
-  const commentsStatusOptions = commentStatus?.map((option: any) => ({
-    label: option.name,
-    value: option.id,
-    reachability_id: option.CommentReachability_id,
-    contract_id: option.contract_id,
-    parent_id: option.parent_id ?? null,
-    deleted_at: option.deleted_at ?? null,
-  }));
-
-  const filteredCallsOptions = filteredCalls?.map((option: any) => ({
-    label: `${option.dst} - ${option.calldate} - المدة: ${option.duration}`,
-    value: option.uniqueid,
-  }));
+  const callOptionsFor = (phoneNumber?: string | null) =>
+    callsToNumber(phoneNumber).map((option: any) => ({
+      label: `${option.dst} - ${option.calldate} - المدة: ${option.duration}`,
+      value: option.uniqueid,
+    }));
 
   // Effects
   useEffect(() => {
@@ -377,6 +432,26 @@ const Comments = ({ data }: NotificationSettingProps) => {
 
   return (
     <div className="flex flex-col gap-4">
+      <div ref={formTop} className="scroll-mt-4" />
+      {resultAttempt && caseKey ? (
+        <CallResultForm
+          key={resultAttempt}
+          attemptId={resultAttempt}
+          facts={facts}
+          onSaved={(_res, d) => {
+            setResultDone(d);
+            callDock.resultDone(resultAttempt);
+          }}
+        />
+      ) : resultDone && caseKey ? (
+        <CallResultDone
+          caseId={caseKey}
+          facts={facts}
+          dialed={resultDone}
+          nav={listNav}
+          onNewNote={() => setResultDone(null)}
+        />
+      ) : (
       <Card>
         <Formik
           enableReinitialize
@@ -391,6 +466,10 @@ const Comments = ({ data }: NotificationSettingProps) => {
             const validatorProps = { touched, errors };
             const isEmailMethod = values.contactMethod_id === EMAIL_METHOD_ID;
             const isPhoneMethod = values.contactMethod_id === PHONE_METHOD_ID;
+            const chosenNumber = clintContactsOptions?.find(
+              (option: any) => option.value === values.contact
+            )?.label;
+            const statusOptions = statusesFor(values.comment_reachability_id);
 
             return (
               <Form>
@@ -418,7 +497,14 @@ const Comments = ({ data }: NotificationSettingProps) => {
                             )}
                             onChange={(option) => {
                               form.setFieldValue(field.name, option?.value);
-                              form.setFieldValue("contact", "");
+                              // numbers and e-mails are different lists
+                              if (
+                                (option?.value === EMAIL_METHOD_ID) !==
+                                (values.contactMethod_id === EMAIL_METHOD_ID)
+                              ) {
+                                form.setFieldValue("contact", "");
+                                form.setFieldValue("call_id", "");
+                              }
                             }}
                             placeholder={t("select")}
                           />
@@ -439,17 +525,13 @@ const Comments = ({ data }: NotificationSettingProps) => {
                             field={field}
                             form={form}
                             isLoading={clintContactsLoading}
-                            options={clintContactsOptions?.filter(
-                              (option) =>
-                                option.type ===
-                                (isEmailMethod ? "email" : "mobile")
-                            )}
+                            options={contactsFor(values.contactMethod_id)}
                             value={clintContactsOptions?.filter(
                               (option) => option.value === values.contact
                             )}
                             onChange={(option) => {
                               form.setFieldValue(field.name, option?.value);
-                              handleChangeNumber(option?.label);
+                              form.setFieldValue("call_id", "");
                             }}
                             placeholder={t("select")}
                             id="contactNumber"
@@ -471,8 +553,8 @@ const Comments = ({ data }: NotificationSettingProps) => {
                             <Select
                               field={field}
                               form={form}
-                              options={filteredCallsOptions}
-                              value={filteredCallsOptions?.filter(
+                              options={callOptionsFor(chosenNumber)}
+                              value={callOptionsFor(chosenNumber).filter(
                                 (option) => option.value === values.call_id
                               )}
                               onChange={(option) =>
@@ -503,9 +585,19 @@ const Comments = ({ data }: NotificationSettingProps) => {
                               (option) =>
                                 option.value === values.comment_reachability_id
                             )}
-                            onChange={(option) =>
-                              form.setFieldValue(field.name, option?.value)
-                            }
+                            onChange={(option) => {
+                              form.setFieldValue(field.name, option?.value);
+                              // a status that does not fit the new reachability is cleared
+                              if (
+                                values.comment_status_id &&
+                                !statusesFor(option?.value).some(
+                                  (s: any) => s.value === values.comment_status_id
+                                )
+                              ) {
+                                form.setFieldValue("comment_status_id", "");
+                                form.setFieldValue("comment_sub_status_id", "");
+                              }
+                            }}
                             placeholder={t("select")}
                           />
                         )}
@@ -525,14 +617,7 @@ const Comments = ({ data }: NotificationSettingProps) => {
                             field={field}
                             form={form}
                             isLoading={commentStatusLoading}
-                            options={mainStatusesFor(
-                              commentsStatusOptions,
-                              clint?.contract?.id
-                            ).filter(
-                              (status) =>
-                                values.comment_reachability_id ===
-                                status.reachability_id
-                            )}
+                            options={statusOptions}
                             value={commentsStatusOptions?.filter(
                               (option) =>
                                 option.value === values.comment_status_id
@@ -683,6 +768,7 @@ const Comments = ({ data }: NotificationSettingProps) => {
           }}
         </Formik>
       </Card>
+      )}
 
       <TimeLineComment data={data} />
     </div>

@@ -36,6 +36,7 @@ import {
   Megaphone,
   ShieldAlert,
   SlidersHorizontal,
+  PhoneOff, // blocked clients
   Mic, // Phase 6 Q3: voice training lab
   BrainCircuit, // Phase 6: AI administration
   BadgeCheck, // Phase 6: quality workspace
@@ -83,6 +84,7 @@ const navigationIcon: NavigationIcons = {
   campaigns: <Megaphone strokeWidth={2} size={18} />,
   call_review: <ShieldAlert strokeWidth={2} size={18} />,
   calling_admin: <SlidersHorizontal strokeWidth={2} size={18} />,
+  calling_blocks: <PhoneOff strokeWidth={2} size={18} />,
   call_monitor: <Activity strokeWidth={2} size={18} />,
   /* Phase 6 Q3 (voice training lab) */
   voice_lab: <Mic strokeWidth={2} size={18} />,

@@ -243,7 +243,7 @@ def test_busy_customer(cl_client, hdr, pgc, live, ami):
     assert (d["state"], d["reason_code"], d["hangup_cause"]) == ("ended", "customer_busy", 17)
     assert d["timeline"]["bridged_at"] is None and d["conversation"]["evidenced"] is False
     assert d["duration_seconds"] is None and d["duration_known"] is False            # unknown, never 0
-    assert d["actions"]["wrapup_outcomes"] == ["no_answer", "busy", "do_not_call"]
+    assert d["actions"]["wrapup_outcomes"] == ["no_answer", "busy", "wrong_number"]   # do_not_call: supervisors
     record_fixture("busy_customer", ami, a)
     st, body = wrap(cl_client, hdr, pgc, user, a, "connected")
     assert (st, body["code"]) == (409, "conversation_not_evidenced")

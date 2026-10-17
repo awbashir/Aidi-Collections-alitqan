@@ -165,6 +165,9 @@ class BulkKind:
     match_by: str | None = "account_number"     # MATCH_COLUMNS key, or None: kind matches itself
     batch_size: int | None = None               # default BULK_BATCH_SIZE
     result_columns: tuple[str, ...] = ()        # row.details keys written to the CSV artifacts
+    # False: the kind changes neither ownership nor case state (e.g. a PBX evidence import), so
+    # cases with an open call are not skipped (services.bulk_common.call_reservations)
+    call_reservation_guard: bool = True
 
     # ---- hooks -------------------------------------------------------------------------
     def validate_params(self, params: dict, ctx: "CreateContext") -> dict:

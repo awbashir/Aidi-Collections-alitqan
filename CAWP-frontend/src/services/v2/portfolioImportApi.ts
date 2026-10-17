@@ -123,6 +123,8 @@ export type PrevNote = {
     created_at: string
     text: string
     status: { id: string | null; name: string | null }
+    /** 0068: the optional sub-status (null when the note has none) */
+    sub_status?: { id: string | null; name: string | null } | null
     contact_method: { id: string | null; name: string | null }
     next_contact_date: string | null
     corrected: boolean

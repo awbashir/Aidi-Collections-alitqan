@@ -158,7 +158,7 @@ Definitions:
 | Piece | Where | Behavior |
 |---|---|---|
 | CDR list | `GET /cdr`, `GET /cdr_by_date` → `Issable_db` | MySQL `asteriskcdrdb.cdr` and `call_center.calls`, parameterised, JWT-protected |
-| Recording download | `GET /cdr/recording?recordingPath=` | fetched from the PBX via paramiko/SSH, path-validated |
+| Recording download | `GET /cdr/recording?recordingPath=` | fetched from the PBX (`RECORDINGS_READER`: SFTP, or since 2026-10-17 the PBX's read-only HTTP file server on 8091), path-validated |
 | Case call history UI | `CAWP-frontend/src/views/clients/detail/components/CallsRecordClientTable.tsx` | per-client CDR table |
 | Config | `CAWP-API/core/config.py` `CDR_*` | env-driven. **Remove the hard-coded default `CDR_PASSWORD`; env/secret only.** |
 

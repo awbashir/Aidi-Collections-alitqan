@@ -81,6 +81,19 @@ export const P5_ERROR_CODES = new Set([
     'idempotency_request_in_progress',
 ])
 
+/**
+ * Calling supervision codes (2026-10-17) with their own `p8.calling.err.<code>` message:
+ * do-not-call is a supervisor decision, supervisor release of a stuck reservation, blocking a
+ * client, and the legacy delete/reassign guards for cases with an open call.
+ */
+export const P8_CALLING_ERROR_CODES = new Set([
+    'outcome_not_allowed',
+    'release_not_allowed',
+    'reservation_not_held',
+    'block_exists',
+    'case_has_open_call',
+])
+
 const flat = (detail: unknown): Record<string, string> => {
     const out: Record<string, string> = {}
     if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
@@ -141,6 +154,11 @@ export function describeP5Error(err: unknown, t: Translate, area?: 'dispatch'): 
     const rule = detail && typeof detail === 'object' ? (detail.rule as string | undefined) : undefined
     if (rule && RULES.has(rule)) return refusalText(rule, detail, t)
     if (area === 'dispatch' && RULES.has(err.code) && err.code !== 'forbidden') return refusalText(err.code, detail, t)
+    if (P8_CALLING_ERROR_CODES.has(err.code)) {
+        const values = flat(detail)
+        if (err.code === 'release_not_allowed' && values.state === 'uncertain') return t('p8.calling.err.release_uncertain')
+        return t(`p8.calling.err.${err.code}`, { ...values, message: err.serverMessage })
+    }
     if (P5_ERROR_CODES.has(err.code)) {
         const values = flat(detail)
         if (err.code === 'ready_in_other_campaign') values.campaign = values.campaign_id || ''

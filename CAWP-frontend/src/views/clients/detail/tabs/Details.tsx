@@ -41,6 +41,7 @@ import ConfirmDialog from "@/components/shared/myComponents/ConfirmDialog";
 import BalanceCard from "@/views/phase1/money/BalanceCard";
 import ContactsPanel from "@/views/phase1/history/ContactsPanel";
 import PreviousRecordSection from "../components/PreviousRecordSection";
+import SameIdentitySection from "../components/SameIdentitySection";
 
 interface CustomerInfoProps {
   data: any;
@@ -323,6 +324,9 @@ const CustomerInfo = ({
       {/* Previous (archived) record this case replaced on a portfolio upload;
           renders nothing when there is none. */}
       {data?.id ? <PreviousRecordSection caseId={data.id} /> : null}
+
+      {/* Other accounts of the same identity number (read-only; in-scope ones open). */}
+      {data?.id ? <SameIdentitySection key={data.id} caseId={data.id} /> : null}
 
       {/* Confirm Delete Dialog */}
       <ConfirmDialog

@@ -135,6 +135,8 @@ export type FollowUp = {
         is_deleted: boolean | null
         created_at: Iso | null
         status: string | null
+        /** 0068: name of the note's optional sub-status */
+        sub_status?: string | null
     } | null
 }
 
@@ -336,6 +338,8 @@ export type Note = {
     correction_count: number
     retired: boolean
     status: { id: string; name: string } | null
+    /** 0068: the optional sub-status (null when the note has none) */
+    sub_status?: { id: string; name: string } | null
     contact_method: { id: string; name: string } | null
     reachability_id: string | null
     next_contact_date: Iso | null

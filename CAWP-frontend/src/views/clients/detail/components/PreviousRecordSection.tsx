@@ -70,7 +70,12 @@ const RecordSections = ({ record }: { record: PreviousRecord }) => {
                                     <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-gray-600">
                                         <span className="font-extrabold text-navy-600 dark:text-gray-100">{n.author?.name || '—'}</span>
                                         <RiyadhTime iso={n.created_at} />
-                                        {n.status?.name && <PlainBadge size="row">{n.status.name}</PlainBadge>}
+                                        {n.status?.name && (
+                                            <PlainBadge size="row">
+                                                {n.status.name}
+                                                {n.sub_status?.name ? ` › ${n.sub_status.name}` : ''}
+                                            </PlainBadge>
+                                        )}
                                         {n.corrected && <PlainBadge size="row" tone="info">{t('p7.import.previous.corrected')}</PlainBadge>}
                                     </div>
                                     <div className="whitespace-pre-wrap break-words text-[13.5px]" dir="auto">

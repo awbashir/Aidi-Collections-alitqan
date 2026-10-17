@@ -23,6 +23,7 @@ import {
   apiGetArchiveReasons,
 } from "@/services/ArchiveService";
 import MyFilter from "@/components/shared/myComponents/filter";
+import SubStatusFilter from "@/components/shared/myComponents/subStatusFilter";
 import MyField from "@/components/shared/myComponents/field";
 import Button from "@/components/ui/Button";
 
@@ -95,6 +96,9 @@ const PortfoliosTableFilter = () => {
   const [selectedCommentStatus_, setSelectedCommentStatus_] = useState(() =>
     asSelection(applied?.SelectedCommentStatus_Qkey)
   );
+  const [selectedCommentSubStatus_, setSelectedCommentSubStatus_] = useState<
+    Array<{ id?: string }> | undefined
+  >(() => asSelection(applied?.SelectedCommentSubStatus_Qkey));
   const [selectedUsers_, setSelectedUsers_] = useState(() =>
     asSelection(applied?.selectedUsers_Qkey)
   );
@@ -180,6 +184,7 @@ const PortfoliosTableFilter = () => {
     if (lastStatusScope.current !== statusScope) {
       lastStatusScope.current = statusScope;
       setSelectedCommentStatus_([]);
+      setSelectedCommentSubStatus_([]);
     }
     if (selectedReachability_?.length > 0) {
       const commentstatus_ = comment_status.filter((status) =>
@@ -224,6 +229,9 @@ const PortfoliosTableFilter = () => {
         SelectedCommentStatus_Qkey: selectedCommentStatus_?.map(
           (status) => status.id
         ),
+        SelectedCommentSubStatus_Qkey: selectedCommentSubStatus_?.map(
+          (status) => status.id
+        ),
 
         //-------------------
 
@@ -242,6 +250,7 @@ const PortfoliosTableFilter = () => {
     setSelectedUsers_([]);
     setSelectedAccountNumber_([]);
     setSelectedCommentStatus_([]);
+    setSelectedCommentSubStatus_([]);
     setSelectedResons_([]);
     setSelectedArchiveBy_([]);
     setSelectedContracts_([]);
@@ -332,6 +341,16 @@ const PortfoliosTableFilter = () => {
                         title: "Clientstatus",
                       }}
                       isMulti={true}
+                    />
+                  </div>
+                  <div>
+                    <SubStatusFilter
+                      statuses={comment_status}
+                      selectedMain={selectedCommentStatus_}
+                      filter={setSelectedCommentSubStatus_}
+                      selectedIds={selectionIds(
+                        selectedCommentSubStatus_
+                      ) as string[] | undefined}
                     />
                   </div>
                 </div>

@@ -72,7 +72,8 @@ Issabel 5 / Asterisk 18.19 (Rocky 8). Agents are PJSIP WebRTC extensions; the ca
 | Toll-free IVR | PBX `cawp-ivr.conf` (included from `extensions_custom.conf`): welcome + language (1 Arabic / 2 English) → department menu (all options ring `CAWP_IVR_TARGETS`, the supervisors, for now) → "call is recorded" → MixMonitor → "please hold" → Dial (`g`). Prompts `/var/lib/asterisk/sounds/cawp/*.wav` (Script_01, working hours, 8 kHz mono); settings `cawp-ivr-globals.conf` |
 | Post-call survey | per-contract switch in the app (Calling admin → Post-call survey; `contract_call_settings`, migration 0066). When the agent hangs up first the customer goes to PBX context `cawp-survey`: click-to-call via Dial `F(cawp-survey^s^1)` (policy `post_call_context`), the IVR after its Dial. It asks FastAGI `collections-survey-offer` (eligible = the case's contract has it on; incoming callers matched by number), plays `{ar,en}-survey` and sends the digit to `collections-survey-result` (`call_surveys`) |
 | Dialpad outside numbers (customer decision) | app `SIP_EXTERNAL_DIAL_PATTERN` (`.env.docker`, `$$` = `$`); PBX outbound route 1 patterns `0.`, `966XXXXXXXXX`, `800XXXXXXX`, `920XXXXXX` (plus the original `9` + number). Not case-linked: no calling-window check, no wrap-up; Issabel records them |
-| Call records | read-only MySQL `cawp_cdr`@10.0.40.6 (`SELECT` on `asteriskcdrdb.cdr`) → `CDR_*` in `.env.docker`, `CALLING_CDR_SOURCE=mysql` |
+| Call records | read-only MySQL `cawp_cdr`@10.0.40.6 (`SELECT` on `asteriskcdrdb.cdr`) → `CDR_*` in `.env.docker`, `CALLING_CDR_SOURCE=mysql`; `CDR_CALL_CENTER=0` (no Issabel call-center module) |
+| Recordings (2026-10-17) | Read-only file server on the PBX: Apache `Listen 8091`, its own VirtualHost in `/etc/httpd/conf.d/cawp-recordings.conf` (the Issabel UI on 80/443 is untouched). It serves `/var/spool/asterisk/monitor` only: one file per GET/HEAD (`YYYY/MM/DD/<name>.wav|gsm|mp3|ogg`), Range supported, no listing, no symlinks, everything else 403. It requires `Require ip 10.0.40.6` AND the header `X-CAWP-Token`. The secret is in root-only `/etc/httpd/cawp/recordings-token.conf` (`Define CAWP_RECORDINGS_TOKEN …`) and in `.env.docker` as `RECORDINGS_HTTP_TOKEN`. Logs `/var/log/httpd/cawp_recordings_*_log` (no headers). App: `RECORDINGS_READER=http`, `RECORDINGS_HTTP_BASE=http://10.0.40.7:8091/` (`services/calling_cdr.py`). SELinux is disabled and firewalld/iptables are off on the PBX, so the IP rule and the token are the only guard; add a firewall rule when the PBX firewall is turned on. Backup: `/root/cawp-backup-httpd-*.tgz` |
 | NTP | chrony → time.google.com, time.cloudflare.com |
 
 Secrets live only in `deploy/prod.env` / `CAWP-API/.env.docker` (app server) and root:asterisk
@@ -82,8 +83,7 @@ and `/root/cawp-backup-asterisk-db-*.sql.gz` on the PBX. Checks: `python -m call
 
 ## Not configured yet
 
-* Recordings download (`RECORDINGS_SSH_*`) is off: the app cannot play Issabel recordings yet.
-* Issabel's firewall is off: restrict 5038/5039/8088 to 10.0.40.6.
+* Issabel's firewall is off: restrict 5038/5039/8088 (and 8091, recordings) to 10.0.40.6.
 * AI: no provider key and no AI data policy, so AI features refuse.
 * Contracts, portfolios and comment statuses: create them in the app, then link supervisors and
   collectors to their contracts.

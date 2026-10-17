@@ -78,6 +78,8 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     PermissionKey("calls", _DAILY, "Calls and call log", "المكالمات وسجلها"),
     PermissionKey("calls_make", _DAILY, "Make calls (click-to-call, softphone)", "إجراء المكالمات"),
     PermissionKey("calls_manage", _CONTROL, "Calling administration", "إدارة الاتصال"),
+    # 2026-10-17: supervisors block/lift clients and release stuck calls, without calling admin
+    PermissionKey("calls_supervise", _CONTROL, "Supervise calls (block clients, release stuck calls)", "الإشراف على المكالمات (منع الاتصال بالعملاء وتحرير المكالمات العالقة)"),
     PermissionKey("campaigns", _DAILY, "Calling campaigns", "حملات الاتصال"),
     PermissionKey("campaigns_manage", _DAILY, "Run and pause campaigns", "تشغيل وإيقاف الحملات"),
     # Phase 6: AI assistance and quality review

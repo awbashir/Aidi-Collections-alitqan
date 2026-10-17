@@ -444,6 +444,12 @@ def run_sepcify_users_by_excel(job_id, identity, user_name_column, account_numbe
     for clint in fetch_clints_by(Clints.accountNumber, accounts):
         clints.setdefault(clint.accountNumber, clint)
 
+    # A case with an open call keeps its owner (services/calling/guards.py): its row is
+    # skipped, and the success message says how many were skipped.
+    from services.calling import guards as call_guards
+    held = call_guards.open_cases([c.id for c in clints.values()])
+    skipped = set()
+
     n = 0
     for row in data_excel:
         user_name = row[user_name_column]
@@ -458,6 +464,9 @@ def run_sepcify_users_by_excel(job_id, identity, user_name_column, account_numbe
             db.session.commit()
             return Result({"message": str(account_number) + " الحساب غير موجود",
                            "status": False}, 201)
+        if str(clint.id) in held and str(clint.user_id) != str(user.id):
+            skipped.add(str(clint.id))
+            continue
 
         db.session.add(SepcifyUsers(user_id=user.id, clint_id=clint.id, create_by=identity))
         clint.user_id = user.id
@@ -466,6 +475,10 @@ def run_sepcify_users_by_excel(job_id, identity, user_name_column, account_numbe
     db.session.commit()
     progress(job_id, 100, f"rows {n}/{len(data_excel)}")
 
+    if skipped:
+        return Result({"message": "تم تحديد المستخدمين بنجاح"
+                                  + call_guards.ARABIC_REASSIGN_SKIPPED.format(n=len(skipped)),
+                       "status": True, "skipped_open_calls": len(skipped)}, 200)
     return Result({"message": "تم تحديد المستخدمين بنجاح", "status": True}, 200)
 
 

@@ -31,6 +31,7 @@ function ExportByExcel({
             new Date(item?.create_at),
             item?.reachability?.name,
             item?.status?.name,
+            item?.sub_status?.name || "",
             item?.comment,
             item?.contact_method?.name === "جوال" ||
             item?.contact_method?.name === "تحويلة"
@@ -61,6 +62,7 @@ function ExportByExcel({
             "تاريخ المتابعة",
             "الوصول",
             "الحالة",
+            "الحالة الفرعية",
             "التعليق",
             "طريقة الاتصال",
             "رقم الحساب",

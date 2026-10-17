@@ -39,6 +39,7 @@ function ExportByExcel({
 
             item?.portfolios?.contract.name,
             item?.comment_status?.name,
+            item?.comment_sub_status?.name || "",
             item?.clint?.amount,
             item?.amount,
             new Date(item?.payment_date),
@@ -55,6 +56,7 @@ function ExportByExcel({
             "رقم الهوية",
             "اسم العقد",
             "حالة العميل",
+            "الحالة الفرعية",
             "مبلغ المديونية",
             "مبلغ السداد",
             "موعد السداد",

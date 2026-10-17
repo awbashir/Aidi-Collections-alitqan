@@ -69,7 +69,11 @@ for _entity in (
         _options.Entity("note_reachability", "comment_reachability e", "e.name", "NULL", "NOT e.is_deleted",
                         ("e.name",)),
         _options.Entity("contact_method", '"ContactMethods" e', "e.name", "NULL", "TRUE", ("e.name",)),
-        _options.Entity("archive_reason", '"archiveReason" e', "e.name", "NULL", "TRUE", ("e.name",))):
+        _options.Entity("archive_reason", '"archiveReason" e', "e.name", "NULL", "TRUE", ("e.name",)),
+        # 0068 sub-statuses: the secondary label is the main status they belong to
+        _options.Entity("comment_sub_status", '"CommentStatuses" e', "e.name",
+                        '(SELECT pe.name FROM "CommentStatuses" pe WHERE pe.id = e.parent_id)',
+                        "e.deleted_at IS NULL", ("e.name",))):
     if _entity.key not in _options._ENTITIES:
         _options.register_entity(_entity)
 
@@ -254,6 +258,7 @@ _CASE_FROM = """clints c
     LEFT JOIN branches ob ON ob.id = ou.branch_id
     LEFT JOIN "Comments" lc ON lc.id = c.last_comment_id AND lc.is_deleted = false
     LEFT JOIN "CommentStatuses" lcs ON lcs.id = lc.comment_status_id
+    LEFT JOIN "CommentStatuses" lss ON lss.id = lc.comment_sub_status_id
     LEFT JOIN comment_reachability lcr ON lcr.id = lc.comment_reachability_id
     LEFT JOIN "delinquencyReason" dr ON dr.id = c."delinquencyReason_id"
     LEFT JOIN (SELECT p.clint_id,
@@ -303,6 +308,7 @@ def _case_columns(archive: bool) -> tuple:
         Column("assignment_days", "Days since assignment", "ايام الاسناد", "int", _ASSIGNED_DAYS, role="owner"),
         Column("last_note_at", "Latest note at", "تاريخ آخر متابعة", "datetime", "lc.create_at"),
         Column("last_note_status", "Latest note status", "حالة العميل", "text", "lcs.name"),
+        Column("last_note_sub_status", "Latest note sub-status", "الحالة الفرعية", "text", "lss.name"),
         Column("last_note_reachability", "Latest note reachability", "التوصل", "text", "lcr.name"),
         Column("account_number", "Account number", "رقم الحساب", "text", 'c."accountNumber"'),
         Column("customer_name", "Customer", "اسم العميل", "text", "c.name"),
@@ -355,6 +361,8 @@ def _case_filters(archive: bool) -> tuple:
     fs += [
         Ids("note_status", "Latest note status", "حالة العميل", "comment_status", "lc.comment_status_id",
             depends_on=("contract",)),
+        Ids("note_sub_status", "Latest note sub-status", "الحالة الفرعية", "comment_sub_status",
+            "lc.comment_sub_status_id", depends_on=("contract", "note_status")),
         Enum("has_note", "Has a note", "لديه متابعة",
              {"yes": ("With a note", "لديه متابعة"), "no": ("Without a note", "بدون متابعة")},
              predicates={"yes": "lc.id IS NOT NULL", "no": "lc.id IS NULL"}),
@@ -452,6 +460,7 @@ _NOTE_FROM = """"Comments" m
     LEFT JOIN portfolios pf ON pf.id = c.portfolios_id
     LEFT JOIN contracts ct ON ct.id = pf.contract_id
     LEFT JOIN "CommentStatuses" cs ON cs.id = m.comment_status_id
+    LEFT JOIN "CommentStatuses" css ON css.id = m.comment_sub_status_id
     LEFT JOIN comment_reachability cr ON cr.id = m.comment_reachability_id
     LEFT JOIN "ContactMethods" km ON km.id = m."contactMethod_id"
 """
@@ -474,6 +483,7 @@ def _note_columns() -> tuple:
         Column("corrected", "Corrected", "مصحح", "bool",
                "EXISTS (SELECT 1 FROM note_revisions nr WHERE nr.comment_id = m.id AND nr.revision_no > 0)"),
         Column("status", "Status", "الحالة", "text", "cs.name"),
+        Column("sub_status", "Sub-status", "الحالة الفرعية", "text", "css.name"),
         Column("reachability", "Reachability", "الوصول", "text", "cr.name"),
         Column("contact_method", "Contact method", "طريقة الاتصال", "text", "km.name"),
         Column("contact_number", "Number contacted", "الرقم المتصل به", "text", 'm."contactNumber"'),
@@ -518,6 +528,8 @@ def _note_filters(team: bool) -> tuple:
         Ids("contract", "Contract", "العقد", "contract", "pf.contract_id", depends_on=("created",)),
         Ids("portfolio", "Portfolio", "المحفظة", "portfolio", "c.portfolios_id", depends_on=deps),
         Ids("status", "Status", "الحالة", "comment_status", "m.comment_status_id", depends_on=deps),
+        Ids("sub_status", "Sub-status", "الحالة الفرعية", "comment_sub_status", "m.comment_sub_status_id",
+            depends_on=deps + ("status",)),
         Ids("reachability", "Reachability", "الوصول", "note_reachability", "m.comment_reachability_id",
             depends_on=("created",)),
         Ids("contact_method", "Contact method", "طريقة الاتصال", "contact_method", 'm."contactMethod_id"',
@@ -542,6 +554,7 @@ def _note_sorts(team: bool) -> tuple:
         Sort("account_number", "Account number", "رقم الحساب", 'c."accountNumber"'),
         Sort("customer_name", "Customer", "اسم العميل", "c.name"),
         Sort("status", "Status", "الحالة", "cs.name"),
+        Sort("sub_status", "Sub-status", "الحالة الفرعية", "css.name"),
         Sort("callback_at", "Next contact", "موعد التواصل التالي", "m.next_contact_date"),
     ]
     if team:

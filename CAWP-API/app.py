@@ -1609,7 +1609,12 @@ def update_clint(id):
             return jsonify( {"message": "العميل غير موجود","status":False , "error": "role not found"}),201
         
         data = request.get_json()
-        clint.name = data['name'] if 'name' in data else clint.name  
+        if 'user_id' in data and str(data['user_id']) != str(clint.user_id):
+            # the owner never changes while the case has an open call (services/calling/guards.py)
+            from services.calling import guards as call_guards
+            if call_guards.open_cases([clint.id]):
+                return jsonify(call_guards.reassign_refusal()), 409
+        clint.name = data['name'] if 'name' in data else clint.name
         clint.identityNumber = data['identityNumber'] if 'identityNumber' in data else clint.identityNumber
         clint.accountNumber = data['accountNumber'] if 'accountNumber' in data else clint.accountNumber
         clint.amount = data['amount'] if 'amount' in data else clint.amount
@@ -1890,6 +1895,9 @@ def createComment():
         # 0068: refuse a deleted status or a sub-status as the main one; optional sub-status
         sub_status_id = data.pop('comment_sub_status_id', None) or None
         problem = comment_status_tree.legacy_note_problem(data.get('comment_status_id'), sub_status_id)
+        # status vs the case's contract and the chosen reachability (the wrap-up's checks)
+        problem = problem or comment_status_tree.legacy_note_case_problem(
+            data.get('comment_status_id'), data.get('comment_reachability_id'), data.get('clint_id'))
         if problem:
             return jsonify({"message": problem[1], "status": False, "error": problem[0]}), 201
         comment = Comments(**data)
@@ -3086,7 +3094,11 @@ def deletePortfolio(id):
         portfolio = Portfolios.query.get(id)
         if portfolio is None:
             return jsonify( {"message": "المحفظة غير موجودة","status":False , "error": "portfolio not found"}),404
-
+        # cases with an open call are never deleted (services/calling/guards.py)
+        from services.calling import guards as call_guards
+        open_call_cases = call_guards.open_cases_in_portfolio(portfolio.id)
+        if open_call_cases:
+            return jsonify(call_guards.delete_refusal(len(open_call_cases))), 409
 
         # Set clintArchive_id to None before deleting the records
         db.session.query(Clints).filter(Clints.portfolios_id == portfolio.id).update(
@@ -3126,7 +3138,11 @@ def deleteClint(id):
         clint = Clints.query.get(id)
         if clint is None:
             return jsonify( {"message": "العميل غير موجود","status":False , "error": "clint not found"}),201
-        #delete clintArchive 
+        # a case with an open call is never deleted (services/calling/guards.py)
+        from services.calling import guards as call_guards
+        if call_guards.open_cases([clint.id]):
+            return jsonify(call_guards.delete_refusal(1, single=True)), 409
+        #delete clintArchive
         clintArchive = ClintArchive.query.filter_by(clint_id=clint.id).all()
         for clintArchive_ in clintArchive:
             db.session.delete(clintArchive_)

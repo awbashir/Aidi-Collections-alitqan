@@ -49,6 +49,7 @@ export type ClientsListHashState = {
   contract: Id[] | undefined;
   portfolio: Id[] | undefined;
   commentStatus: Id[] | undefined;
+  commentSubStatus: Id[] | undefined;
   branch: Id[] | undefined;
   user: Id[] | undefined;
   attr: string | undefined;
@@ -94,6 +95,11 @@ export const clientsListHashSchema: HashSchema<ClientsListHashState> = {
     codec: hashCodec.idList(),
     default: undefined,
   },
+  commentSubStatus: {
+    key: "substatus",
+    codec: hashCodec.idList(),
+    default: undefined,
+  },
   branch: { key: "branch", codec: hashCodec.idList(), default: undefined },
   user: { key: "user", codec: hashCodec.idList(), default: undefined },
   attr: {
@@ -116,6 +122,7 @@ const FILTER_KEYS = {
   contract: "customeFilterContractValue",
   portfolio: "customeFilterPortfoliosValue",
   commentStatus: "customeFilterCommentStatusValue",
+  commentSubStatus: "customeFilterCommentSubStatusValue",
   branch: "customeFilterBranchesValue",
   user: "customeFilterUserValue",
   attr: "customeFilterAttributeValue",

@@ -10,6 +10,7 @@ At least one criterion is required. The filter keys are the clients list's own p
 
     customeFilterContractValue[]    customeFilterPortfoliosValue[]   customeFilterUserValue[]
     customeFilterCommentStatusValue[] (or customeFilterStatusesValue)  customeFilterBranchesValue[]
+    customeFilterCommentSubStatusValue[] (the latest note's sub-status, 0068)
     customeFilterAttributeValue     customeFilterPortfolioCreateAt{,From,To}Value
     filterField / filterOperator / filterFieldType / filterValue / filterValue[]   (the grid filter)
 
@@ -51,6 +52,7 @@ UUID_LIST_KEYS = {
     "customeFilterUserValue[]": "users",
     "customeFilterCommentStatusValue[]": "comment_statuses",
     "customeFilterStatusesValue": "comment_statuses_alt",
+    "customeFilterCommentSubStatusValue[]": "comment_sub_statuses",
     "customeFilterBranchesValue[]": "branches",
 }
 DATE_KEYS = ("customeFilterPortfolioCreateAtValue", "customeFilterPortfolioCreateAtFromValue",
@@ -241,9 +243,13 @@ def definition_sql(pool: dict, prefix: str = "pd") -> tuple[str, str, dict]:
         where.append(f"c.user_id = ANY({ids('f_users', f['customeFilterUserValue[]'])})")
     statuses = [v for v in (f.get("customeFilterCommentStatusValue[]") or f.get("customeFilterStatusesValue") or [])
                 if v and v != "0"]
-    if statuses:
+    subs = f.get("customeFilterCommentSubStatusValue[]") or []
+    if statuses or subs:
         joins.append('LEFT JOIN "Comments" lc ON lc.id = c.last_comment_id')
+    if statuses:
         where.append(f"lc.comment_status_id = ANY({ids('f_statuses', statuses)})")
+    if subs:
+        where.append(f"lc.comment_sub_status_id = ANY({ids('f_sub_statuses', subs)})")
     if f.get("customeFilterPortfoliosValue[]"):
         where.append(f"c.portfolios_id = ANY({ids('f_portfolios', f['customeFilterPortfoliosValue[]'])})")
     if f.get("customeFilterBranchesValue[]"):

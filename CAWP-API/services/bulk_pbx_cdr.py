@@ -347,6 +347,7 @@ def _details(rec: dict) -> dict:
 # =========================================================================== the kind
 class PbxCdrImportKind(BulkKind):
     key = "pbx_cdr_import"
+    call_reservation_guard = False   # PBX evidence only: never blocked by an open call
     label_en, label_ar = "Import PBX call records (reviewed)", "استيراد سجلات مكالمات المقسم (مراجَع)"
     permissions = IMPORT_KEYS
     sources = ("spreadsheet",)

@@ -89,9 +89,64 @@ export function backPathFromState(state: unknown): string | null {
     return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') ? path : null
 }
 
+/* ---- The list's order, for the case screen's previous / next (caseListNav.ts) ---- */
+
+const STORE_PREFIX = 'cawp:caseList:'
+const MAX_IDS = 1000
+const live = new Map<symbol, string[]>()
+
+const clean = (ids: unknown[]): string[] => {
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const raw of ids) {
+        if (raw === undefined || raw === null || raw === '') continue
+        const id = String(raw)
+        if (!seen.has(id)) {
+            seen.add(id)
+            out.push(id)
+        }
+    }
+    return out
+}
+
+/** A list shows these rows (in order); returns the unregister. */
+export function registerListRows(ids: unknown[]): () => void {
+    const token = Symbol('caseListRows')
+    live.set(token, clean(ids))
+    return () => {
+        live.delete(token)
+    }
+}
+
+/** A row of a registered list is being opened from `from` (the list URL): keep its page's order. */
+export function rememberListOrder(from: string, caseId: string): void {
+    const id = String(caseId)
+    for (const ids of Array.from(live.values()).reverse()) {
+        if (!ids.includes(id)) continue
+        try {
+            sessionStorage.setItem(STORE_PREFIX + from, JSON.stringify(ids.slice(0, MAX_IDS)))
+        } catch {
+            /* storage full or blocked: no prev/next, nothing else changes */
+        }
+        return
+    }
+}
+
+export function listOrder(from: string | null): string[] | null {
+    if (!from) return null
+    try {
+        const raw = sessionStorage.getItem(STORE_PREFIX + from)
+        const ids = raw ? (JSON.parse(raw) as unknown) : null
+        return Array.isArray(ids) ? clean(ids) : null
+    } catch {
+        return null
+    }
+}
+
 /**
  * Open a case: in a new tab when the event asks for one, otherwise in this
- * tab with `state.from` set to the current list URL.
+ * tab with `state.from` set to the current list URL (and the order of the
+ * list's page remembered under it, for previous / next).
  */
 export function openCaseInApp(
     navigate: NavigateFunction,
@@ -104,5 +159,7 @@ export function openCaseInApp(
         return
     }
     saveListScrollNow()
-    navigate(url, { state: { from: currentListPath() } })
+    const from = currentListPath()
+    rememberListOrder(from, String(caseId))
+    navigate(url, { state: { from } })
 }

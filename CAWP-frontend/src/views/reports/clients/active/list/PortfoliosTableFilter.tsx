@@ -19,6 +19,7 @@ import {
   apiGetBranches,
 } from "@/services/CollectionsService";
 import MyFilter from "@/components/shared/myComponents/filter";
+import SubStatusFilter from "@/components/shared/myComponents/subStatusFilter";
 import MyField from "@/components/shared/myComponents/field";
 import FilterAmount from "@/components/shared/myComponents/filterAmount";
 import Button from "@/components/ui/Button";
@@ -78,6 +79,8 @@ const PortfoliosTableFilter = () => {
   const [selectedPortfolios_, setSelectedPortfolios_] = useState();
   const [selectedReachability_, setSelectedReachability_] = useState();
   const [selectedCommentStatus_, setSelectedCommentStatus_] = useState();
+  const [selectedCommentSubStatus_, setSelectedCommentSubStatus_] =
+    useState<Array<{ id?: string }>>();
   const [selectedUsers_, setSelectedUsers_] = useState();
   const [selectedAccountNumber_, setSelectedAccountNumber_] = useState();
   const [selectedArchiveBy_, setSelectedArchiveBy_] = useState();
@@ -160,6 +163,7 @@ const PortfoliosTableFilter = () => {
   const [filteredComment_status, setFilteredComment_status] = useState([]);
   useEffect(() => {
     setSelectedCommentStatus_([]);
+    setSelectedCommentSubStatus_([]);
     if (selectedReachability_?.length > 0) {
       const commentstatus_ = comment_status.filter((status) =>
         selectedReachability_.some(
@@ -250,6 +254,12 @@ const PortfoliosTableFilter = () => {
         ),
         selectedCommentStatus_Jkey: "comment_status.id",
         selectedCommentStatus_Type: "string",
+
+        selectedCommentSubStatus_Qkey: selectedCommentSubStatus_?.map(
+          (status) => status.id
+        ),
+        selectedCommentSubStatus_Jkey: "comment_sub_status.id",
+        selectedCommentSubStatus_Type: "string",
 
         //-----------------
       })
@@ -354,6 +364,13 @@ const PortfoliosTableFilter = () => {
                       isMulti={true}
                     />
                   </div>
+                  <div>
+                    <SubStatusFilter
+                      statuses={comment_status}
+                      selectedMain={selectedCommentStatus_}
+                      filter={setSelectedCommentSubStatus_}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="rounded-lg border border-gray-300 p-5 dark:border-night-border">
@@ -405,6 +422,7 @@ const PortfoliosTableFilter = () => {
                   setSelectedUsers_([]);
                   setSelectedAccountNumber_([]);
                   setSelectedCommentStatus_([]);
+                  setSelectedCommentSubStatus_([]);
                   setSelectedResons_([]);
                   setSelectedArchiveBy_([]);
                   setSelectedContracts_([]);

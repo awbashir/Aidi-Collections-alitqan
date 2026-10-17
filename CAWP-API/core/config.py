@@ -97,7 +97,7 @@ class Config:
     # CDR read then uses asteriskcdrdb.cdr only instead of failing on the missing database.
     CDR_CALL_CENTER = _bool("CDR_CALL_CENTER", True)
 
-    # --- Call recordings (SSH/SFTP on the Asterisk box) ---
+    # --- Call recordings (SSH/SFTP or HTTP from the Asterisk box) ---
     # Only paths under RECORDINGS_ROOT may be fetched (review S1: the old code
     # interpolated the query string into `ssh.exec_command(f"cat {path}")` as root).
     RECORDINGS_ROOT = os.getenv("RECORDINGS_ROOT", "/var/spool/asterisk/monitor/")
@@ -106,6 +106,14 @@ class Config:
     RECORDINGS_SSH_PASSWORD = os.getenv("RECORDINGS_SSH_PASSWORD", "")
     RECORDINGS_SSH_KEY = os.getenv("RECORDINGS_SSH_KEY", "/root/.ssh/id_rsa")
     RECORDINGS_SSH_TIMEOUT = _int("RECORDINGS_SSH_TIMEOUT", 10)
+    # RECORDINGS_READER=http (services/calling_cdr.read_recording): the read-only file server on the
+    # PBX (deploy/README.md, Apache on 10.0.40.7:8091, IP + X-CAWP-Token). The reader itself reads
+    # these at call time; they are listed here for reference.
+    RECORDINGS_READER = (os.getenv("RECORDINGS_READER") or "sftp").strip().lower()
+    RECORDINGS_HTTP_BASE = os.getenv("RECORDINGS_HTTP_BASE", "")
+    RECORDINGS_HTTP_TOKEN = os.getenv("RECORDINGS_HTTP_TOKEN", "")
+    RECORDINGS_HTTP_TIMEOUT = _int("RECORDINGS_HTTP_TIMEOUT", 15)
+    RECORDINGS_HTTP_MAX_MB = _int("RECORDINGS_HTTP_MAX_MB", 200)
 
     # --- Jobs ---
     JOB_WORKERS = _int("JOB_WORKERS", 4)
