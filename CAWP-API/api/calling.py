@@ -10,6 +10,10 @@ Everything is limited to the caller's case scope; out-of-scope ids answer 404.
 My calls and the call log                                  permission
   GET  /v2/calls                     scoped call log        calls
   GET  /v2/calls/mine                my calls               calls | calls_make
+      both lists (2026-10-19): ?number= (client number, last 9 digits; needs clints_details) and
+      items[].recording {has_recording, file, url} with a recording key + recordings_status
+  GET  /v2/calls/export              the call log as XLSX, same filters + scope, audited   calls
+  GET  /v2/calls/mine/export         my calls as XLSX, same filters, audited     calls | calls_make
   GET  /v2/calls/<id>                detail + evidence      calls | calls_make
   GET  /v2/cases/<case_id>/calls     a case's calls         calls | calls_make
   POST /v2/calls/manual              log a manual call + wrap-up           calls
@@ -89,6 +93,48 @@ def call_log():
 def my_calls():
     page, size, offset = page_args()
     return ok(queries.my_calls(request.args, page, size, offset))
+
+
+def _export(kind: str):
+    """The list as XLSX (services/calling/call_log_export.py), audited `calls.export`."""
+    import io
+    import shutil
+    import tempfile
+
+    from flask import send_file
+
+    from core import audit
+    from extensions import db
+    from services.calling import call_log_export
+    args = request.args.to_dict()
+    tmp = tempfile.mkdtemp(prefix="calls-export-")
+    try:
+        path, name, count = call_log_export.export(kind, args, tmp)
+        with open(path, "rb") as f:
+            payload = f.read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    audit.record("calls.export", "call_log", None, after={"kind": kind, "filters": args, "rows": count})
+    db.session.commit()
+    resp = send_file(io.BytesIO(payload), as_attachment=True, download_name=name, max_age=0,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@bp.get("/v2/calls/export")
+@jwt_required()
+@permission_required(CALLS)
+def call_log_export():
+    return _export("team")
+
+
+@bp.get("/v2/calls/mine/export")
+@jwt_required()
+@permission_required(CALLS, CALLS_MAKE)
+def my_calls_export():
+    return _export("mine")
 
 
 @bp.get("/v2/calls/<uuid:attempt_id>")

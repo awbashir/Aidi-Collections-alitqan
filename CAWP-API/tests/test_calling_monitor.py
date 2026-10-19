@@ -368,3 +368,229 @@ def test_calls_endpoint_pages_newest_first_scoped_with_recording(mon_app, pgc, m
         assert client.get(url, query_string={"from": "2026-10-14", **bad}, headers=token(mon_app, CL.super)).status_code == 422
     beyond = client.get(url, query_string={"from": "2026-10-14", "page": 9}, headers=token(mon_app, CL.super)).get_json()["data"]
     assert beyond["items"] == [] and beyond["total"] == 5
+
+
+# --------------------------------------------------------------------------- monfix (2026-10-19)
+# Since the PBX CDR fix of 2026-10-17 one click-to-call writes two CDR rows (uniqueid/linkedid
+# cawp-<attempt>, userfield cawp:<attempt>): the Dial to the trunk (billsec counted from when the
+# AGENT's browser answered) and a post-dial Hangup row about the agent's own leg marked ANSWERED.
+def c2c_rows(ext, aid, at, *, disposition="NO ANSWER", billsec=30, duration=30, number="+966538394770"):
+    common = {"uniqueid": f"cawp-{aid}", "linkedid": f"cawp-{aid}", "userfield": f"cawp:{aid}",
+              "dcontext": "collections-human-outbound", "src": "+966125148577", "dst": number,
+              "recordingfile": f"2026/10/18/cawp-{aid}.wav"}
+    return [{**common, "calldate": at, "channel": f"PJSIP/{ext}-000030ec", "dstchannel": "SIP/ITC_SIP_Trunk-00003157",
+             "lastapp": "Dial", "disposition": disposition, "duration": duration, "billsec": billsec},
+            {**common, "calldate": at + dt.timedelta(seconds=duration), "channel": f"PJSIP/{ext}-000030ec",
+             "dstchannel": "", "lastapp": "Hangup", "disposition": "ANSWERED", "duration": 0, "billsec": 0}]
+
+
+def attempt(pgc, user, ext, aid, at, *, dialing=0.5, bridged=None, ended=30.4):
+    """An ended click-to-call attempt dispatched at `at` (Riyadh wall clock); offsets in seconds."""
+    from core import riyadh
+    t0 = at.replace(tzinfo=riyadh.RIYADH)
+    off = lambda s: None if s is None else t0 + dt.timedelta(seconds=s)  # noqa: E731
+    run(pgc, """INSERT INTO call_attempts (id, mode, state, case_id, collector_user_id, created_by, extension, created_at,
+                    dispatched_at, agent_answered_at, customer_dialing_at, customer_answered_at, bridged_at, ended_at,
+                    pbx_channel_id)
+                VALUES (%s, 'click_to_call', 'ended', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        aid, str(uuid.uuid4()), user, user, ext, t0, t0, off(0.4), off(dialing), off(bridged), off(bridged), off(ended),
+        f"cawp-{aid}")
+
+
+def test_click_to_call_result_comes_from_the_attempt_not_the_post_dial_row(mon_app, pgc):
+    member = new_user(pgc)
+    ext = fresh_ext(pgc, "7")
+    own(pgc, member, ext)
+    at = lambda m: dt.datetime(2026, 10, 18, 9, m)  # noqa: E731
+    na, ok, long_, lost, gone = (str(uuid.uuid4()) for _ in range(5))
+    # not bridged: Dial NO ANSWER 30/30 + Hangup ANSWERED 0/0  -> no answer, talk 0, ring 30
+    attempt(pgc, member, ext, na, at(1), dialing=0.4, ended=30.4)
+    # bridged after 12 s of customer ringing, 15 s conversation; the Dial row says ANSWERED 27/27
+    attempt(pgc, member, ext, ok, at(2), dialing=0.5, bridged=12.5, ended=27.6)
+    # bridged, 150 s conversation (Dial row billsec 170 would wrongly count > 2 min)
+    attempt(pgc, member, ext, long_, at(3), dialing=0.5, bridged=20.5, ended=170.5)
+    # the PBX says ANSWERED but the app never saw the bridge: not answered, result unknown
+    attempt(pgc, member, ext, lost, at(4), dialing=0.5, ended=40.5)
+    rows = (c2c_rows(ext, na, at(1)) + c2c_rows(ext, ok, at(2), disposition="ANSWERED", billsec=27, duration=27)
+            + c2c_rows(ext, long_, at(3), disposition="ANSWERED", billsec=170, duration=170)
+            + c2c_rows(ext, lost, at(4), disposition="ANSWERED", billsec=40, duration=40)
+            # no call_attempts row: the CDR rule (the Dial row), the post-dial ANSWERED row ignored
+            + c2c_rows(ext, gone, at(5)) + c2c_rows(ext, str(uuid.uuid4()), at(6), disposition="ANSWERED",
+                                                   billsec=45, duration=50))
+    from extensions import db
+    with mon_app.app_context():
+        st = monitor.stats({"from": "2026-10-18", "extension": ext}, user_id=CL.super, rows=rows)
+        detail = monitor.calls({"from": "2026-10-18", "extension": ext}, user_id=CL.super, rows=rows)
+        page = monitor.calls_page({"from": "2026-10-18", "extension": ext}, user_id=CL.super, rows=rows)
+        db.session.remove()
+    by = {c["call_id"]: c for c in detail["calls"]}
+    assert len(detail["calls"]) == 6                                          # two CDR rows -> one call
+    c = by[f"cawp-{na}"]
+    assert (c["answered"], c["result"], c["talk_seconds"], c["ring_seconds"]) == (False, "NO ANSWER", 0, 30)
+    assert c["recorded"] and c["recording"] == f"2026/10/18/cawp-{na}.wav" and c["number"] == "+966538394770"
+    c = by[f"cawp-{ok}"]
+    assert (c["answered"], c["result"], c["talk_seconds"], c["ring_seconds"]) == (True, "ANSWERED", 15, 12)
+    c = by[f"cawp-{long_}"]
+    assert (c["answered"], c["talk_seconds"], c["ring_seconds"]) == (True, 150, 20)
+    c = by[f"cawp-{lost}"]
+    assert (c["answered"], c["result"], c["talk_seconds"], c["ring_seconds"]) == (False, "", 0, 40)
+    c = by[f"cawp-{gone}"]
+    assert (c["answered"], c["result"], c["talk_seconds"], c["ring_seconds"]) == (False, "NO ANSWER", 0, 0)
+    fallback = next(c for c in detail["calls"] if c["at"] == at(6))
+    assert (fallback["answered"], fallback["result"], fallback["talk_seconds"], fallback["ring_seconds"]) == \
+        (True, "ANSWERED", 45, 5)
+    assert not any(c["result"] == "ANSWERED" and c["talk_seconds"] == 0 for c in detail["calls"])
+    # the drawer JSON: the same values, newest first
+    assert [i["call_id"] for i in page["items"]][-1] == f"cawp-{na}" and page["total"] == 6
+    assert {i["call_id"]: (i["answered"], i["talk_seconds"]) for i in page["items"]}[f"cawp-{ok}"] == (True, 15)
+    u = st["users"][0]
+    assert (u["outbound"], u["outbound_answered"], u["talk_seconds"]) == (6, 3, 15 + 150 + 45)
+    assert (u["talk_over_60"], u["talk_over_120"], u["talk_over_180"]) == (1, 1, 0)
+    assert st["totals"]["outbound_answered"] == 3 and st["totals"]["talk_seconds"] == 210
+
+
+def test_dial_pad_post_dial_rows_and_ring_group(mon_app, pgc):
+    member, other = new_user(pgc), new_user(pgc)
+    e1, e2 = fresh_ext(pgc, "6"), fresh_ext(pgc, "5")
+    own(pgc, member, e1)
+    own(pgc, other, e2)
+    at = lambda m, s=0: dt.datetime(2026, 10, 18, 10, m, s)  # noqa: E731
+    out = {"dcontext": "from-internal", "src": "+966125123082"}
+    rows = [
+        # busy: Dial BUSY + the Busy() row with an empty dstchannel
+        {**out, "calldate": at(1), "channel": f"PJSIP/{e1}-1", "dstchannel": "SIP/ITC_SIP_Trunk-1", "lastapp": "Dial",
+         "disposition": "BUSY", "duration": 4, "billsec": 0, "linkedid": "P1", "dst": "0501112222"},
+        {**out, "calldate": at(1, 4), "channel": f"PJSIP/{e1}-1", "dstchannel": "", "lastapp": "Busy",
+         "disposition": "BUSY", "duration": 20, "billsec": 0, "linkedid": "P1", "dst": "0501112222"},
+        # congestion before any dial (no Dial row): the result is the Congestion row's
+        {**out, "calldate": at(2), "channel": f"PJSIP/{e1}-2", "dstchannel": "", "lastapp": "Dial",
+         "disposition": "CONGESTION", "duration": 0, "billsec": 0, "linkedid": "P2", "dst": "104"},
+        # no answer: Dial NO ANSWER 74/0 + a Playback row
+        {**out, "calldate": at(3), "channel": f"PJSIP/{e1}-3", "dstchannel": "SIP/ITC_SIP_Trunk-3", "lastapp": "Dial",
+         "disposition": "NO ANSWER", "duration": 74, "billsec": 0, "linkedid": "P3", "dst": "0506100893"},
+        {**out, "calldate": at(4, 15), "channel": f"PJSIP/{e1}-3", "dstchannel": "", "lastapp": "Playback",
+         "disposition": "NO ANSWER", "duration": 1, "billsec": 0, "linkedid": "P3", "dst": "0506100893"},
+        # answered: Dial ANSWERED 95/80 + a post-dial Hangup ANSWERED 0/0
+        {**out, "calldate": at(5), "channel": f"PJSIP/{e1}-4", "dstchannel": "SIP/ITC_SIP_Trunk-4", "lastapp": "Dial",
+         "disposition": "ANSWERED", "duration": 95, "billsec": 80, "linkedid": "P4", "dst": "0507778888"},
+        {**out, "calldate": at(6, 35), "channel": f"PJSIP/{e1}-4", "dstchannel": "", "lastapp": "Hangup",
+         "disposition": "ANSWERED", "duration": 0, "billsec": 0, "linkedid": "P4", "dst": "0507778888"},
+        # only a post-dial ANSWERED row (no Dial row): never answered, result unknown
+        {**out, "calldate": at(7), "channel": f"PJSIP/{e1}-5", "dstchannel": "", "lastapp": "Hangup",
+         "disposition": "ANSWERED", "duration": 0, "billsec": 0, "linkedid": "P5", "dst": "0507778889"},
+        # inbound ring group: e2 answers (the answer macro row of e2's channel is not an outbound call), e1 misses
+        {"calldate": at(8), "channel": f"PJSIP/{e2}-6", "dstchannel": "Local/FMGL-104-105-106-107@from-internal-1;1",
+         "lastapp": "ExecIf", "dcontext": "macro-dial", "disposition": "ANSWERED", "duration": 0, "billsec": 0,
+         "linkedid": "R1", "src": "0501442230", "dst": "s"},
+        {"calldate": at(8), "channel": "SIP/ITC_SIP_Trunk_Backup-7", "dstchannel": f"PJSIP/{e2}-6", "lastapp": "Dial",
+         "dcontext": "ext-group", "disposition": "ANSWERED", "duration": 139, "billsec": 130, "linkedid": "R1",
+         "src": "0501442230", "dst": "600"},
+        {"calldate": at(8), "channel": "Local/FMGL-104-105-106-107@from-internal-1;2", "dstchannel": f"PJSIP/{e1}-8",
+         "lastapp": "Dial", "dcontext": "from-internal", "disposition": "NO ANSWER", "duration": 9, "billsec": 0,
+         "linkedid": "R1", "src": "0501442230", "dst": e1},
+    ]
+    from extensions import db
+    with mon_app.app_context():
+        st = monitor.stats({"from": "2026-10-18"}, user_id=CL.super, rows=rows)
+        detail = monitor.calls({"from": "2026-10-18"}, user_id=CL.super, rows=rows)
+        db.session.remove()
+    by = {(c["call_id"], c["extension"], c["direction"]): c for c in detail["calls"]}
+    pick = lambda k: tuple(by[k][f] for f in ("answered", "result", "talk_seconds", "ring_seconds"))  # noqa: E731
+    assert pick(("P1", e1, "outbound")) == (False, "BUSY", 0, 4)
+    assert pick(("P2", e1, "outbound")) == (False, "CONGESTION", 0, 0)
+    assert pick(("P3", e1, "outbound")) == (False, "NO ANSWER", 0, 74)
+    assert pick(("P4", e1, "outbound")) == (True, "ANSWERED", 80, 15)
+    assert pick(("P5", e1, "outbound")) == (False, "", 0, 0)
+    assert pick(("R1", e2, "inbound")) == (True, "ANSWERED", 130, 9)
+    assert pick(("R1", e1, "inbound")) == (False, "NO ANSWER", 0, 9)
+    assert ("R1", e2, "outbound") not in by and len(detail["calls"]) == 7
+    users = {u["extension"]: u for u in st["users"]}
+    assert (users[e1]["outbound"], users[e1]["outbound_answered"], users[e1]["inbound_missed"]) == (5, 1, 1)
+    assert users[e1]["talk_seconds"] == 80 and users[e1]["talk_over_60"] == 1
+    assert (users[e2]["outbound"], users[e2]["inbound_answered"], users[e2]["talk_seconds"]) == (0, 1, 130)
+    assert (users[e2]["talk_over_60"], users[e2]["talk_over_120"]) == (1, 1)
+
+
+def test_exports_use_the_corrected_click_to_call_classification(mon_app, pgc, monkeypatch):
+    import openpyxl
+    member = new_user(pgc)
+    ext = fresh_ext(pgc, "8")
+    own(pgc, member, ext)
+    at = lambda m: dt.datetime(2026, 10, 18, 11, m)  # noqa: E731
+    na, ok = str(uuid.uuid4()), str(uuid.uuid4())
+    attempt(pgc, member, ext, na, at(1))
+    attempt(pgc, member, ext, ok, at(2), bridged=10.5, ended=75.5)
+    rows = c2c_rows(ext, na, at(1)) + c2c_rows(ext, ok, at(2), disposition="ANSWERED", billsec=75, duration=75)
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi, ext=None: rows)
+    client = mon_app.test_client()
+    q = {"from": "2026-10-18", "extension": ext}
+    r = client.get("/v2/calling/monitor/calls/export", query_string=q, headers=token(mon_app, CL.super))
+    assert r.status_code == 200
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).worksheets[0]
+    head = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
+    col = {h: head.index(h) + 1 for h in ("النتيجة", "مدة الرنين (ثانية)", "مدة المحادثة (ثانية)", "معرف المكالمة",
+                                         monitor.OVER_AR_DETAIL[0])}
+    got = {ws.cell(i, col["معرف المكالمة"]).value: (ws.cell(i, col["النتيجة"]).value, ws.cell(i, col["مدة الرنين (ثانية)"]).value,
+                                                    ws.cell(i, col["مدة المحادثة (ثانية)"]).value,
+                                                    ws.cell(i, col[monitor.OVER_AR_DETAIL[0]]).value)
+           for i in range(2, ws.max_row + 1)}
+    assert got == {f"cawp-{na}": ("لم يتم الرد", 30, 0, "لا"), f"cawp-{ok}": ("تم الرد", 10, 65, "نعم")}
+    r = client.get("/v2/calling/monitor/stats/export", query_string=q, headers=token(mon_app, CL.super))
+    users = openpyxl.load_workbook(io.BytesIO(r.data)).worksheets[0]
+    # outbound 2, answered 1, talk 65 s (00:01:05), > 1 min 1, > 2 min 0
+    assert [users.cell(2, c).value for c in (4, 5, 9, 10, 11, 12)] == [2, 1, "00:01:05", 65, 1, 0]
+
+
+# --------------------------------------------------------------------------- search by number (2026-10-19)
+def test_calls_search_by_client_number_is_normalised(mon_app, pgc, monkeypatch):
+    member, other, sup, e1, e2, n_mine, n_theirs, rows = detail_world(pgc)
+    seen = []
+
+    def fake_rows(lo, hi, ext=None, number=None):
+        seen.append((ext, number))
+        return rows
+    monkeypatch.setattr(monitor, "_cdr_rows", fake_rows)
+    client = mon_app.test_client()
+    url = "/v2/calling/monitor/calls"
+    # n_mine is 055xxxxxxx: D1 (outbound to it) and D3 (inbound from it, two agents)
+    for typed in (n_mine, "966" + n_mine[1:], "+966" + n_mine[1:], "+966 " + n_mine[1:4] + " " + n_mine[4:]):
+        d = client.get(url, query_string={"from": "2026-10-14", "number": typed},
+                       headers=token(mon_app, CL.super)).get_json()["data"]
+        assert {(c["call_id"], c["extension"]) for c in d["items"]} == {("D1", e1), ("D3", e1), ("D3", e2)}, typed
+        assert d["number"] == n_mine[1:] and d["total"] == 3
+        assert seen[-1] == (None, n_mine[1:])                                     # the CDR query is narrowed
+    # the user's drawer: the same search within one extension
+    d = client.get(url, query_string={"from": "2026-10-14", "number": n_mine, "extension": e1},
+                   headers=token(mon_app, CL.super)).get_json()["data"]
+    assert [c["call_id"] for c in d["items"]] == ["D3", "D1"] and seen[-1] == (e1, n_mine[1:])
+    # a supervisor: only the team's extensions; a partial number; internal calls never match
+    d = client.get(url, query_string={"from": "2026-10-14", "number": n_theirs},
+                   headers=token(mon_app, sup)).get_json()["data"]
+    assert d["items"] == [] and d["total"] == 0
+    d = client.get(url, query_string={"from": "2026-10-14", "number": e2}, headers=token(mon_app, CL.super))
+    assert d.status_code == 200 and all(c["direction"] != "internal" for c in d.get_json()["data"]["items"])
+    d = client.get(url, query_string={"from": "2026-10-14", "number": n_mine[-5:]},
+                   headers=token(mon_app, CL.super)).get_json()["data"]
+    assert {c["call_id"] for c in d["items"]} == {"D1", "D3"}
+    bad = client.get(url, query_string={"from": "2026-10-14", "number": "12"}, headers=token(mon_app, CL.super))
+    assert bad.status_code == 422 and bad.get_json()["error"] == {"number": "invalid"}
+
+
+def test_calls_export_filters_by_number(mon_app, pgc, monkeypatch):
+    import openpyxl
+    member, other, sup, e1, e2, n_mine, n_theirs, rows = detail_world(pgc)
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi, ext=None, number=None: rows)
+    r = mon_app.test_client().get("/v2/calling/monitor/calls/export",
+                                  query_string={"from": "2026-10-14", "number": "+966" + n_theirs[1:]},
+                                  headers=token(mon_app, CL.super))
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.data))
+    ws = wb.worksheets[0]
+    assert [(ws.cell(i, ws.max_column).value, ws.cell(i, 5).value) for i in range(2, ws.max_row + 1)] == \
+        [("D2", n_theirs)]
+    info = {wb.worksheets[1].cell(i, 1).value: wb.worksheets[1].cell(i, 2).value
+            for i in range(2, wb.worksheets[1].max_row + 1)}
+    assert info["بحث برقم العميل (آخر 9 أرقام)"] == n_theirs[1:]
+    after = run_q(pgc, "SELECT after FROM audit_events WHERE action = 'call_monitor.export' AND actor_user_id = %s "
+                       "ORDER BY id DESC LIMIT 1", CL.super)
+    assert after["number"] == "+966" + n_theirs[1:]

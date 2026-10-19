@@ -234,6 +234,61 @@ def test_supervisor_live_view(cp_app, client, auth, world, pgc):
     assert d["poll_after_ms"] == 2000
 
 
+# --------------------------------------------------------------------------- note status filters (2026-10-19)
+def test_create_and_edit_with_note_status_filters(client, auth, world, pgc):
+    from test_calling_campaign_pool import note, note_status
+    w = world
+    M, S = "customeFilterCommentStatusValue[]", "customeFilterCommentSubStatusValue[]"
+    oc = q1(pgc, "SELECT contract_id::text FROM portfolios WHERE id = %s", w.other_portfolio)[0]
+    main = note_status(pgc, "cpa main")
+    s1, s2 = note_status(pgc, "cpa sub1", parent=main), note_status(pgc, "cpa sub2", parent=main)
+    own = note_status(pgc, "cpa own", contract=w.contract)
+    foreign = note_status(pgc, "cpa foreign", contract=oc)
+    hit, miss, plain = (case_for(pgc, w.c1, w.portfolio, last_digit=d)[0] for d in (4, 5, 6))
+    case_for(pgc, w.c1, w.portfolio, last_digit=7)                       # no note at all
+    note(pgc, hit, w.c1, main, s1)
+    note(pgc, miss, w.c1, main, s2)
+    note(pgc, plain, w.c1, own)
+
+    # the form's scope: the contracts my cases are in (SuperAdmin: every contract)
+    r = client.get("/v2/campaigns/pool-scope", headers=auth(w.supervisor))
+    assert r.status_code == 200 and r.get_json()["data"] == {"contract_ids": [w.contract]}
+    assert client.get("/v2/campaigns/pool-scope", headers=auth(CP.super)).get_json()["data"] == {"contract_ids": None}
+    assert client.get("/v2/campaigns/pool-scope", headers=auth(w.c1)).status_code == 403
+
+    st, body = create_campaign(client, auth, w.supervisor, pool={"contract_ids": [w.contract], "filter": {M: [foreign]}})
+    assert st == 422 and body["error"] == {f"pool.filter.{M}": "status_not_for_contract"}
+    st, body = create_campaign(client, auth, w.supervisor, pool={"contract_ids": [w.contract], "filter": {S: [main]}})
+    assert st == 422 and body["error"] == {f"pool.filter.{S}": "not_a_sub_status"}
+    st, body = create_campaign(client, auth, w.supervisor, members=[w.c1],
+                               pool={"contract_ids": [w.contract], "filter": {M: [main], S: [s1]}})
+    assert st == 201, body
+    cid = body["data"]["id"]
+    w.fences.add(cid)
+    assert body["data"]["pool"]["filter"] == {M: [main], S: [s1]}
+    pool = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(w.supervisor)).get_json()["data"]
+    assert [i["case"]["id"] for i in pool["items"]] == [hit] and pool["summary"]["size"] == 1
+
+    # edit: the main status alone widens the pool to every case whose latest note has it
+    rev = revision(pgc, cid)
+    r = client.patch(f"/v2/campaigns/{cid}", headers=auth(w.supervisor, key()),
+                     json={"expected_revision": rev, "pool": {"contract_ids": [w.contract], "filter": {M: [main, own]}}})
+    assert r.status_code == 200, r.get_json()
+    pool = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(w.supervisor)).get_json()["data"]
+    assert sorted(i["case"]["id"] for i in pool["items"]) == sorted([hit, miss, plain])
+
+    # a status deleted after it was saved is kept by an edit, but cannot be added anew
+    run(pgc, 'UPDATE "CommentStatuses" SET deleted_at = now() WHERE id = ANY(%s::uuid[])', [own, s2])
+    r = client.patch(f"/v2/campaigns/{cid}", headers=auth(w.supervisor, key()),
+                     json={"expected_revision": revision(pgc, cid), "name": "renamed",
+                           "pool": {"contract_ids": [w.contract], "filter": {M: [main, own]}}})
+    assert r.status_code == 200, r.get_json()
+    r = client.patch(f"/v2/campaigns/{cid}", headers=auth(w.supervisor, key()),
+                     json={"expected_revision": revision(pgc, cid),
+                           "pool": {"contract_ids": [w.contract], "filter": {M: [main, own], S: [s2]}}})
+    assert r.status_code == 422 and r.get_json()["error"] == {f"pool.filter.{S}": "status_deleted"}
+
+
 # --------------------------------------------------------------------------- database guards
 def _raises(pgc, sql, *params, code):
     with pytest.raises(psycopg2.Error) as e:

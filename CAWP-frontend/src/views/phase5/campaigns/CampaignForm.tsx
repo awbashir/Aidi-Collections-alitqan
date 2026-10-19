@@ -8,18 +8,32 @@
  * filter). It is bounded by my current scope, and a case only ever goes to a member whose
  * own scope contains it. Settings: auto/manual next call, wrap-up delay, max attempts per
  * day, cooldown, readiness lease. Progressive only: there is no dial ratio.
+ *
+ * Client status (customer 2026-10-19): the case's latest note status and its sub-status as two
+ * dropdowns (`customeFilterCommentStatusValue[]` / `customeFilterCommentSubStatusValue[]`,
+ * ANDed like the clients list). Offered: the live general statuses plus those of the contracts
+ * the pool reaches within my scope (`GET /v2/campaigns/pool-scope`); the API checks the same.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { HiOutlineX } from 'react-icons/hi'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ActionDialog, { DialogField } from '@/components/v2/ActionDialog'
 import { Segmented } from '@/views/phase1/followUps/parts'
-import { campaignsApi, describeP5Error, lookups } from '@/services/v2'
-import type { Campaign, CampaignPool, CampaignSettings, Option, Translate } from '@/services/v2'
+import { campaignsApi, describeP5Error, isV2Error, lookups } from '@/services/v2'
+import type { Campaign, CampaignPool, CampaignSettings, CommentStatusOption, Option, Translate } from '@/services/v2'
 import { Notice } from '../parts'
-import { DEFAULT_SETTINGS } from './poolFilter'
+import PoolFilterChips, { usePoolNames } from './PoolFilterChips'
+import {
+    DEFAULT_SETTINGS,
+    STATUS_KEY,
+    SUB_STATUS_KEY,
+    poolStatusOptions,
+    poolSubStatusOptions,
+    pruneStatuses,
+    statusContracts,
+    takeStatuses,
+} from './poolFilter'
 
 const LIMITS: Record<Exclude<keyof CampaignSettings, 'next_mode'>, [number, number]> = {
     wrapup_delay_seconds: [0, 600],
@@ -46,6 +60,9 @@ type Draft = {
     contracts: string[]
     portfolios: string[]
     filter: Record<string, unknown>
+    /** the latest note's main statuses / sub-statuses (kept out of `filter`, merged by poolOf) */
+    statuses: string[]
+    subStatuses: string[]
     grid: { field: string; op: string; value: string }
     settings: CampaignSettings
     members: string[]
@@ -59,11 +76,14 @@ const draftFrom = (c: Campaign | null, filter?: Record<string, unknown>): Draft 
         value: f.filterValue === undefined || f.filterValue === null ? '' : String(f.filterValue),
     }
     GRID_KEYS.forEach((k) => delete f[k])
+    const { statuses, subStatuses, rest } = takeStatuses(f)
     return {
         name: c?.name || '',
         contracts: c?.pool.contract_ids || [],
         portfolios: c?.pool.portfolio_ids || [],
-        filter: f,
+        filter: rest,
+        statuses,
+        subStatuses,
         grid,
         settings: { ...DEFAULT_SETTINGS, ...(c?.settings || {}) },
         members: [],
@@ -72,6 +92,8 @@ const draftFrom = (c: Campaign | null, filter?: Record<string, unknown>): Draft 
 
 const poolOf = (d: Draft): CampaignPool => {
     const filter: Record<string, unknown> = { ...d.filter }
+    if (d.statuses.length) filter[STATUS_KEY] = d.statuses
+    if (d.subStatuses.length) filter[SUB_STATUS_KEY] = d.subStatuses
     if (d.grid.field && d.grid.op && d.grid.value.trim() !== '') {
         const type = GRID_FIELDS.find((g) => g.value === d.grid.field)?.type || 'string'
         filter.filterField = d.grid.field
@@ -82,7 +104,24 @@ const poolOf = (d: Draft): CampaignPool => {
     return { contract_ids: d.contracts, portfolio_ids: d.portfolios, filter }
 }
 
-const describe = (e: unknown, t: Translate) => describeP5Error(e, t)
+/** A refused note status reads as a sentence of its own; everything else as usual. */
+const describe = (e: unknown, t: Translate) => {
+    if (isV2Error(e) && e.detail && typeof e.detail === 'object') {
+        const hit = Object.entries(e.detail as Record<string, unknown>).find(([k]) =>
+            /^pool\.filter\.(customeFilterCommentStatusValue|customeFilterStatusesValue|customeFilterCommentSubStatusValue)/.test(k)
+        )
+        if (hit) {
+            const sub = hit[0].includes('SubStatus')
+            return String(
+                t(`p9.campaign.err.${String(hit[1])}`, {
+                    defaultValue: t('p9.campaign.err.generic'),
+                    field: t(sub ? 'p9.campaign.subStatus' : 'p9.campaign.status'),
+                })
+            )
+        }
+    }
+    return describeP5Error(e, t)
+}
 
 const useOptions = (load: () => Promise<Option[]>, active: boolean) => {
     const [opts, setOpts] = useState<{ options: Option[]; loading: boolean }>({ options: [], loading: true })
@@ -126,6 +165,20 @@ const CampaignForm = ({
     const contracts = useOptions(lookups.contracts, isOpen)
     const portfolios = useOptions(lookups.portfolios as () => Promise<Option[]>, isOpen)
     const users = useOptions(lookups.users, isOpen && !campaign)
+    const noteStatuses = useOptions(lookups.commentStatuses as () => Promise<Option[]>, isOpen)
+    const statusList = noteStatuses.options as CommentStatusOption[]
+    const names = usePoolNames(isOpen)
+    /* my scope's contracts: null = every contract (also while unknown: the API is the authority) */
+    const [scope, setScope] = useState<string[] | null>(null)
+    useEffect(() => {
+        if (!isOpen) return undefined
+        const ac = new AbortController()
+        campaignsApi
+            .poolScope(ac.signal)
+            .then((r) => setScope(r.contract_ids))
+            .catch(() => setScope(null))
+        return () => ac.abort()
+    }, [isOpen])
     const portfolioOptions = useMemo(
         () =>
             (portfolios.options as Array<Option & { contract_id?: string | null }>).filter(
@@ -133,6 +186,23 @@ const CampaignForm = ({
             ),
         [portfolios.options, d.contracts, d.portfolios]
     )
+    const portfolioContracts = portfolios.options as Array<Option & { contract_id?: string | null }>
+    const contractsFor = (x: Draft) => statusContracts(poolOf(x), portfolioContracts, scope)
+    /** a pool criterion changed: drop the statuses that no longer fit its contracts */
+    const setPool = (patch: Partial<Draft>) =>
+        setD((x) => {
+            const next = { ...x, ...patch }
+            return { ...next, ...pruneStatuses(statusList, contractsFor(next), next.statuses, next.subStatuses) }
+        })
+    const statusOptions = poolStatusOptions(statusList, contractsFor(d))
+    const subOptions = poolSubStatusOptions(statusList, d.statuses)
+    const statusLabel = (id: string) => {
+        const s = statusList.find((o) => o.value === id)
+        return s ? s.label : names[id] || String(t('p9.campaign.unknownStatus', { id: id.slice(0, 8) }))
+    }
+    const subLabel = (o: CommentStatusOption) =>
+        d.statuses.length > 1 && o.parent_id ? `${statusLabel(o.parent_id)} › ${o.label}` : o.label
+    const picked = (list: string[], label: (id: string) => string) => list.map((id) => ({ value: id, label: label(id) }))
     const gridType = GRID_FIELDS.find((g) => g.value === d.grid.field)?.type
     const settingsOk = (Object.keys(LIMITS) as Array<keyof typeof LIMITS>).every((k) => {
         const v = d.settings[k]
@@ -192,7 +262,7 @@ const CampaignForm = ({
                             isLoading={contracts.loading}
                             options={contracts.options}
                             value={contracts.options.filter((o) => d.contracts.includes(o.value))}
-                            onChange={(v) => setD({ ...d, contracts: ((v as Option[]) || []).map((o) => o.value) })}
+                            onChange={(v) => setPool({ contracts: ((v as Option[]) || []).map((o) => o.value) })}
                         />
                     </div>
                 </DialogField>
@@ -203,7 +273,52 @@ const CampaignForm = ({
                             isLoading={portfolios.loading}
                             options={portfolioOptions}
                             value={portfolios.options.filter((o) => d.portfolios.includes(o.value))}
-                            onChange={(v) => setD({ ...d, portfolios: ((v as Option[]) || []).map((o) => o.value) })}
+                            onChange={(v) => setPool({ portfolios: ((v as Option[]) || []).map((o) => o.value) })}
+                        />
+                    </div>
+                </DialogField>
+            </div>
+            <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2" data-testid="p9-campaign-statuses">
+                <DialogField label={t('p9.campaign.status')} hint={t('p9.campaign.statusHint')}>
+                    <div data-testid="p9-campaign-status">
+                        <Select
+                            {...multi}
+                            isLoading={noteStatuses.loading}
+                            placeholder={t('p9.campaign.statusPlaceholder')}
+                            noOptionsMessage={() => t('p9.campaign.noStatuses')}
+                            options={statusOptions}
+                            value={picked(d.statuses, statusLabel)}
+                            onChange={(v) => {
+                                const statuses = ((v as Option[]) || []).map((o) => o.value)
+                                /* the sub-statuses depend on the main choice: a removed main status takes its own with it */
+                                const subStatuses = statuses.length
+                                    ? d.subStatuses.filter((id) => {
+                                          const s = statusList.find((o) => o.value === id)
+                                          return !!s && !!s.parent_id && statuses.includes(s.parent_id)
+                                      })
+                                    : []
+                                setD({ ...d, statuses, subStatuses })
+                            }}
+                        />
+                    </div>
+                </DialogField>
+                <DialogField
+                    label={t('p9.campaign.subStatus')}
+                    hint={d.statuses.length || d.subStatuses.length ? t('p9.campaign.subHint') : t('p9.campaign.subNeedsMain')}
+                >
+                    <div data-testid="p9-campaign-sub-status">
+                        <Select
+                            {...multi}
+                            isLoading={noteStatuses.loading}
+                            isDisabled={d.statuses.length === 0 && d.subStatuses.length === 0}
+                            placeholder={t('p9.campaign.subPlaceholder')}
+                            noOptionsMessage={() => t('p9.campaign.noSubStatuses')}
+                            options={subOptions.map((o) => ({ value: o.value, label: subLabel(o) }))}
+                            value={picked(d.subStatuses, (id) => {
+                                const s = statusList.find((o) => o.value === id)
+                                return s ? subLabel(s) : statusLabel(id)
+                            })}
+                            onChange={(v) => setD({ ...d, subStatuses: ((v as Option[]) || []).map((o) => o.value) })}
                         />
                     </div>
                 </DialogField>
@@ -211,26 +326,15 @@ const CampaignForm = ({
             {Object.keys(d.filter).length > 0 && (
                 <div className="mb-3" data-testid="p5-cf-filter">
                     <div className="mb-1 text-[12.5px] font-extrabold text-navy-600 dark:text-gray-100">{t('p5.cf.listFilter')}</div>
-                    <div className="flex flex-wrap gap-2">
-                        {Object.entries(d.filter).map(([k, v]) => (
-                            <span key={k} className="inline-flex h-7 items-center gap-1 rounded-pill border border-azure-500 bg-azure-50 px-3 text-[12px] text-azure-600" data-key={k}>
-                                <span dir="ltr">
-                                    {t(`p5.cf.filterKey.${k.replace(/\[\]$/, '')}`, { defaultValue: k })}: {Array.isArray(v) ? t('p5.cf.nValues', { count: v.length }) : String(v)}
-                                </span>
-                                <button
-                                    type="button"
-                                    aria-label={String(t('p1.filter.clear'))}
-                                    onClick={() => {
-                                        const f = { ...d.filter }
-                                        delete f[k]
-                                        setD({ ...d, filter: f })
-                                    }}
-                                >
-                                    <HiOutlineX />
-                                </button>
-                            </span>
-                        ))}
-                    </div>
+                    <PoolFilterChips
+                        filter={d.filter}
+                        names={names}
+                        onRemove={(k) => {
+                            const f = { ...d.filter }
+                            delete f[k]
+                            setPool({ filter: f })
+                        }}
+                    />
                 </div>
             )}
             <div className="mb-1 text-[12.5px] font-extrabold text-navy-600 dark:text-gray-100">{t('p5.cf.columnFilter')}</div>

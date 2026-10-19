@@ -121,6 +121,8 @@ export type Call = {
     wrapup: CallWrapup | null
     wrapup_pending: boolean
     revision: number
+    /** Lists only (2026-10-19): from the call's tagged CDR rows; null without a recording key or when unknown. */
+    recording?: PbxRecording | null
 }
 
 export type CallEvidence = {
@@ -164,6 +166,8 @@ export type CallList = {
     page_size: number
     sort: '-time' | 'time'
     counts_by_state: Partial<Record<CallState, number>>
+    /** 2026-10-19 (log + mine): `unavailable` = the CDR could not be read (unknown, not "not recorded"). */
+    recordings_status?: 'available' | 'unavailable' | 'disabled' | 'no_key'
 }
 
 export type CallQuery = {
@@ -179,6 +183,8 @@ export type CallQuery = {
     wrapup?: 'pending' | 'done'
     from?: string
     to?: string
+    /** The client's number (normalised on the server: digits, the last 9); needs clints_details. */
+    number?: string
 }
 
 /* ------------------------------------------------------------------ live view (P1) */
@@ -508,6 +514,8 @@ export type MonitorCall = MonitorAgent & {
 export type MonitorCallsPage = Paged<MonitorCall> & {
     scope: MonitorScope
     extension: string | null
+    /** The normalised number searched (the last 9 digits), null without a search. */
+    number?: string | null
     from: string
     to: string
     truncated: boolean

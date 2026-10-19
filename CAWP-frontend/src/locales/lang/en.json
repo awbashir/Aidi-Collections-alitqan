@@ -5425,5 +5425,172 @@
         "owner": "Collector"
       }
     }
+  },
+  "p9": {
+    "campaign": {
+      "status": "Client status",
+      "subStatus": "Sub-status",
+      "statusHint": "The status of each case's latest note. Offered: the general statuses and those of the campaign's contracts within your scope.",
+      "subHint": "When sub-statuses are chosen, only cases whose latest note has one of them are included.",
+      "subNeedsMain": "Choose a client status first.",
+      "statusPlaceholder": "All statuses",
+      "subPlaceholder": "All sub-statuses",
+      "noStatuses": "No statuses for these contracts",
+      "noSubStatuses": "The chosen statuses have no sub-statuses",
+      "unknownStatus": "Unavailable status ({{id}})",
+      "err": {
+        "generic": "{{field}}: this status cannot be used in this campaign.",
+        "unknown": "{{field}}: the status no longer exists.",
+        "status_deleted": "{{field}}: the status was deleted. Remove it and choose another.",
+        "is_sub_status": "{{field}}: a sub-status was chosen as a main status. Choose its main status, then the sub-status.",
+        "not_a_sub_status": "{{field}}: the sub-status does not belong to a chosen client status.",
+        "status_not_for_contract": "{{field}}: the status belongs to a contract outside this campaign's contracts or your scope."
+      }
+    },
+    "monfix": {
+      "search": {
+        "label": "Client number",
+        "placeholder": "05xxxxxxxx or +9665…",
+        "hint": "Matched on the last 9 digits; 4 to 8 digits search part of a number",
+        "tooShort": "Type at least 4 digits",
+        "clear": "Clear the number"
+      },
+      "calls": {
+        "download": "Download Excel",
+        "recording": "Recording",
+        "notRecorded": "Not recorded",
+        "recordingUnknown": "Unknown (PBX records unavailable)"
+      },
+      "monitor": {
+        "user": "User",
+        "searchTitle": "Calls with this number",
+        "searchEmpty": "No calls with this number in the period",
+        "searchNote": "{{total}} calls with this number in the period, across the users in your scope"
+      }
+    },
+    "prevstatus": {
+      "nav": "Import previous statuses",
+      "open": "Import previous statuses",
+      "title": "Import previous statuses",
+      "subtitle": "Each account's main and sub status from the old system, added as a note on its case",
+      "intro": "Upload one file per portfolio with the columns Account number, Main status and Sub-status. Nothing is written until you confirm. Each matched row becomes one note on its case with the main and sub status, dated on the day you choose, so newer notes stay the case's latest note and today's reports do not count them.",
+      "rows": "{{n}} rows",
+      "step": {
+        "file": "1. File and columns",
+        "preview": "2. Preview",
+        "apply": "3. Note options and confirmation",
+        "result": "4. Result"
+      },
+      "file": {
+        "accepted": "An XLSX or CSV file (UTF-8). The first row holds the column names.",
+        "choose": "Choose file",
+        "replace": "Choose another file",
+        "rows": "{{n}} data rows",
+        "sheet": "Sheet",
+        "notScanned": "The file was not scanned by an antivirus. Only upload files you trust."
+      },
+      "field": {
+        "account_number": "Account number",
+        "main_status": "Main status",
+        "sub_status": "Sub-status",
+        "pick": "Choose a column",
+        "twice": "The same column is chosen twice.",
+        "required": "Choose the account number and main status columns."
+      },
+      "opt": {
+        "createSubs": "Create missing sub-statuses under their main status",
+        "includeArchived": "Also import for archived accounts",
+        "mainNeverCreated": "A missing main status is never created: its rows are listed and skipped. Add it in the note statuses settings first, then refresh the preview."
+      },
+      "action": {
+        "preview": "Preview",
+        "refreshPreview": "Refresh preview",
+        "apply": "Import {{n}} previous statuses",
+        "another": "Import another file"
+      },
+      "preview": {
+        "intro": "Nothing has been written yet. Rows with no status (---), unknown accounts and missing statuses are skipped.",
+        "toCreate": "Sub-statuses that will be created",
+        "missingMain": "Main statuses that do not exist (rows skipped)",
+        "missingSub": "Sub-statuses that do not exist (rows skipped)",
+        "problems": "Skipped rows and rows that create a sub-status (first {{limit}})"
+      },
+      "apply": {
+        "date": "Note date",
+        "method": "Contact method",
+        "note": "Additional text (optional)",
+        "notePlaceholder": "e.g. Mobily file",
+        "dateHint": "The notes are dated at 00:00 (Asia/Riyadh) on this day. It must be before today; the default {{day}} is before the system went live.",
+        "textHint": "Note text:"
+      },
+      "run": {
+        "running": "Importing…",
+        "runningHint": "You can stay on this page; the result appears when the import finishes.",
+        "succeeded": "{{n}} previous statuses were imported.",
+        "created": "Sub-statuses created",
+        "report": "Download report (skipped rows)",
+        "failed": "The import failed. Nothing was written.",
+        "failedHint": "Fix the cause and press the import button again; the same file is retried."
+      },
+      "count": {
+        "total": "Rows in the file",
+        "ready": "Ready to import",
+        "imported": "Imported",
+        "subsToCreate": "Sub-statuses to create",
+        "subsCreated": "Sub-statuses created"
+      },
+      "code": {
+        "ready": "Ready",
+        "imported": "Imported",
+        "no_status": "No previous status (empty or ---)",
+        "missing_account": "Account number is empty",
+        "formula_not_allowed": "A cell holds a formula",
+        "value_too_long": "A value is too long",
+        "duplicate_in_file": "Account repeated in the file",
+        "account_not_found": "Account not found",
+        "account_ambiguous": "Several cases match the account",
+        "case_archived": "Archived account",
+        "case_locked": "Locked account",
+        "status_not_found": "Main status not found",
+        "status_ambiguous": "Several main statuses have this name",
+        "sub_status_not_found": "Sub-status not found",
+        "sub_status_ambiguous": "Several sub-statuses have this name",
+        "already_imported": "Already imported"
+      },
+      "problems": {
+        "none": "No problem rows.",
+        "row": "Row",
+        "account": "Account number",
+        "main": "Main status",
+        "sub": "Sub-status",
+        "result": "Result",
+        "createsSub": "Sub-status will be created"
+      },
+      "err": {
+        "generic": "The import failed: {{message}}",
+        "invalid_mapping": "The column mapping is not valid. Choose the account number and main status columns.",
+        "already_imported": "This file was already imported.",
+        "import_in_progress": "This file is being imported right now.",
+        "nothing_to_import": "No row of the file can be imported.",
+        "upload_purged": "The uploaded file was deleted. Upload it again.",
+        "upload_expired": "The uploaded file has expired. Upload it again.",
+        "upload_not_found": "The uploaded file was not found. Upload it again.",
+        "upload_purpose_mismatch": "This file was uploaded for another screen. Upload it again here.",
+        "import_failed": "An unexpected error stopped the import. Nothing was written.",
+        "statuses_changed": "A status changed during the import. Try again.",
+        "contact_method_missing": "The chosen contact method no longer exists.",
+        "too_many_rows": "The file has too many rows.",
+        "report_not_ready": "The report is available only after a completed import.",
+        "super_admin_required": "Only a SuperAdmin can import previous statuses.",
+        "file_too_large": "The file is too large.",
+        "unsupported_file_type": "Only XLSX and CSV files are accepted.",
+        "not_a_workbook": "The file is not a valid XLSX workbook.",
+        "not_utf8": "The CSV file is not UTF-8 text.",
+        "empty_file": "The file is empty.",
+        "no_data": "The file has no header row.",
+        "noted_on_today": "The note date must be before today (Asia/Riyadh).",
+        "noted_on_invalid": "The note date is not valid."
+      }
+    }
   }
 }

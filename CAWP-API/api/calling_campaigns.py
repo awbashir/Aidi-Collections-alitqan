@@ -10,6 +10,8 @@ Invisible campaigns answer 404.
 Campaigns                                                            permission
   GET  /v2/campaigns                       list (status=, mine=1)      campaigns | campaigns_manage
   POST /v2/campaigns                       create (draft)              campaigns_manage
+  GET  /v2/campaigns/pool-scope            contracts my scope reaches  campaigns_manage
+                                           (the note-status pickers of the campaign form)
   GET  /v2/campaigns/<id>                  detail                      campaigns | campaigns_manage
   PATCH /v2/campaigns/<id>                 name / pool / settings      campaigns_manage
   POST /v2/campaigns/<id>/start            draft|paused -> running     campaigns_manage
@@ -63,6 +65,13 @@ def list_campaigns():
 def create_campaign():
     cid = svc.create(json_body())
     return created(svc.detail(cid), "campaign created")
+
+
+@bp.get("/v2/campaigns/pool-scope")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+def pool_scope():
+    return ok(svc.pool_scope())
 
 
 @bp.get("/v2/campaigns/<uuid:campaign_id>")

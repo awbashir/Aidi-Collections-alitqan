@@ -4,6 +4,17 @@ Visibility: a call is visible when its case is in the caller's case scope (the P
 services/case_history_common.scope_sql) or when the caller made it. Everything else answers
 404. The dialled number (contact value / destination) is shown only with `clints_details`,
 the key the case contact screens use. `duration_seconds: null` means unknown, never 0.
+
+Customer request 2026-10-19, the call log and my calls (`GET /v2/calls`, `/v2/calls/mine`):
+* `number`: the calls whose dialled number (destination or contact value) matches the client
+  number typed (services/calling/number_search.py: digits only, the last 9); needs
+  `clints_details` (the numbers themselves need it), otherwise 403;
+* every item carries `recording` ({has_recording, file, url} from the call's tagged CDR rows,
+  services/calling/call_recordings.py) when the caller holds a recording key
+  (clints_callsRecords_play / _download), else null; the list says `recordings_status`
+  (available | unavailable | disabled | no_key). The file is played through the legacy
+  GET /cdr/recording, which authorizes it again;
+* the same filters download as XLSX (services/calling/call_log_export.py).
 """
 from __future__ import annotations
 
@@ -12,6 +23,7 @@ from sqlalchemy import text
 from core import riyadh
 from core.api_response import VALIDATION_FAILED, ApiError
 from core.auth import has_permission
+from services.calling import number_search as numsearch
 from services.calling.common import (MODES, OUTCOMES, STATES, TERMINAL, USER_NAME_SQL, case_in_scope, iso, me,
                                      s, scope_sql, sess, user_ref, valid_uuid)
 
@@ -104,6 +116,13 @@ def _filters(args, where, params):
                      "(w.id IS NULL AND a.mode <> 'manual' AND a.state IN ('ended', 'failed') AND NOT EXISTS ("
                      "SELECT 1 FROM call_reservations rr WHERE rr.attempt_id = a.id "
                      "AND rr.release_source = 'no_customer_contact'))")
+    n = numsearch.needle(args.get("number"))
+    if n:
+        if not has_permission("clints_details"):
+            raise ApiError(403, "forbidden", "searching by number needs clints_details",
+                           {"number": "clints_details_required"})
+        where.append(numsearch.sql(["a.destination", "k.contact"], "num", n))
+        params["num"] = n
     first, last = args.get("from"), args.get("to")
     try:
         if first:
@@ -118,7 +137,29 @@ def _filters(args, where, params):
         raise ApiError(422, VALIDATION_FAILED, "to is before from", {"to": "invalid"})
 
 
-def _list(where, params, args, page, size, offset) -> dict:
+def with_recordings(rows, items) -> str:
+    """Adds `recording` to each serialized item (call_recordings.lookup, one CDR query) when the
+    caller holds a recording key; -> the recordings status."""
+    from services import reports_v2_cdr as cdrsrc
+    from services.calling import call_recordings
+    from services.calling_cdr import RECORDING_KEYS
+    if not any(has_permission(k) for k in RECORDING_KEYS):
+        for it in items:
+            it["recording"] = None
+        return "no_key"
+    status, found = call_recordings.lookup([dict(r) for r in rows])
+    for r, it in zip(rows, items):
+        f = found.get(str(r["id"]))
+        if status != "available" or r["mode"] == "manual":
+            it["recording"] = None
+        else:
+            file = f["file"] if f else None
+            it["recording"] = {"has_recording": bool(file), "file": file,
+                               "url": cdrsrc.recording_url(file) if file else None}
+    return status
+
+
+def _list(where, params, args, page, size, offset, recordings: bool = False) -> dict:
     sort = args.get("sort") or "-time"
     if sort not in _SORTS:
         raise ApiError(422, VALIDATION_FAILED, f"sort must be one of {', '.join(_SORTS)}", {"sort": "invalid"})
@@ -131,12 +172,17 @@ def _list(where, params, args, page, size, offset) -> dict:
         SELECT {_COLS} FROM call_attempts a {_JOINS} WHERE {w}
          ORDER BY {_SORTS[sort]} LIMIT :lim OFFSET :off"""), {**params, "lim": size, "off": offset}).mappings().all()
     show = has_permission("clints_details")
-    return {"items": [serialize(r, show_numbers=show) for r in rows], "total": int(total), "page": page,
-            "page_size": size, "sort": sort, "counts_by_state": counts}
+    items = [serialize(r, show_numbers=show) for r in rows]
+    out = {"items": items, "total": int(total), "page": page, "page_size": size, "sort": sort,
+           "counts_by_state": counts}
+    if recordings:
+        out["recordings_status"] = with_recordings(rows, items)
+    return out
 
 
 def my_calls(args, page, size, offset) -> dict:
-    return _list(["a.collector_user_id = CAST(:me AS uuid)"], {"me": me()}, args, page, size, offset)
+    where, params = log_where("mine")
+    return _list(where, params, args, page, size, offset, recordings=True)
 
 
 def case_calls(case_id, args, page, size, offset) -> dict:
@@ -145,9 +191,16 @@ def case_calls(case_id, args, page, size, offset) -> dict:
 
 
 def call_log(args, page, size, offset) -> dict:
+    where, params = log_where("team")
+    return _list(where, params, args, page, size, offset, recordings=True)
+
+
+def log_where(kind: str) -> tuple[list[str], dict]:
+    """The base WHERE of the call log (`team`) or my calls (`mine`), for the download."""
+    if kind == "mine":
+        return ["a.collector_user_id = CAST(:me AS uuid)"], {"me": me()}
     cond, params = scope_sql("c")
-    where = [f"((c.id IS NOT NULL AND {cond}) OR a.collector_user_id = CAST(:me AS uuid))"]
-    return _list(where, {**params, "me": me()}, args, page, size, offset)
+    return [f"((c.id IS NOT NULL AND {cond}) OR a.collector_user_id = CAST(:me AS uuid))"], {**params, "me": me()}
 
 
 def my_active_attempt_id(user_id) -> str | None:

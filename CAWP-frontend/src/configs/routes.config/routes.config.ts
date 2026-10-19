@@ -547,6 +547,15 @@ export const protectedRoutes = [
     },
   },
 
+  /* Previous statuses import (2026-10-19; `previous_statuses_import` = settings_comments_status_add, derived;
+   * the API also requires the SuperAdmin role). */
+  {
+    key: "previous_statuses_import",
+    path: "/settings/comments/previousStatuses",
+    component: lazy(() => import("@/views/settings/comments/previousStatuses")),
+    authority: [],
+  },
+
   {
     key: "roles",
     path: "/permissions",

@@ -34,6 +34,7 @@ import { formatCount } from '@/utils/v2/format'
 import { CallStateBadge, CampaignStatusBadge, Card, CaseCell, Fact, MemberStateBadge, Notice, OutcomeBadge } from '../parts'
 import { memberReason, poolReason } from '../labels'
 import CampaignForm from './CampaignForm'
+import PoolFilterChips, { usePoolNames } from './PoolFilterChips'
 
 const { THead, TBody, Tr, Th, Td } = Table
 type Tab = 'live' | 'pool' | 'roster' | 'settings'
@@ -497,15 +498,8 @@ const RosterTab = ({ campaign, onChanged }: { campaign: Campaign; onChanged: () 
 
 const SettingsTab = ({ campaign }: { campaign: Campaign }) => {
     const { t } = useTranslation()
-    const [names, setNames] = useState<Record<string, string>>({})
-    useEffect(() => {
-        Promise.allSettled([lookups.contracts(), lookups.portfolios()]).then(([c, p]) => {
-            const m: Record<string, string> = {}
-            if (c.status === 'fulfilled') c.value.forEach((o) => (m[o.value] = o.label))
-            if (p.status === 'fulfilled') p.value.forEach((o) => (m[o.value] = o.label))
-            setNames(m)
-        })
-    }, [])
+    /* contracts, portfolios, collectors and note statuses by name (customer 2026-10-19) */
+    const names = usePoolNames()
     const s = campaign.settings
     return (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="p5-cd-settings">
@@ -525,13 +519,7 @@ const SettingsTab = ({ campaign }: { campaign: Campaign }) => {
                     <Fact label={t('p5.cf.portfolios')}>{campaign.pool.portfolio_ids.map((id) => names[id] || id.slice(0, 8)).join(String(t('p5.listSep'))) || '—'}</Fact>
                     <Fact label={t('p5.cf.listFilter')}>
                         {Object.keys(campaign.pool.filter || {}).length ? (
-                            <ul dir="ltr" className="text-[12.5px]">
-                                {Object.entries(campaign.pool.filter).map(([k, v]) => (
-                                    <li key={k}>
-                                        {k}: {Array.isArray(v) ? v.join(', ') : String(v)}
-                                    </li>
-                                ))}
-                            </ul>
+                            <PoolFilterChips filter={campaign.pool.filter} names={names} testId="p9-campaign-filter-chips" />
                         ) : (
                             '—'
                         )}

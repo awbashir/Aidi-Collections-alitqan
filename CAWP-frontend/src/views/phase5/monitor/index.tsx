@@ -11,6 +11,8 @@
  * - Talk-time counts (2026-10-17): answered calls longer than 1 / 2 / 3 minutes (strictly), per
  *   user and in the totals. A user's row opens their calls of the period (UserCalls.tsx), where
  *   a holder of the recording keys can play and download the recordings.
+ * - Search by the client's number (2026-10-19): the period's calls with that number across the
+ *   scope (NumberCalls.tsx) and in a user's drawer; the call-detail download follows it.
  *
  * The API decides the scope: SuperAdmin every extension, a supervisor their team's, anyone
  * else their own. The user filter (one extension) narrows both sections; its choices are the
@@ -34,6 +36,8 @@ import type { MonitorAgent, MonitorLive, MonitorStats, Option, Translate } from 
 import { useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { Card, Fact, Notice } from '../parts'
+import NumberSearch from '../calls/NumberSearch'
+import NumberCalls from './NumberCalls'
 import UserCalls from './UserCalls'
 
 const { THead, TBody, Tr, Th, Td } = Table
@@ -207,6 +211,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
     const [from, setFrom] = useState(riyadhToday())
     const [to, setTo] = useState(riyadhToday())
     const [gran, setGran] = useState<'hour' | 'day'>('hour')
+    const [number, setNumber] = useState<string | undefined>(undefined)
     const q = useV2Query(
         (signal) => callMonitorApi.stats({ from, to, granularity: gran, extension: ext || undefined }, signal),
         [from, to, gran, ext]
@@ -242,7 +247,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
         setDownloading(kind)
         setDownloadError(null)
         try {
-            await callMonitorApi.download(kind, { from, to, extension: ext || undefined })
+            await callMonitorApi.download(kind, { from, to, extension: ext || undefined, number: kind === 'calls' ? number : undefined })
         } catch (e) {
             setDownloadError(e)
         } finally {
@@ -278,6 +283,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
                         { value: 'day', label: t('p5.monitor.byDay') },
                     ]}
                 />
+                <NumberSearch value={number} onChange={setNumber} testId="p9-monitor-number" />
                 <div className="ms-auto flex flex-wrap gap-2">
                     <Button
                         size="sm"
@@ -301,6 +307,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
                 </div>
             </div>
             {downloadError ? <Notice tone="danger">{describe(downloadError, t)}</Notice> : null}
+            {number && <NumberCalls from={from} to={to} ext={ext} number={number} />}
             {q.error && !data ? (
                 <ErrorState error={q.error} onRetry={q.reload} describe={describe} />
             ) : !data || !totals ? (

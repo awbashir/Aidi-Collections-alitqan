@@ -6,6 +6,9 @@
  * Recordings play and download through the legacy `GET /cdr/recording` (RecordingControls of the
  * call detail), which authorizes each file again; the buttons appear only with the recording keys
  * (`clints_callsRecords_play` / `_download`), and without them the API sends no recording path.
+ *
+ * 2026-10-19: a search by the client's number (`number`, normalised on the server: the last 9
+ * digits) narrows the drawer; CallsTable is shared with the page-level search (NumberCalls.tsx).
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -17,11 +20,12 @@ import { Ltr, RiyadhTime } from '@/components/v2/Display'
 import { PagerFooter, TableFrame } from '@/components/v2/ListParts'
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/v2/States'
 import { callMonitorApi, describeP5Error } from '@/services/v2'
-import type { MonitorAgent, MonitorCall, Translate } from '@/services/v2'
+import type { MonitorAgent, MonitorCall, MonitorCallsPage, Translate } from '@/services/v2'
 import { useAppSelector } from '@/store'
 import { usePermissions, useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { RecordingControls } from '../calls/CallDetail'
+import NumberSearch from '../calls/NumberSearch'
 import { Notice } from '../parts'
 
 const { THead, TBody, Tr, Th, Td } = Table
@@ -57,13 +61,18 @@ const ResultPill = ({ result }: { result: string }) => {
 
 const recordingName = (c: MonitorCall) => (c.recording || '').split('/').pop()?.replace(/\.wav$/i, '') || `${c.extension}-${c.call_id}`
 
-const CallRow = ({ c, canListen }: { c: MonitorCall; canListen: boolean }) => {
+const CallRow = ({ c, canListen, showUser }: { c: MonitorCall; canListen: boolean; showUser?: boolean }) => {
     const { t } = useTranslation()
     return (
         <Tr data-testid="p8-monitor-user-call" data-call-id={c.call_id}>
             <Td>
                 <RiyadhTime iso={c.at} />
             </Td>
+            {showUser && (
+                <Td className="whitespace-nowrap">
+                    <span dir="auto">{c.name || '—'}</span> <Ltr className="text-[12px] text-gray-600">{`(${c.extension})`}</Ltr>
+                </Td>
+            )}
             <Td className="whitespace-nowrap">{t(`p5.monitor.directionValue.${c.direction}`)}</Td>
             <Td>
                 <Ltr>{c.number || '—'}</Ltr>
@@ -105,6 +114,75 @@ const CallRow = ({ c, canListen }: { c: MonitorCall; canListen: boolean }) => {
     )
 }
 
+/** The calls table of the drawer and of the page-level number search. */
+export const CallsTable = ({
+    data,
+    loading,
+    error,
+    onRetry,
+    onPage,
+    canListen,
+    showUser = false,
+    empty,
+}: {
+    data: MonitorCallsPage | undefined
+    loading: boolean
+    error: unknown
+    onRetry: () => void
+    onPage: (page: number) => void
+    canListen: boolean
+    showUser?: boolean
+    empty: string
+}) => {
+    const { t } = useTranslation()
+    const cols = (canListen ? COLS : COLS - 1) + (showUser ? 1 : 0)
+    return (
+        <>
+        {error && !data ? (
+            <ErrorState error={error} onRetry={onRetry} describe={describe} />
+        ) : (
+            <TableFrame
+                footer={
+                    data && data.total > 0 ? (
+                        <PagerFooter page={data.page} pageSize={data.page_size} total={data.total} onPage={onPage} />
+                    ) : undefined
+                }
+            >
+                <Table>
+                    <THead>
+                        <Tr>
+                            <Th>{t('p8.monitor.time')}</Th>
+                            {showUser && <Th>{t('p9.monfix.monitor.user')}</Th>}
+                            <Th>{t('p5.monitor.direction')}</Th>
+                            <Th>{t('p5.monitor.number')}</Th>
+                            <Th>{t('p8.monitor.client')}</Th>
+                            <Th>{t('p8.monitor.line')}</Th>
+                            <Th>{t('p8.monitor.result.title')}</Th>
+                            <Th>{t('p8.monitor.ring')}</Th>
+                            <Th>{t('p5.monitor.talkTime')}</Th>
+                            {canListen && <Th>{t('p8.monitor.recording')}</Th>}
+                        </Tr>
+                    </THead>
+                    <TBody>
+                        {!data || loading ? (
+                            <SkeletonRows cols={cols} rows={6} />
+                        ) : data.items.length ? (
+                            data.items.map((c) => <CallRow key={`${c.call_id}-${c.extension}-${c.direction}`} c={c} canListen={canListen} showUser={showUser} />)
+                        ) : (
+                            <tr>
+                                <td colSpan={cols}>
+                                    <EmptyState title={empty} />
+                                </td>
+                            </tr>
+                        )}
+                    </TBody>
+                </Table>
+            </TableFrame>
+        )}
+        </>
+    )
+}
+
 const UserCalls = ({
     agent,
     from,
@@ -122,13 +200,14 @@ const UserCalls = ({
     const rtl = useAppSelector((state) => state.theme.direction) === 'rtl'
     const ext = agent?.extension || ''
     const [page, setPage] = useState(1)
-    useEffect(() => setPage(1), [ext, from, to])
+    const [number, setNumber] = useState<string | undefined>(undefined)
+    useEffect(() => setNumber(undefined), [ext])
+    useEffect(() => setPage(1), [ext, from, to, number])
     const q = useV2Query(
-        ext ? (signal) => callMonitorApi.calls({ from, to, extension: ext, page, page_size: PAGE_SIZE }, signal) : null,
-        [ext, from, to, page]
+        ext ? (signal) => callMonitorApi.calls({ from, to, extension: ext, number, page, page_size: PAGE_SIZE }, signal) : null,
+        [ext, from, to, number, page]
     )
     const data = q.data && q.data.extension === ext ? q.data : undefined
-    const cols = canListen ? COLS : COLS - 1
     const width = typeof window !== 'undefined' ? Math.min(1080, window.innerWidth) : 1080
     return (
         <Drawer
@@ -150,47 +229,17 @@ const UserCalls = ({
             }
         >
             <div className="flex flex-col gap-3" data-testid="p8-monitor-user-calls" data-extension={ext}>
+                <NumberSearch value={number} onChange={setNumber} testId="p9-monitor-user-number" />
                 {data?.truncated && <Notice tone="warning">{t('p5.monitor.truncated')}</Notice>}
-                {q.error && !data ? (
-                    <ErrorState error={q.error} onRetry={q.reload} describe={describe} />
-                ) : (
-                    <TableFrame
-                        footer={
-                            data && data.total > 0 ? (
-                                <PagerFooter page={data.page} pageSize={data.page_size} total={data.total} onPage={setPage} />
-                            ) : undefined
-                        }
-                    >
-                        <Table>
-                            <THead>
-                                <Tr>
-                                    <Th>{t('p8.monitor.time')}</Th>
-                                    <Th>{t('p5.monitor.direction')}</Th>
-                                    <Th>{t('p5.monitor.number')}</Th>
-                                    <Th>{t('p8.monitor.client')}</Th>
-                                    <Th>{t('p8.monitor.line')}</Th>
-                                    <Th>{t('p8.monitor.result.title')}</Th>
-                                    <Th>{t('p8.monitor.ring')}</Th>
-                                    <Th>{t('p5.monitor.talkTime')}</Th>
-                                    {canListen && <Th>{t('p8.monitor.recording')}</Th>}
-                                </Tr>
-                            </THead>
-                            <TBody>
-                                {!data || q.loading ? (
-                                    <SkeletonRows cols={cols} rows={6} />
-                                ) : data.items.length ? (
-                                    data.items.map((c) => <CallRow key={`${c.call_id}-${c.extension}-${c.direction}`} c={c} canListen={canListen} />)
-                                ) : (
-                                    <tr>
-                                        <td colSpan={cols}>
-                                            <EmptyState title={t('p5.monitor.noStats')} />
-                                        </td>
-                                    </tr>
-                                )}
-                            </TBody>
-                        </Table>
-                    </TableFrame>
-                )}
+                <CallsTable
+                    data={data}
+                    loading={q.loading}
+                    error={q.error}
+                    onRetry={q.reload}
+                    onPage={setPage}
+                    canListen={canListen}
+                    empty={number ? t('p9.monfix.monitor.searchEmpty') : t('p5.monitor.noStats')}
+                />
                 {data && (
                     <p className="text-[12px] text-gray-600">
                         {t('p8.monitor.userCallsNote', { total: formatCount(data.total) })}

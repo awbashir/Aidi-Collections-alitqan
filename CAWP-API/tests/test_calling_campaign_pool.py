@@ -124,6 +124,124 @@ def test_pool_matches_the_clients_list_for_the_same_filter(cp_app, pgc, cp):
         assert len(listed({})) == 5
 
 
+# --------------------------------------------------------------------------- note status + sub-status (2026-10-19)
+def note_status(pgc, name, *, contract=None, parent=None, deleted=False):
+    import uuid
+    sid = str(uuid.uuid4())
+    run(pgc, """INSERT INTO "CommentStatuses" (id, name, contract_id, "CommentReachability_id", is_active, parent_id,
+                                               deleted_at)
+                VALUES (%s, %s, %s, %s, true, %s, CASE WHEN %s THEN now() END)""",
+        sid, name + " " + sid[:6], contract, CL.reach, parent, deleted)
+    return sid
+
+
+def note(pgc, case, user, status, sub=None, *, hours_ago=0):
+    run(pgc, """INSERT INTO "Comments" (clint_id, user_id, "contactMethod_id", comment, comment_status_id,
+                                        comment_sub_status_id, create_at)
+                VALUES (%s, %s, %s, 'note', %s, %s, now() - make_interval(hours => %s))""",
+        case, user, CL.method, status, sub, hours_ago)
+
+
+def test_pool_filters_by_the_latest_note_status_and_sub_status(cp_app, pgc, cp):
+    """Main status and sub-status of the case's LATEST note (clints.last_comment_id), ANDed, and
+    exactly what GET /clints returns for the same filter."""
+    from werkzeug.datastructures import MultiDict
+
+    from services.calling import campaign_pool as P
+    from services.clients_query import build_clients_query
+    cid, pid = new_contract(pgc, "cp status")
+    u = new_user(pgc, role=CP.collector_role)
+    main = note_status(pgc, "cp main")
+    s1, s2 = note_status(pgc, "cp sub1", parent=main), note_status(pgc, "cp sub2", parent=main)
+    other = note_status(pgc, "cp other", contract=cid)
+    osub = note_status(pgc, "cp other sub", contract=cid, parent=other)
+    c = {k: make_case(pgc, u, pid) for k in ("s1", "s2", "main", "other", "none")}
+    note(pgc, c["s1"], u, other, osub, hours_ago=5)              # an older note never counts
+    note(pgc, c["s1"], u, main, s1, hours_ago=1)
+    note(pgc, c["s2"], u, main, s2, hours_ago=1)
+    note(pgc, c["main"], u, main, None, hours_ago=1)
+    note(pgc, c["other"], u, main, s1, hours_ago=5)
+    note(pgc, c["other"], u, other, osub, hours_ago=1)
+    base = {"customeFilterContractValue[]": [cid]}
+    M, S = "customeFilterCommentStatusValue[]", "customeFilterCommentSubStatusValue[]"
+    cases = [
+        ({M: [main]}, {"s1", "s2", "main"}),
+        ({"customeFilterStatusesValue": main}, {"s1", "s2", "main"}),
+        ({M: [main, other]}, {"s1", "s2", "main", "other"}),
+        ({S: [s1]}, {"s1"}),
+        ({M: [main], S: [s1, s2]}, {"s1", "s2"}),
+        ({M: [main, other], S: [s2]}, {"s2"}),                   # ANDed, as the clients list
+        ({M: [other], S: [osub]}, {"other"}),
+        ({M: [other], S: [s1]}, set()),
+    ]
+
+    def listed(flt):
+        md = MultiDict()
+        for k, v in {**base, **flt}.items():
+            for x in (v if isinstance(v, list) else [v]):
+                md.add(k, str(x))
+        q, _count, _ = build_clients_query(md, CP.super)
+        return {str(r.k_id) for r in q.limit(1000).all()}
+
+    def pooled(flt):
+        from sqlalchemy import text
+
+        from extensions import db
+        pool = P.validate_pool({"filter": {**base, **flt}})
+        joins, where, params = P.definition_sql(pool)
+        return {str(r[0]) for r in db.session.execute(text(f"""
+            SELECT c.id FROM clints c JOIN portfolios p ON p.id = c.portfolios_id JOIN contracts k ON k.id = p.contract_id
+            {joins} WHERE {where}"""), params).all()}
+
+    with cp_app.app_context():
+        for flt, want in cases:
+            want_ids = {c[k] for k in want}
+            assert pooled(flt) == want_ids, (flt, want)
+            assert listed(flt) == want_ids, (flt, want)
+
+
+def test_pool_note_statuses_must_fit_the_contracts_in_scope(cp_app, pgc, world):
+    from core.api_response import ApiError
+    from services.calling import campaign_pool as P
+    w = world
+    case_for(pgc, w.c1, w.portfolio)                             # the supervisor's scope reaches w.contract
+    oc = q1(pgc, "SELECT contract_id::text FROM portfolios WHERE id = %s", w.other_portfolio)[0]
+    general = note_status(pgc, "cp general")
+    gsub = note_status(pgc, "cp general sub", parent=general)
+    own = note_status(pgc, "cp own", contract=w.contract)
+    foreign = note_status(pgc, "cp foreign", contract=oc)
+    foreign_sub = note_status(pgc, "cp foreign sub", contract=oc, parent=foreign)
+    gone = note_status(pgc, "cp deleted", deleted=True)
+    M, S = "customeFilterCommentStatusValue[]", "customeFilterCommentSubStatusValue[]"
+
+    def check(user, pool, keep=()):
+        def go(_s):
+            P.check_pool_statuses(P.validate_pool(pool), user, keep)
+        return in_app(cp_app, go)
+
+    def refused(user, pool, field, code, keep=()):
+        with pytest.raises(ApiError) as e:
+            check(user, pool, keep)
+        assert e.value.status == 422 and e.value.error == {f"pool.filter.{field}": code}, e.value.error
+
+    assert in_app(cp_app, lambda s: P.scope_contract_ids(w.supervisor)) == [w.contract]
+    assert in_app(cp_app, lambda s: P.scope_contract_ids(CP.super)) is None
+    check(w.supervisor, {"contract_ids": [w.contract], "filter": {M: [general, own], S: [gsub]}})
+    check(w.supervisor, {"filter": {M: [own]}})                  # no contract named: my scope bounds it
+    check(w.supervisor, {"portfolio_ids": [w.portfolio], "filter": {M: [own]}})
+    refused(w.supervisor, {"contract_ids": [w.contract], "filter": {M: [foreign]}}, M, "status_not_for_contract")
+    refused(w.supervisor, {"filter": {M: [foreign]}}, M, "status_not_for_contract")      # outside my scope
+    refused(CP.super, {"contract_ids": [w.contract], "filter": {M: [foreign]}}, M, "status_not_for_contract")
+    refused(CP.super, {"portfolio_ids": [w.portfolio], "filter": {S: [foreign_sub]}}, S, "status_not_for_contract")
+    check(CP.super, {"filter": {M: [foreign], S: [foreign_sub]}})                       # SuperAdmin: any contract
+    refused(w.supervisor, {"contract_ids": [w.contract], "filter": {M: [gsub]}}, M, "is_sub_status")
+    refused(w.supervisor, {"contract_ids": [w.contract], "filter": {S: [general]}}, S, "not_a_sub_status")
+    refused(w.supervisor, {"contract_ids": [w.contract], "filter": {M: [own], S: [gsub]}}, S, "not_a_sub_status")
+    refused(w.supervisor, {"contract_ids": [w.contract], "filter": {M: [gone]}}, M, "status_deleted")
+    refused(w.supervisor, {"contract_ids": [w.contract], "filter": {M: [w.contract]}}, M, "unknown")
+    check(w.supervisor, {"contract_ids": [w.contract], "filter": {M: [gone, foreign]}}, keep={gone, foreign})
+
+
 # --------------------------------------------------------------------------- order
 def test_selection_order_is_priority_then_oldest_contact_then_id(cp_app, client, auth, world, pgc):
     from services.calling import campaign_pool as P

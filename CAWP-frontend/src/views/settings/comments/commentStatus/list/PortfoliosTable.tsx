@@ -13,7 +13,8 @@ import DataTable from "@/components/shared/DataTable";
 import type { ColumnDef, OnSortParam } from "@/components/shared/DataTable";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui";
-import { HiPlusCircle, HiDownload } from "react-icons/hi";
+import { HiPlusCircle, HiDownload, HiOutlineUpload } from "react-icons/hi";
+import { usePermissions } from "@/utils/v2/hooks";
 import { NumericFormat } from "react-number-format";
 
 import cloneDeep from "lodash/cloneDeep";
@@ -23,6 +24,7 @@ import StatusPill from "@/components/shared/StatusPill";
 
 const TableOptions = () => {
   const { t } = useTranslation();
+  const permissions = usePermissions();
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
       {/*  <Link
@@ -35,7 +37,18 @@ const TableOptions = () => {
           {t("download")}
         </Button>
       </Link> */}
-      <Link className="ms-auto" to="/settings/comments/commentStatus/new">
+      {/* 2026-10-19: previous statuses from the old system (API: SuperAdmin only) */}
+      {permissions.settings_comments_status_add && (
+        <Link className="ms-auto" to="/settings/comments/previousStatuses">
+          <Button size="sm" icon={<HiOutlineUpload />} data-testid="p9-prevstatus-open">
+            {t("p9.prevstatus.open")}
+          </Button>
+        </Link>
+      )}
+      <Link
+        className={permissions.settings_comments_status_add ? undefined : "ms-auto"}
+        to="/settings/comments/commentStatus/new"
+      >
         <Button variant="solid" size="sm" icon={<HiPlusCircle />}>
           {t("add")}
         </Button>

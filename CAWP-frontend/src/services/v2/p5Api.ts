@@ -57,6 +57,10 @@ export const callsApi = {
 
     mine: (q: CallQuery, signal?: AbortSignal) => v2Get<CallList>('/v2/calls/mine', q, signal),
 
+    /** XLSX of the list with its filters (2026-10-19): `team` = the call log, `mine` = my calls. */
+    download: (kind: 'team' | 'mine', q: CallQuery) =>
+        downloadXlsx(kind === 'team' ? '/v2/calls/export' : '/v2/calls/mine/export', q, `calls-${kind}.xlsx`),
+
     caseCalls: (caseId: string, q: CallQuery, signal?: AbortSignal) =>
         v2Get<CallList>(`/v2/cases/${enc(caseId)}/calls`, q, signal),
 
@@ -198,45 +202,49 @@ export const callMonitorApi = {
     stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day'; extension?: string }, signal?: AbortSignal) =>
         v2Get<MonitorStats>('/v2/calling/monitor/stats', q, signal),
     /** One user's calls of the period, newest first (page_size max 200). */
-    calls: (q: { from?: string; to?: string; extension?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+    calls: (q: { from?: string; to?: string; extension?: string; number?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
         v2Get<MonitorCallsPage>('/v2/calling/monitor/calls', q, signal),
     /** XLSX download with the bearer token: `summary` = the per-user table, `calls` = one row per call. */
-    download: async (kind: 'summary' | 'calls', q: { from?: string; to?: string; extension?: string }) => {
-        const params = Object.fromEntries(Object.entries(q).filter(([, v]) => v))
-        let res
-        try {
-            res = await BaseService({
-                url: kind === 'summary' ? '/v2/calling/monitor/stats/export' : '/v2/calling/monitor/calls/export',
-                method: 'get',
-                params,
-                responseType: 'blob',
-                timeout: 0,
-            })
-        } catch (err) {
-            const ax = err as { response?: { status: number; data?: Blob } }
-            if (ax?.response) {
-                let body: { code?: string; message?: string; error?: unknown } = {}
-                try {
-                    body = JSON.parse(await (ax.response.data as Blob).text())
-                } catch {
-                    /* not JSON */
-                }
-                throw new V2Error(ax.response.status, body.code || 'unknown', body.message || '', body.error ?? null)
+    download: async (kind: 'summary' | 'calls', q: { from?: string; to?: string; extension?: string; number?: string }) =>
+        downloadXlsx(kind === 'summary' ? '/v2/calling/monitor/stats/export' : '/v2/calling/monitor/calls/export', q, `call-monitor-${kind}.xlsx`),
+}
+
+/** GET an XLSX with the bearer token and save it under the server's file name. */
+async function downloadXlsx(url: string, q: object, fallback: string) {
+    const params = Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== null && v !== ''))
+    let res
+    try {
+        res = await BaseService({
+            url,
+            method: 'get',
+            params,
+            responseType: 'blob',
+            timeout: 0,
+        })
+    } catch (err) {
+        const ax = err as { response?: { status: number; data?: Blob } }
+        if (ax?.response) {
+            let body: { code?: string; message?: string; error?: unknown } = {}
+            try {
+                body = JSON.parse(await (ax.response.data as Blob).text())
+            } catch {
+                /* not JSON */
             }
-            throw new V2Error(0, 'network_error', (err as Error)?.message || 'network error', null)
+            throw new V2Error(ax.response.status, body.code || 'unknown', body.message || '', body.error ?? null)
         }
-        const disposition = String(res.headers?.['content-disposition'] || '')
-        const name = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)?.[1] || `call-monitor-${kind}.xlsx`
-        const url = URL.createObjectURL(res.data as Blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = decodeURIComponent(name)
-        a.rel = 'noopener'
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        setTimeout(() => URL.revokeObjectURL(url), 10000)
-    },
+        throw new V2Error(0, 'network_error', (err as Error)?.message || 'network error', null)
+    }
+    const disposition = String(res.headers?.['content-disposition'] || '')
+    const name = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)?.[1] || fallback
+    const href = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = href
+    a.download = decodeURIComponent(name)
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(href), 10000)
 }
 
 /* ---------------------------------------------------------------- campaigns */
@@ -263,6 +271,9 @@ export const campaignsApi = {
         v2Get<Paged<Campaign>>('/v2/campaigns', q, signal),
 
     detail: (id: string, signal?: AbortSignal) => v2Get<Campaign>(`/v2/campaigns/${enc(id)}`, undefined, signal),
+
+    /** 2026-10-19: the contracts my scope reaches (null = every contract), for the form's note-status pickers. */
+    poolScope: (signal?: AbortSignal) => v2Get<{ contract_ids: string[] | null }>('/v2/campaigns/pool-scope', undefined, signal),
 
     create: (body: CampaignBody & { name: string }, key: string) => v2Post<Campaign>('/v2/campaigns', body, key),
 

@@ -36,6 +36,7 @@ MODULES = [
     "api.portfolio_import",  # portfolio upload: mapping, preview, one-transaction import, lineage (0070)
     "api.comment_status",    # note statuses: soft DELETE (0068); POST/PUT stay in app.py
     "api.same_identity",     # case page: other accounts of the same debtor identity (0072)
+    "api.previous_status_import",  # previous statuses import from the old system (0074)
 ]
 
 

@@ -27,7 +27,7 @@ Downloads (customer request 2026-10-15), same scope, period and user filter as t
   through the normalised-mobile index; otherwise the client columns stay empty.
 
 Talk-time buckets (customer request 2026-10-17): per user, in the totals and in both downloads,
-the ANSWERED calls whose talk time (CDR billsec, the merged call's longest) is STRICTLY longer
+the ANSWERED calls whose talk time (the merged call's, _merge() below) is STRICTLY longer
 than 60, 120 and 180 seconds (`talk_over_60` / `talk_over_120` / `talk_over_180`; any direction,
 like talk_seconds). The call detail has one yes/no column per bucket.
 
@@ -36,6 +36,29 @@ calls() rows of the period, newest first, paged, with the CDR `recording` value 
 the merged call's first non-empty one). The recording itself is played/downloaded through the
 legacy GET /cdr/recording, which authorizes it again (a visible CDR record naming the file) under
 its own keys; the page only shows the buttons with those keys.
+
+Search by the client's number (customer request 2026-10-19): `number` on calls() / calls_page() /
+export_calls keeps the calls whose number matches (services/calling/number_search.py: digits only,
+the last 9); without `extension` the search covers every extension of the scope.
+
+Result, answered, ring and talk of one merged call (fix 2026-10-19, _merge(); the statistics,
+the call detail, the calls page and both downloads use the same classification):
+* only a Dial row (a non-empty dstchannel: the Dial to the trunk or to an agent) says whether
+  the call was answered. The rows the PBX writes after the dial (Hangup / Busy / Congestion /
+  Playback, empty dstchannel) are about the agent's own leg: they never mark a call answered
+  and give the result only when there is no Dial row (e.g. Congestion before dialling), never
+  "ANSWERED" (then the result is unknown, "");
+* dial-pad and inbound: talk = billsec of the answered Dial row (the longest), ring = its
+  duration - billsec (no answer: of the first Dial row);
+* click-to-call / campaign calls (uniqueid / linkedid `cawp-<attempt>`, userfield
+  `cawp:<attempt>`): the CDR billsec counts from when the AGENT's browser answered, so answered,
+  talk and ring come from the app's own call_attempts row (pbx_channel_id `cawp-<attempt>`, one
+  query per request): answered = bridged (customer conversation evidenced), talk = ended -
+  bridged, ring = bridged (or ended) - customer leg dialled (0 when the customer leg never
+  started). Without that row the CDR rule above applies;
+* the answer macro an answering agent's channel runs in a ring-group call (dcontext macro-*,
+  PJSIP/<ext> -> Local/...) is not a call the agent placed: ignored (the ring group's Dial row
+  to that agent counts it).
 """
 from __future__ import annotations
 
@@ -47,10 +70,12 @@ from sqlalchemy import text
 
 from core import riyadh
 from core.api_response import VALIDATION_FAILED, ApiError
+from services.calling import number_search as numsearch
 from services.calling.common import USER_NAME_SQL, iso, me, sess
 
 AGENT_RE = re.compile(r"^PJSIP/([0-9]{2,6})-")
 AGENT_EXT_RE = re.compile(r"^[0-9]{2,6}$")
+CAWP_ID_RE = re.compile(r"^cawp[-:]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 MAX_DAYS = 31
 MAX_CDR_ROWS = 200_000
 TALK_BUCKETS = (60, 120, 180)            # answered calls with talk time strictly longer than these (seconds)
@@ -195,9 +220,11 @@ def _date(value, field, default):
         raise ApiError(422, VALIDATION_FAILED, f"{field} must be YYYY-MM-DD", {field: "invalid"}) from None
 
 
-def _cdr_rows(lo, hi, ext=None):
+def _cdr_rows(lo, hi, ext=None, number=None):
     """The agent CDR rows of the period; `ext` (an already validated extension) narrows them to the
-    rows that involve it (the same calls: classify() only counts the extensions on a row)."""
+    rows that involve it (the same calls: classify() only counts the extensions on a row);
+    `number` (number_search.needle) to the rows whose src or dst carries it (refined after the
+    merge by number_search.matches)."""
     from services import reports_v2_cdr as cdrsrc
     try:
         conn = cdrsrc._connect()
@@ -210,9 +237,12 @@ def _cdr_rows(lo, hi, ext=None):
                 agent, params = "(channel LIKE %s OR dstchannel LIKE %s)", (f"PJSIP/{ext}-%", f"PJSIP/{ext}-%")
             else:
                 agent, params = "(channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')", ()
+            if number:
+                like = f"%{number}" if len(number) >= numsearch.KEY_DIGITS else f"%{number}%"
+                agent, params = f"{agent} AND (src LIKE %s OR dst LIKE %s)", (*params, like, like)
             cur.execute(f"""
                 SELECT calldate, channel, dstchannel, disposition, billsec, duration, linkedid, uniqueid,
-                       src, dst, userfield, recordingfile
+                       src, dst, userfield, recordingfile, lastapp, dcontext
                   FROM asteriskcdrdb.cdr
                  WHERE calldate >= %s AND calldate < %s AND {agent}
                  ORDER BY calldate LIMIT %s""", (lo, hi, *params, MAX_CDR_ROWS + 1))
@@ -245,13 +275,15 @@ def _range(args):
     return start, end, lo, hi
 
 
-def _rows_for(sc, lo, hi, rows):
+def _rows_for(sc, lo, hi, rows, number=None):
     if rows is not None:
         return rows
     exts = sc["extensions"]
     if exts is not None and not exts:
         return []                                         # no extension in scope: nothing to read
-    return _cdr_rows(lo, hi, next(iter(exts))) if exts is not None and len(exts) == 1 else _cdr_rows(lo, hi)
+    extra = {"number": number} if number else {}
+    ext = next(iter(exts)) if exts is not None and len(exts) == 1 else None
+    return _cdr_rows(lo, hi, ext, **extra) if ext else _cdr_rows(lo, hi, **extra)
 
 
 def _over(seconds, answered=True) -> dict:
@@ -267,20 +299,7 @@ def stats(args, user_id=None, rows=None) -> dict:
     if gran not in ("hour", "day"):
         raise ApiError(422, VALIDATION_FAILED, "granularity must be hour or day", {"granularity": "invalid"})
     cdr = _rows_for(sc, lo, hi, rows)
-    allowed = sc["extensions"]
-    calls: dict[tuple, dict] = {}
-    for r in cdr[:MAX_CDR_ROWS]:
-        for ext, direction, answered in classify(r):
-            if allowed is not None and ext not in allowed:
-                continue
-            key = (r.get("linkedid") or r.get("uniqueid"), ext, direction)
-            c = calls.get(key)
-            if c is None:
-                calls[key] = {"ext": ext, "direction": direction, "answered": answered,
-                              "billsec": int(r.get("billsec") or 0), "at": r["calldate"]}
-            else:
-                c["answered"] = c["answered"] or answered
-                c["billsec"] = max(c["billsec"], int(r.get("billsec") or 0))
+    calls = _merge(cdr, sc["extensions"])
     fmt = "%Y-%m-%d %H:00" if gran == "hour" else "%Y-%m-%d"
     buckets = []
     t = lo
@@ -289,10 +308,11 @@ def stats(args, user_id=None, rows=None) -> dict:
         t += _dt.timedelta(hours=1) if gran == "hour" else _dt.timedelta(days=1)
     per_user: dict[str, dict] = {}
     series = {b: {"bucket": b, "total": 0, "by_extension": {}} for b in buckets}
-    for c in calls.values():
-        u = per_user.setdefault(c["ext"], {**_agent(c["ext"], sc["owners"]), "outbound": 0, "outbound_answered": 0,
-                                           "inbound_answered": 0, "inbound_missed": 0, "internal": 0, "talk_seconds": 0,
-                                           **_over(0)})
+    for c in calls:
+        ext, talk = c["extension"], c["talk_seconds"]
+        u = per_user.setdefault(ext, {**_agent(ext, sc["owners"]), "outbound": 0, "outbound_answered": 0,
+                                      "inbound_answered": 0, "inbound_missed": 0, "internal": 0, "talk_seconds": 0,
+                                      **_over(0)})
         if c["direction"] == "outbound":
             u["outbound"] += 1
             u["outbound_answered"] += c["answered"]
@@ -300,13 +320,13 @@ def stats(args, user_id=None, rows=None) -> dict:
             u["inbound_answered" if c["answered"] else "inbound_missed"] += 1
         else:
             u["internal"] += 1
-        u["talk_seconds"] += c["billsec"] if c["answered"] else 0
-        for k, v in _over(c["billsec"], c["answered"]).items():
+        u["talk_seconds"] += talk if c["answered"] else 0
+        for k, v in _over(talk, c["answered"]).items():
             u[k] += v
         b = series.get(c["at"].strftime(fmt))
         if b is not None and (c["direction"] != "inbound" or c["answered"]):   # calls handled, not every ring
             b["total"] += 1
-            b["by_extension"][c["ext"]] = b["by_extension"].get(c["ext"], 0) + 1
+            b["by_extension"][ext] = b["by_extension"].get(ext, 0) + 1
     users = sorted(per_user.values(), key=lambda u: -(u["outbound"] + u["inbound_answered"] + u["internal"]))
     for u in users:
         u["handled"] = u["outbound"] + u["inbound_answered"] + u["internal"]
@@ -345,44 +365,108 @@ def _other_party(r, direction):
     return (peer.group(1) if peer else dst), ""
 
 
+def _disp(r) -> str:
+    return (r.get("disposition") or "").strip().upper()
+
+
+def _secs(r, field) -> int:
+    return max(int(r.get(field) or 0), 0)
+
+
+def _ignored(r) -> bool:
+    """The answer macro an answering agent's channel runs in a ring-group call (dcontext macro-*,
+    PJSIP/<ext> -> Local/FMGL-...): not a call the agent placed."""
+    return (r.get("dcontext") or "").startswith("macro-") and (r.get("dstchannel") or "").startswith("Local/")
+
+
+def _attempt_key(rows) -> str | None:
+    """`cawp-<attempt uuid>` (call_attempts.pbx_channel_id) of an app-dispatched call, else None."""
+    for r in rows:
+        for v in (r.get("userfield"), r.get("uniqueid"), r.get("linkedid")):
+            m = CAWP_ID_RE.match((v or "").strip())
+            if m:
+                return f"cawp-{m.group(1)}"
+    return None
+
+
+def _attempts_for(keys) -> dict:
+    """pbx_channel_id -> the call_attempts timestamps of those app-dispatched calls (one query)."""
+    if not keys:
+        return {}
+    rows = sess().execute(text("""
+        SELECT pbx_channel_id, customer_dialing_at, bridged_at, ended_at
+          FROM call_attempts WHERE pbx_channel_id = ANY(CAST(:ids AS text[]))"""), {"ids": sorted(keys)}).mappings()
+    return {r["pbx_channel_id"]: r for r in rows}
+
+
+def _between(a, b) -> int:
+    return max(int(round((b - a).total_seconds())), 0) if a is not None and b is not None else 0
+
+
+def _merge(cdr, allowed) -> list[dict]:
+    """The CDR rows merged into one item per call and agent ((linkedid, extension, direction)),
+    oldest first, with the corrected result / answered / ring / talk (module docstring)."""
+    groups: dict[tuple, list] = {}
+    for r in cdr[:MAX_CDR_ROWS]:
+        if _ignored(r):
+            continue
+        for ext, direction, _answered in classify(r):
+            if allowed is not None and ext not in allowed:
+                continue
+            groups.setdefault((r.get("linkedid") or r.get("uniqueid"), ext, direction), []).append(r)
+    keys = {key: _attempt_key(rows) for key, rows in groups.items()}
+    attempts = _attempts_for({k for k in keys.values() if k})
+    items = []
+    for key, rows in groups.items():
+        call_id, ext, direction = key
+        dials = [r for r in rows if (r.get("dstchannel") or "").strip()]          # the customer / agent leg
+        picked = [r for r in dials if _disp(r) == "ANSWERED"]
+        if picked:
+            best = max(picked, key=lambda r: _secs(r, "billsec"))
+            answered, result, talk = True, "ANSWERED", _secs(best, "billsec")
+            ring = max(_secs(best, "duration") - talk, 0)
+        elif dials:
+            answered, result, talk = False, _disp(dials[0]), 0
+            ring = max(_secs(dials[0], "duration") - _secs(dials[0], "billsec"), 0)
+        else:                                             # only post-dial rows: never answered
+            answered, talk = False, 0
+            result = next((_disp(r) for r in rows if _disp(r) and _disp(r) != "ANSWERED"), "")
+            ring = max((_secs(r, "duration") - _secs(r, "billsec") for r in rows), default=0)
+        a = attempts.get(keys[key])
+        if a is not None:                                 # click-to-call: the app's own evidence
+            answered = a["bridged_at"] is not None
+            talk = _between(a["bridged_at"], a["ended_at"]) if answered else 0
+            ring = _between(a["customer_dialing_at"], a["bridged_at"] or a["ended_at"])
+            if answered:
+                result = "ANSWERED"
+            elif result == "ANSWERED":                    # the PBX says answered, no conversation evidence
+                result = ""
+        number = line = ""
+        for r in rows:
+            n, ln = _other_party(r, direction)
+            number, line = number or n, line or ln
+        recording = next(((r.get("recordingfile") or "").strip() for r in rows
+                          if (r.get("recordingfile") or "").strip()), None)
+        items.append({"at": min(r["calldate"] for r in rows), "extension": ext, "direction": direction,
+                      "answered": answered, "result": result, "number": number, "line": line,
+                      "talk_seconds": talk, "ring_seconds": ring, "recorded": recording is not None,
+                      "recording": recording, "call_id": call_id})
+    items.sort(key=lambda c: (c["at"], c["extension"]))
+    return items
+
+
 def _merged(args, user_id=None, rows=None):
-    """(scope, start, end, truncated, items): one item per call and agent, oldest first."""
+    """(scope, start, end, truncated, items): one item per call and agent, oldest first; `number`
+    (2026-10-19, number_search) keeps the calls with that client number (not internal calls)."""
     full = scope(user_id)
     sc = narrow(full, args.get("extension"))
     start, end, lo, hi = _range(args)
-    cdr = _rows_for(sc, lo, hi, rows)
-    allowed = sc["extensions"]
-    merged: dict[tuple, dict] = {}
-    for r in cdr[:MAX_CDR_ROWS]:
-        for ext, direction, answered in classify(r):
-            if allowed is not None and ext not in allowed:
-                continue
-            key = (r.get("linkedid") or r.get("uniqueid"), ext, direction)
-            number, line = _other_party(r, direction)
-            disp = (r.get("disposition") or "").upper()
-            rank = 3 if answered else 2 if (r.get("dstchannel") or "") else 1    # the Dial row tells the result
-            billsec, duration = int(r.get("billsec") or 0), int(r.get("duration") or 0)
-            c = merged.get(key)
-            if c is None:
-                merged[key] = {"at": r["calldate"], "extension": ext, "direction": direction, "answered": answered,
-                               "result": disp, "_rank": rank, "number": number, "line": line,
-                               "talk_seconds": billsec if answered else 0, "ring_seconds": max(duration - billsec, 0),
-                               "recorded": bool((r.get("recordingfile") or "").strip()),
-                               "recording": (r.get("recordingfile") or "").strip() or None, "call_id": key[0]}
-                continue
-            c["at"] = min(c["at"], r["calldate"])
-            if rank > c["_rank"]:
-                c["result"], c["_rank"] = disp, rank
-            c["answered"] = c["answered"] or answered
-            if answered:
-                c["talk_seconds"] = max(c["talk_seconds"], billsec)
-            c["ring_seconds"] = max(c["ring_seconds"], duration - billsec)
-            c["number"], c["line"] = c["number"] or number, c["line"] or line
-            c["recorded"] = c["recorded"] or bool((r.get("recordingfile") or "").strip())
-            c["recording"] = c["recording"] or (r.get("recordingfile") or "").strip() or None
-    items = sorted(merged.values(), key=lambda c: (c["at"], c["extension"]))
+    number = numsearch.needle(args.get("number"))
+    cdr = _rows_for(sc, lo, hi, rows, number)
+    items = _merge(cdr, sc["extensions"])
+    if number:
+        items = [c for c in items if c["direction"] != "internal" and numsearch.matches(c["number"], number)]
     for c in items:
-        c.pop("_rank")
         c.update({k: v for k, v in _agent(c["extension"], sc["owners"]).items() if k != "extension"})
     return sc, start, end, len(cdr) > MAX_CDR_ROWS, items
 
@@ -398,7 +482,7 @@ def calls(args, user_id=None, rows=None) -> dict:
     """One row per call and agent (the CDR rows of one linkedid merged), oldest first."""
     sc, start, end, truncated, items = _merged(args, user_id, rows)
     return {"scope": sc["kind"], "extension": sc.get("filtered"), "from": start.isoformat(), "to": end.isoformat(),
-            "truncated": truncated, "calls": _with_clients(items, user_id)}
+            "number": numsearch.needle(args.get("number")), "truncated": truncated, "calls": _with_clients(items, user_id)}
 
 
 def _page_arg(value, field, default, hi):
@@ -425,7 +509,8 @@ def calls_page(args, user_id=None, rows=None) -> dict:
         c["at"] = c["at"].replace(tzinfo=riyadh.RIYADH).isoformat(timespec="seconds") if c["at"].tzinfo is None \
             else c["at"].isoformat(timespec="seconds")
     return {"scope": sc["kind"], "extension": sc.get("filtered"), "from": start.isoformat(), "to": end.isoformat(),
-            "truncated": truncated, "items": chunk, "total": len(items), "page": page, "page_size": size}
+            "number": numsearch.needle(args.get("number")), "truncated": truncated, "items": chunk,
+            "total": len(items), "page": page, "page_size": size}
 
 
 def _clients_for(numbers, user_id=None) -> dict:
@@ -467,6 +552,8 @@ def _info_sheet(wb, data, owners, kind_ar):
                          ("وقت الإنشاء (الرياض)", riyadh.now().strftime("%Y-%m-%d %H:%M")),
                          ("ملاحظة", "المكالمات تُنسب للمالك الحالي للتحويلة؛ الأوقات بتوقيت الرياض")):
         sh.append([("s", label), ("s", value)])
+    if data.get("number"):
+        sh.append([("s", "بحث برقم العميل (آخر 9 أرقام)"), ("s", data["number"])])
     if data.get("truncated"):
         sh.append([("s", "تنبيه"), ("s", f"الفترة فيها أكثر من {MAX_CDR_ROWS} سجل؛ قصّر الفترة")])
 

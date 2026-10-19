@@ -268,10 +268,18 @@ def _readiness_brief(r) -> dict:
 
 
 # --------------------------------------------------------------------------- create / update
+def pool_scope() -> dict:
+    """The contracts my current scope reaches (`contract_ids` null = every contract): the campaign
+    form offers the general note statuses plus those contracts' own (2026-10-19), as
+    campaign_pool.check_pool_statuses then requires."""
+    return {"contract_ids": P.scope_contract_ids(me())}
+
+
 def create(body: dict) -> str:
     _unknown(body, {"name", "pool", "settings", "member_ids"})
     name = _name(body)
     pool = P.validate_pool(body.get("pool"))
+    P.check_pool_statuses(pool, me())
     settings = _settings(body.get("settings"), DEFAULTS)
     members = _user_ids(body.get("member_ids"))
     _check_members_allowed(members)
@@ -304,6 +312,7 @@ def update(campaign_id, body: dict, expected) -> str:
         before["name"], after["name"] = camp["name"], params["n"]
     if "pool" in body:
         pool = P.validate_pool(body.get("pool"))
+        P.check_pool_statuses(pool, me(), keep=P.statuses_of(camp["pool"]))
         params["p"] = json.dumps(pool)
         sets.append("pool = CAST(:p AS jsonb)")
         before["pool"], after["pool"] = camp["pool"], pool

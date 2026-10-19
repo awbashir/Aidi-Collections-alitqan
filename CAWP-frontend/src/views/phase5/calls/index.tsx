@@ -10,12 +10,17 @@
  *   PBX evidence, the CDR and recordings (recording keys).
  * - Entry point for the reviewed PBX CDR import (`pbx_cdr_import`, `calls_manage`) and the
  *   supervisor review of uncertain calls and review flags.
+ * - Customer request 2026-10-19: search by the client's number (`number`, with `clints_details`;
+ *   NumberSearch.tsx), listen to / download a call's recording from the list (holders of
+ *   `clints_callsRecords_play` / `_download`; RecordingControls, the legacy GET /cdr/recording),
+ *   and download the list with its current filters as Excel (`GET /v2/calls[/mine]/export`).
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { HiOutlineX } from 'react-icons/hi'
-import { FileUp } from 'lucide-react'
+import { FileDown, FileUp } from 'lucide-react'
+import Button from '@/components/ui/Button'
 import Table from '@/components/ui/Table'
 import useHashState, { hashCodec } from '@/utils/hooks/useHashState'
 import type { HashSchema } from '@/utils/hooks/useHashState'
@@ -28,8 +33,9 @@ import { EmptyState, ErrorState, Note, SkeletonRows } from '@/components/v2/Stat
 import { CountTabs, FilterSelect, PageHead, PagerFooter, TableFrame, rowClass, useScopeOptions } from '@/components/v2/ListParts'
 import { DateFilter, SidePanel } from '@/views/phase1/money/listParts'
 import { BulkLaunchButton } from '@/views/phase2/bulk/entry'
-import { CaseCell, CallStateBadge, DurationText, ModeLabel, OutcomeBadge } from '../parts'
-import CallDetailView from './CallDetail'
+import { CaseCell, CallStateBadge, DurationText, ModeLabel, Notice, OutcomeBadge } from '../parts'
+import CallDetailView, { RecordingControls } from './CallDetail'
+import NumberSearch from './NumberSearch'
 
 const { THead, TBody, Tr, Th, Td } = Table
 
@@ -59,6 +65,7 @@ type HashState = {
     caseId: string | number | undefined
     from: string | undefined
     to: string | undefined
+    number: string | undefined
     page: number
     sel: string | number | undefined
 }
@@ -73,12 +80,25 @@ const schema: HashSchema<HashState> = {
     caseId: { key: 'case', codec: hashCodec.id(), default: undefined },
     from: { key: 'from', codec: hashCodec.date(), default: undefined },
     to: { key: 'to', codec: hashCodec.date(), default: undefined },
+    number: { key: 'number', codec: hashCodec.text({ maxLength: 40 }), default: undefined },
     page: { key: 'page', codec: hashCodec.int({ min: 1, max: 100000 }), default: 1 },
     sel: { key: 'call', codec: hashCodec.id(), default: undefined, history: 'replace' },
 }
 
 const str = (v: string | number | undefined) => (v === undefined ? undefined : String(v))
 const describe = (e: unknown, t: Translate) => describeP5Error(e, t)
+
+/** The recording cell of one call: play / download when the CDR names a file. */
+const ListRecording = ({ call, status }: { call: CallList['items'][number]; status: CallList['recordings_status'] }) => {
+    const { t } = useTranslation()
+    if (call.recording?.has_recording && call.recording.file) return <RecordingControls rec={call.recording} name={call.id} />
+    if (call.mode === 'manual') return <span className="text-gray-500">—</span>
+    return (
+        <span className="text-[12px] text-gray-500">
+            {status === 'unavailable' || status === 'disabled' ? t('p9.monfix.calls.recordingUnknown') : t('p9.monfix.calls.notRecorded')}
+        </span>
+    )
+}
 
 const Calls = () => {
     const { t } = useTranslation()
@@ -94,9 +114,24 @@ const Calls = () => {
         case_id: str(state.caseId),
         from: state.from,
         to: state.to,
+        number: perms.clints_details ? state.number : undefined,
+    }
+    const canListen = !!(perms.clints_callsRecords_play || perms.clints_callsRecords_download)
+    const [downloading, setDownloading] = useState(false)
+    const [downloadError, setDownloadError] = useState<unknown>(null)
+    const download = async () => {
+        setDownloading(true)
+        setDownloadError(null)
+        try {
+            await callsApi.download(scope, { ...base, state: TAB_STATES[state.tab]?.join(','), sort: '-time' })
+        } catch (e) {
+            setDownloadError(e)
+        } finally {
+            setDownloading(false)
+        }
     }
     const load = (q: CallQuery, signal: AbortSignal) => (scope === 'mine' ? callsApi.mine(q, signal) : callsApi.log(q, signal))
-    const deps = [scope, base.mode, base.outcome, base.wrapup, base.collector_id, base.case_id, base.from, base.to]
+    const deps = [scope, base.mode, base.outcome, base.wrapup, base.collector_id, base.case_id, base.from, base.to, base.number]
     const list = useV2Query(
         (signal) => load({ ...base, state: TAB_STATES[state.tab]?.join(','), page: state.page, page_size: PAGE_SIZE, sort: '-time' }, signal),
         [...deps, state.tab, state.page]
@@ -127,7 +162,7 @@ const Calls = () => {
     const selected = str(state.sel)
     const caseFilter = str(state.caseId)
     const caseName = caseFilter ? data?.items.find((r) => r.case.id === caseFilter)?.case : undefined
-    const cols = 8
+    const cols = canListen ? 9 : 8
 
     return (
         <div data-testid="p5-calls">
@@ -146,6 +181,9 @@ const Calls = () => {
                                 {t('p5.calls.reviewLink')}
                             </Link>
                         )}
+                        <Button size="sm" icon={<FileDown size={15} />} loading={downloading} disabled={downloading} onClick={download} data-testid="p9-calls-download">
+                            {t('p9.monfix.calls.download')}
+                        </Button>
                         <BulkLaunchButton
                             kind="pbx_cdr_import"
                             launch={{ from: { path: '/calls', labelKey: 'p5.calls.back' }, source: 'spreadsheet' }}
@@ -192,6 +230,7 @@ const Calls = () => {
                 )}
                 <DateFilter label={t('p5.calls.filter.from')} value={state.from} max={state.to} testId="p5-calls-from" onChange={(v) => setState({ from: v, page: 1 })} />
                 <DateFilter label={t('p5.calls.filter.to')} value={state.to} min={state.from} testId="p5-calls-to" onChange={(v) => setState({ to: v, page: 1 })} />
+                {perms.clints_details && <NumberSearch value={state.number} testId="p9-calls-number" onChange={(v) => setState({ number: v, page: 1 })} />}
                 {caseFilter && (
                     <div data-testid="p5-calls-case-chip">
                         <div className="text-eyebrow mb-1">{t('p5.col.case')}</div>
@@ -217,6 +256,12 @@ const Calls = () => {
                 )}
             </div>
 
+            {downloadError ? (
+                <Notice tone="danger" className="mb-3">
+                    {describe(downloadError, t)}
+                </Notice>
+            ) : null}
+
             <div className="mb-3">
                 <CountTabs<StateTab> secondary tabs={tabs} value={state.tab} onChange={(tab) => setState({ tab, page: 1 })} testId="p5-calls-state-tabs" />
             </div>
@@ -241,6 +286,7 @@ const Calls = () => {
                                         <Th>{t('p5.col.outcome')}</Th>
                                         <Th className="text-end">{t('p5.col.duration')}</Th>
                                         <Th>{t('p5.col.wrapup')}</Th>
+                                        {canListen && <Th>{t('p9.monfix.calls.recording')}</Th>}
                                     </Tr>
                                 </THead>
                                 <TBody>
@@ -288,6 +334,11 @@ const Calls = () => {
                                                         <span className="text-gray-500">—</span>
                                                     )}
                                                 </Td>
+                                                {canListen && (
+                                                    <Td onClick={(e) => e.stopPropagation()} data-testid="p9-call-recording">
+                                                        <ListRecording call={c} status={data.recordings_status} />
+                                                    </Td>
+                                                )}
                                             </Tr>
                                         ))
                                     ) : (

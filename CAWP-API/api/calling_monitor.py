@@ -8,7 +8,9 @@
       users[] and totals also carry talk_over_60 / talk_over_120 / talk_over_180: answered calls
       with talk time strictly longer than 1 / 2 / 3 minutes
   GET /v2/calling/monitor/calls   one user's (or the scope's) calls of the period, newest first  same keys
-      ?from&to&extension&page=1&page_size=50 (max 200)
+      ?from&to&extension&number&page=1&page_size=50 (max 200)
+      number (2026-10-19): the client's number, normalised (services/calling/number_search.py: digits,
+      the last 9; 4-8 digits = partial); without `extension` it searches every extension in scope
       -> {scope, extension, from, to, truncated, items: [{at (ISO, +03:00), extension, user_id, name,
           direction, answered, result, number, line, client: {name, account_number}|null,
           ring_seconds, talk_seconds, recorded, recording (CDR recordingfile; null without a
@@ -18,7 +20,8 @@
   GET /v2/calling/monitor/stats/export   XLSX: the per-user table + totals, calls over time   same keys
   GET /v2/calling/monitor/calls/export   XLSX: one row per call (time, number, client, line,  same keys
                                          result, ring/talk seconds, talk > 1/2/3 min, recorded)
-      both take the stats query (from, to, extension); every download writes an audit event
+      both take the stats query (from, to, extension; the calls download also `number`); every
+      download writes an audit event
 
 Scope is applied on the server: SuperAdmin sees every extension, a supervisor their team's
 extensions and their own, anyone else their own extension.
@@ -82,7 +85,8 @@ def _download(build, kind: str):
         shutil.rmtree(tmp, ignore_errors=True)
     audit.record("call_monitor.export", "call_monitor", None,
                  after={"kind": kind, "from": args.get("from"), "to": args.get("to"),
-                        "extension": args.get("extension") or None, "rows": count})
+                        "extension": args.get("extension") or None, "number": args.get("number") or None,
+                        "rows": count})
     db.session.commit()
     resp = send_file(io.BytesIO(payload), as_attachment=True, download_name=name, max_age=0,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

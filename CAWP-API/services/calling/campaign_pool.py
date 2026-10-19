@@ -14,6 +14,10 @@ At least one criterion is required. The filter keys are the clients list's own p
     customeFilterAttributeValue     customeFilterPortfolioCreateAt{,From,To}Value
     filterField / filterOperator / filterFieldType / filterValue / filterValue[]   (the grid filter)
 
+A note status filter is the case's LATEST note (clints.last_comment_id): its main status and its
+sub-status, ANDed when both are given, like the clients list. On create/update the statuses are
+checked against the campaign's contracts within the editor's scope (check_pool_statuses).
+
 They mean exactly what the clients list means (tested for parity against build_clients_query),
 except the spreadsheet filter (a temporary upload) which a campaign cannot keep, and grid
 filters the list itself cannot evaluate (a number operator on a text column, ...): both 422.
@@ -221,6 +225,95 @@ def _validate_grid(f: dict):
                 raise _err("pool.filter.filterValue[]", "filterValue[] must be numbers") from None
         elif kind != "text":
             raise _err("pool.filter.filterField", "isAnyOf needs a text column", "not_supported")
+
+
+# --------------------------------------------------------------------------- note statuses (2026-10-19)
+STATUS_KEYS = ("customeFilterCommentStatusValue[]", "customeFilterStatusesValue")
+SUB_STATUS_KEY = "customeFilterCommentSubStatusValue[]"
+
+
+def pool_contract_ids(pool: dict) -> set[str] | None:
+    """The contracts the pool can reach by its own definition: the intersection of its contract
+    and portfolio criteria (a portfolio stands for its contract). None = it names none."""
+    f = pool.get("filter") or {}
+    sets = [set(ids) for ids in (pool.get("contract_ids"), f.get("customeFilterContractValue[]")) if ids]
+    for ids in (pool.get("portfolio_ids"), f.get("customeFilterPortfoliosValue[]")):
+        if ids:
+            sets.append({r[0] for r in sess().execute(text(
+                "SELECT DISTINCT contract_id::text FROM portfolios WHERE id = ANY(CAST(:ids AS uuid[])) "
+                "AND contract_id IS NOT NULL"), {"ids": list(ids)}).all()})
+    return set.intersection(*sets) if sets else None
+
+
+def scope_contract_ids(user_id) -> list[str] | None:
+    """Contracts with at least one case in `user_id`'s current scope (scope_clause), sorted.
+    None = every contract (SuperAdmin)."""
+    sql, params = scope_clause(user_id, "sc")
+    if sql == "TRUE":
+        return None
+    return [r[0] for r in sess().execute(text(f"""
+        SELECT k.id::text FROM contracts k
+         WHERE EXISTS (SELECT 1 FROM clints c JOIN portfolios p ON p.id = c.portfolios_id
+                        WHERE p.contract_id = k.id AND {sql})
+         ORDER BY k.id"""), params).all()]
+
+
+def status_contracts(pool: dict, user_id) -> set[str] | None:
+    """The contracts whose own note statuses the pool may filter on: the pool's contracts within
+    `user_id`'s scope (None = any contract). General statuses (contract NULL) always fit."""
+    own, scope = pool_contract_ids(pool), scope_contract_ids(user_id)
+    if scope is None:
+        return own
+    return set(scope) if own is None else own & set(scope)
+
+
+def check_pool_statuses(pool: dict, user_id, keep=()) -> None:
+    """422 unless every note status of the (normalized) pool filter can be chosen by `user_id`:
+    an existing, live status; a MAIN status under the status keys and a sub-status under the
+    sub-status key; general or of a contract in status_contracts(); and, when main statuses
+    are chosen too, each sub-status under one of them (the two filters are ANDed, exactly as
+    the clients list ANDs them, so another parent's sub-status would only empty the pool).
+
+    `keep`: ids the campaign already had (an edit keeps a status deleted since, or one of a
+    contract that left the scope; the pool keeps evaluating it as it did)."""
+    f = pool.get("filter") or {}
+    mains = {x for k in STATUS_KEYS for x in (f.get(k) or [])}
+    subs = set(f.get(SUB_STATUS_KEY) or [])
+    if not (mains or subs):
+        return
+    rows = {r[0]: r for r in sess().execute(text("""
+        SELECT id::text, contract_id::text, parent_id::text, deleted_at IS NOT NULL FROM "CommentStatuses"
+         WHERE id = ANY(CAST(:ids AS uuid[]))"""), {"ids": sorted(mains | subs)}).all()}
+    keep = {str(x) for x in keep}
+    allowed = None
+    for key in STATUS_KEYS + (SUB_STATUS_KEY,):
+        field = f"pool.filter.{key}"
+        for sid in f.get(key) or []:
+            if sid in keep:
+                continue
+            row = rows.get(sid)
+            if row is None:
+                raise _err(field, "unknown note status", "unknown")
+            _id, contract, parent, deleted = row
+            if deleted:
+                raise _err(field, "this note status was deleted", "status_deleted")
+            if key == SUB_STATUS_KEY and parent is None:
+                raise _err(field, "a main status is not a sub-status", "not_a_sub_status")
+            if key != SUB_STATUS_KEY and parent is not None:
+                raise _err(field, "a sub-status is not a main status; choose its main status", "is_sub_status")
+            if key == SUB_STATUS_KEY and mains and parent not in mains:
+                raise _err(field, "the sub-status does not belong to a chosen main status", "not_a_sub_status")
+            if contract is not None:
+                if allowed is None:
+                    allowed = (status_contracts(pool, user_id),)
+                if allowed[0] is not None and contract not in allowed[0]:
+                    raise _err(field, "the note status belongs to a contract outside this campaign's pool or "
+                                      "your scope", "status_not_for_contract")
+
+
+def statuses_of(pool) -> set[str]:
+    f = (pool or {}).get("filter") or {}
+    return {str(x) for k in STATUS_KEYS + (SUB_STATUS_KEY,) for x in (f.get(k) or [])}
 
 
 # --------------------------------------------------------------------------- SQL

@@ -691,6 +691,17 @@ const navigationConfig: NavigationTree[] = [
             authority: [],
             subMenu: [],
           },
+          /* hidden unless settings_comments_status_add (derived key `previous_statuses_import`) */
+          {
+            key: "previous_statuses_import",
+            path: "/settings/comments/previousStatuses",
+            title: "Import previous statuses",
+            translateKey: "p9.prevstatus.nav",
+            icon: "",
+            type: NAV_ITEM_TYPE_ITEM,
+            authority: [],
+            subMenu: [],
+          },
         ],
       },
     ],

@@ -114,6 +114,8 @@ export const DERIVED_KEYS = {
     call_monitor: (p: Record<string, unknown>) => p.reports_calls === true || p.calls_manage === true,
     /* Phase 6: the quality workspace (quality_review | quality_approve). */
     quality_any: (p: Record<string, unknown>) => QUALITY_KEYS.some((k) => p[k] === true),
+    /* 2026-10-19: the previous statuses import (the API also requires the SuperAdmin role). */
+    previous_statuses_import: (p: Record<string, unknown>) => p.settings_comments_status_add === true,
 }
 
 /** The permission map plus the derived keys. Never removes or changes a real key. */
