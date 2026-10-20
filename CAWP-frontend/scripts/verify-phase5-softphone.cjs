@@ -622,20 +622,18 @@ function insertAttempt() {
       check('multiline: switching back holds line 2 and resumes line 1', true);
 
       /* ---------------------------------------------------------------- transfer: internal only */
+      // 2026-10-20: transfer / consult / add a participant are server-controlled (AMI, CallControlBox):
+      // the softphone sends no REFER and offers no free-text target, only app users' extensions.
       if (want('transfer')) {
-        log('\n== transfer (internal extensions only)');
+        log('\n== transfer (server-controlled, app users only)');
         await page.locator(`[data-line-id="${first}"] [data-testid="sp-transfer-open"]`).click();
-        const input = page.locator(`[data-line-id="${first}"] [data-testid="sp-transfer-input"]`);
-        await input.fill('0501234567');
-        check('transfer: an external number cannot be entered as a target', (await input.inputValue()).length <= 6 && (await page.locator(`[data-line-id="${first}"] [data-testid="sp-transfer"]`).isDisabled()),
-          await input.inputValue());
-        await input.fill('7002');
-        await page.locator(`[data-line-id="${first}"] [data-testid="sp-transfer"]`).click();
-        const tsel = page.locator(`[data-line-id="${first}"] [data-testid="sp-transfer-state"]`);
-        await waitFor(async () => ['failed', 'accepted'].includes(await tsel.getAttribute('data-state')), { timeout: 10000, label: 'transfer result' }).catch(() => null);
-        const tstate = await tsel.getAttribute('data-state').catch(() => null);
-        check('transfer: REFER to internal 7002 was sent; the PBX refuses it (allow_transfer=no, production policy)', tstate === 'failed', `${tstate}: ${await tsel.innerText().catch(() => '')}`);
-        await shot(page, 'softphone_07_transfer_refused_en');
+        const box = page.locator(`[data-line-id="${first}"] [data-testid="sp-callctl"]`);
+        await box.waitFor({ timeout: 8000 });
+        check('transfer: no free-text target (external numbers cannot be entered)',
+          (await page.locator(`[data-line-id="${first}"] [data-testid="sp-transfer-input"]`).count()) === 0);
+        check('transfer: blind / consult / add-to-call choices are offered',
+          (await box.locator('[data-testid^="sp-callctl-"][role="radio"]').count()) === 3);
+        await shot(page, 'softphone_07_call_control_en');
       }
       for (const id of [first, second]) {
         const b = page.locator(`[data-line-id="${id}"] [data-testid="sp-hangup"]`);

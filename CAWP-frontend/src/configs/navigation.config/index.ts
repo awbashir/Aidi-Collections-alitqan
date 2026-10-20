@@ -49,6 +49,19 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* Team performance dashboard, next to Home (`team_dashboard` = calls_supervise |
+   * calls_manage, derived; the API scopes it to the user's team). */
+  {
+    key: "team_dashboard",
+    group: NAV_GROUP_DAILY_OPERATIONS,
+    path: "/team-dashboard",
+    title: "Team performance",
+    translateKey: "p10.teamdash.nav",
+    icon: "team_dashboard",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* Phase 1: the daily attention queue sits right under Home. */
   {
     key: "attention_queue",
@@ -464,6 +477,19 @@ const navigationConfig: NavigationTree[] = [
     title: "Calling admin",
     translateKey: "nav.p5.admin",
     icon: "calling_admin",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
+  /* Extensions on the PBX ("التحويلات", 2026-10-20): create / rename / delete, assign, and the
+   * users without one (`calling_extensions` = calls_manage, derived). */
+  {
+    key: "calling_extensions",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/calling-extensions",
+    title: "Extensions",
+    translateKey: "p10.extprov.nav",
+    icon: "calling_extensions",
     type: NAV_ITEM_TYPE_ITEM,
     authority: [],
     subMenu: [],

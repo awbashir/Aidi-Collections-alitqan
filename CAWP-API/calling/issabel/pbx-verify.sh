@@ -40,7 +40,7 @@ SIP=$(ax "module show like chan_sip" | grep -c "chan_sip.so")
 [ "$PJSIP" -gt 0 ] && pass driver "chan_pjsip loaded"
 [ "$SIP" -gt 0 ] && warn driver "chan_sip loaded (deprecated; the runbook has the chan_sip WebRTC variant)"
 [ "$PJSIP" -eq 0 ] && [ "$SIP" -eq 0 ] && fail driver "no SIP channel driver loaded"
-for m in res_http_websocket res_srtp res_agi app_mixmonitor func_pjsip_endpoint app_userevent; do
+for m in res_http_websocket res_srtp res_agi app_mixmonitor func_pjsip_endpoint app_userevent app_chanspy app_confbridge; do
     if ax "module show like $m" | grep -q "$m.so"; then pass module "$m"; else
         case $m in func_pjsip_endpoint) [ "$PJSIP" -gt 0 ] && fail module "$m missing" || warn module "$m (PJSIP only)";;
                    *) fail module "$m missing";; esac
@@ -54,8 +54,9 @@ USERINFO=$(ax "manager show user $AMI_USER")
 if echo "$USERINFO" | grep -q "username: $AMI_USER"; then
     R=$(echo "$USERINFO" | awk -F': ' '/read perm/ {print $2}')
     W=$(echo "$USERINFO" | awk -F': ' '/write perm/ {print $2}')
-    echo "$W" | grep -Eq '(^|,)(system|command|config|all|call|agent|user|dtmf)(,|$)' \
-        && fail ami-write "write = $W (must be originate,reporting)" || pass ami-write "write = $W"
+    # call (2026-10-20): Redirect/Setvar/PlayDTMF/Hangup for call control; the client allowlists their fields
+    echo "$W" | grep -Eq '(^|,)(system|command|config|all|agent|user|dtmf)(,|$)' \
+        && fail ami-write "write = $W (must be originate,reporting[,call])" || pass ami-write "write = $W"
     echo "$R" | grep -q call && echo "$R" | grep -q user && echo "$R" | grep -q system \
         && pass ami-read "read = $R" || fail ami-read "read = $R (needs call,user,system)"
     echo "$USERINFO" | grep -qi "acl: yes\|acl.*yes\|permit" && pass ami-acl "ACL present" \

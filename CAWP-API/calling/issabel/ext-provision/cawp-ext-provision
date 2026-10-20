@@ -1,0 +1,522 @@
+#!/usr/bin/php
+<?php
+/*
+ * CAWP extension provisioning on Issabel (customer request 2026-10-20: create and edit the
+ * agents' extensions from the app). Root-owned, run ONLY through the provisioning vhost
+ * (cawp-provision.conf, port 8092) via the narrow sudoers rule, or by an operator.
+ *
+ *   cawp-ext-provision list                  every IssabelPBX extension + live PJSIP state
+ *   cawp-ext-provision status <ext>          one extension
+ *   cawp-ext-provision create <ext> <name>   a WebRTC agent extension like 100
+ *   cawp-ext-provision rename <ext> <name>   display name / caller ID name
+ *   cawp-ext-provision delete <ext>          only extensions this script created, no active channel
+ *
+ * Output: ONE JSON object on stdout, {"ok": true, ...} or {"ok": false, "http": <status>,
+ * "code": "<code>", "message": "..."}; exit 0 on success, 1 otherwise.
+ *
+ * It replays the manual procedure that created 136/137 (2026-10-20):
+ *   1. IssabelPBX core functions (core_users_add + core_devices_add, pjsip) with the `sip` settings
+ *      of the template extension 100 (except account/callerid/secret/dial/mailbox), a random secret;
+ *   2. AstDB AMPUSER/<ext>/recording/{in,out}/{external,internal} = always;
+ *   3. the WebRTC override blocks, copied from the template's blocks in pjsip_custom_post.conf
+ *      (so the transfer policy etc. follow what the other agents have), written as a marked block
+ *      into /etc/asterisk/pjsip_cawp_managed.conf (#included from pjsip_custom_post.conf; the
+ *      existing 100-140 blocks stay where they are). The static auth is a locked fallback: the
+ *      real password comes from the app (realtime ps_auths, 10-minute credentials);
+ *   4. retrieve_conf, need_reload reset, `core reload`, then it checks `pjsip show endpoint`.
+ * One lock serializes every write; every write is backed up first (/root/cawp-backup-ext/).
+ * Extensions outside RANGE_MIN..RANGE_MAX are refused. Asterisk down = state unknown (null).
+ */
+
+const RANGE_MIN = 100;
+const RANGE_MAX = 199;
+const TEMPLATE = '100';
+const CUSTOM_POST = '/etc/asterisk/pjsip_custom_post.conf';
+const MANAGED = '/etc/asterisk/pjsip_cawp_managed.conf';
+const LOCK = '/var/lock/cawp-ext-provision.lock';
+const BACKUP_DIR = '/root/cawp-backup-ext';
+const BACKUP_KEEP = 200;
+const LOG = '/var/log/cawp-ext-provision.log';
+const ASTERISK = '/usr/sbin/asterisk';
+const RETRIEVE_CONF = '/var/lib/asterisk/bin/retrieve_conf';
+const NAME_MAX = 40;
+
+function cx_out(array $o, int $rc = 0) {
+    echo json_encode($o, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), "\n";
+    exit($rc);
+}
+
+function cx_fail(int $http, string $code, string $message, array $extra = []) {
+    cx_plog('fail', $code . ': ' . $message);
+    cx_out(['ok' => false, 'http' => $http, 'code' => $code, 'message' => $message] + $extra, 1);
+}
+
+function cx_plog(string $what, string $detail = '') {
+    global $CAWP_OP, $CAWP_EXT;
+    @file_put_contents(LOG, sprintf("%s %s %s %s %s\n", date('c'), $CAWP_OP ?? '-', $CAWP_EXT ?? '-', $what,
+        str_replace("\n", ' ', $detail)), FILE_APPEND);
+}
+
+function cx_valid_ext($e): string {
+    if (!is_string($e) || !preg_match('/^[0-9]{2,6}$/', $e)) {
+        cx_fail(422, 'invalid_extension', 'the extension must be 2-6 digits');
+    }
+    if ((int)$e < RANGE_MIN || (int)$e > RANGE_MAX || $e[0] === '0') {
+        cx_fail(422, 'extension_out_of_range', sprintf('extensions %d-%d only', RANGE_MIN, RANGE_MAX));
+    }
+    return $e;
+}
+
+/* Letters (any script), marks, digits, space, . _ - only; spaces collapsed; 1..NAME_MAX. */
+function cx_valid_name($n): string {
+    if (!is_string($n) || !mb_check_encoding($n, 'UTF-8')) {
+        cx_fail(422, 'invalid_name', 'the name must be UTF-8 text');
+    }
+    $n = preg_replace('/[^\p{L}\p{M}\p{N} ._-]/u', '', $n);
+    $n = trim(preg_replace('/\s+/u', ' ', $n));
+    if ($n === '' || mb_strlen($n) > NAME_MAX) {
+        cx_fail(422, 'invalid_name', 'the name must have 1-' . NAME_MAX . ' letters, digits, spaces or . _ -');
+    }
+    return $n;
+}
+
+function cx_ast(string $cmd, &$rc = null): ?string {
+    $o = [];
+    exec(ASTERISK . ' -rx ' . escapeshellarg($cmd) . ' 2>&1', $o, $rc);
+    $text = implode("\n", $o);
+    if ($rc !== 0 || stripos($text, 'Unable to connect to remote asterisk') !== false) {
+        return null;                                       // Asterisk is down: unknown, never "absent"
+    }
+    return $text;
+}
+
+/* `pjsip show endpoints` -> [ext => [state, channels, registered]] (null = Asterisk unreachable). */
+function cx_endpoint_states(): ?array {
+    $t = cx_ast('pjsip show endpoints');
+    if ($t === null) {
+        return null;
+    }
+    $res = [];
+    $cur = null;
+    foreach (explode("\n", $t) as $line) {
+        if (preg_match('/^\s*Endpoint:\s+([0-9A-Za-z_.-]+)(?:\/\S*)?\s+(.+?)\s+(\d+) of (\S+)\s*$/', $line, $m)) {
+            if ($m[1] === '<Endpoint') {
+                continue;
+            }
+            $cur = $m[1];
+            $res[$cur] = ['state' => $m[2], 'channels' => (int)$m[3], 'contacts' => 0];
+        } elseif ($cur !== null && preg_match('/^\s*Contact:\s+\S+\s+\S+\s+(Avail|NonQual)\b/', $line)) {
+            $res[$cur]['contacts']++;
+        }
+    }
+    return $res;
+}
+
+function cx_active_channels(string $ext): ?int {
+    $t = cx_ast('core show channels concise');
+    if ($t === null) {
+        return null;
+    }
+    $n = 0;
+    foreach (explode("\n", $t) as $line) {
+        if (strpos($line, 'PJSIP/' . $ext . '-') === 0 || strpos($line, 'SIP/' . $ext . '-') === 0) {
+            $n++;
+        }
+    }
+    return $n;
+}
+
+function cx_managed_text(): string {
+    return is_file(MANAGED) ? (string)file_get_contents(MANAGED) : '';
+}
+
+function cx_managed_list(): array {
+    preg_match_all('/^; BEGIN cawp-ext ([0-9]+)$/m', cx_managed_text(), $m);
+    return $m[1];
+}
+
+/* The template's override sections in pjsip_custom_post.conf: [T](+type=endpoint), [T](+type=aor), [T] auth. */
+function cx_template_sections(): array {
+    $lines = file(CUSTOM_POST, FILE_IGNORE_NEW_LINES);
+    if ($lines === false) {
+        cx_fail(500, 'template_missing', 'cannot read ' . CUSTOM_POST);
+    }
+    $sec = [];
+    $name = null;
+    foreach ($lines as $l) {
+        $t = trim($l);
+        if (preg_match('/^\[([^\]]+)\](\(.*\))?$/', $t, $m)) {
+            $name = ($m[1] === TEMPLATE) ? (isset($m[2]) ? $m[2] : '') : null;
+            if ($name !== null) {
+                $sec[$name] = [];
+            }
+            continue;
+        }
+        if ($name === null || $t === '' || $t[0] === ';' || $t[0] === '#') {
+            continue;
+        }
+        if (!preg_match('/^([A-Za-z0-9_]+)\s*=\s*(.*)$/', $t, $m)) {
+            continue;
+        }
+        $sec[$name][] = [$m[1], $m[2]];
+    }
+    foreach (['(+type=endpoint)', '(+type=aor)', ''] as $need) {
+        if (empty($sec[$need])) {
+            cx_fail(500, 'template_missing', 'template extension ' . TEMPLATE . " has no [$need] block in " . CUSTOM_POST);
+        }
+    }
+    return $sec;
+}
+
+function cx_managed_block(string $ext, string $name): string {
+    $s = cx_template_sections();
+    $o = ["; BEGIN cawp-ext $ext", '; ' . $name . ' - created ' . date('c') . ' by cawp-ext-provision (from ' . TEMPLATE . ')'];
+    $o[] = "[$ext](+type=endpoint)";
+    foreach ($s['(+type=endpoint)'] as [$k, $v]) {
+        $o[] = "$k = " . ($k === 'auth' ? $ext : $v);
+    }
+    $o[] = '';
+    $o[] = "[$ext](+type=aor)";
+    foreach ($s['(+type=aor)'] as [$k, $v]) {
+        $o[] = "$k = $v";
+    }
+    $o[] = '';
+    $realm = 'cawp';
+    foreach ($s[''] as [$k, $v]) {
+        if ($k === 'realm') {
+            $realm = $v;
+        }
+    }
+    // locked fallback: the HA1 of 32 random bytes nobody knows (the app's realtime auth is the real one)
+    $o[] = "[$ext]";
+    $o[] = 'type = auth';
+    $o[] = 'auth_type = md5';
+    $o[] = "username = $ext";
+    $o[] = "realm = $realm";
+    $o[] = 'md5_cred = ' . md5(random_bytes(32));
+    $o[] = "; END cawp-ext $ext";
+    return implode("\n", $o) . "\n";
+}
+
+function cx_write_managed(string $text) {
+    $tmp = MANAGED . '.tmp-' . getmypid();
+    if (file_put_contents($tmp, $text) === false) {
+        cx_fail(500, 'write_failed', 'cannot write ' . $tmp);
+    }
+    @chown($tmp, 'asterisk');
+    @chgrp($tmp, 'asterisk');
+    @chmod($tmp, 0640);
+    if (!rename($tmp, MANAGED)) {
+        @unlink($tmp);
+        cx_fail(500, 'write_failed', 'cannot replace ' . MANAGED);
+    }
+}
+
+function cx_managed_add(string $ext, string $name) {
+    $t = cx_managed_text();
+    if ($t === '') {
+        $t = "; CAWP-managed WebRTC agent extensions (cawp-ext-provision). Do not edit by hand.\n";
+    }
+    cx_write_managed(rtrim($t, "\n") . "\n\n" . cx_managed_block($ext, $name));
+}
+
+function cx_managed_remove(string $ext) {
+    $t = cx_managed_text();
+    $n = preg_replace('/\n*^; BEGIN cawp-ext ' . $ext . '$.*?^; END cawp-ext ' . $ext . '$\n?/ms', "\n", $t, 1, $count);
+    if ($count) {
+        cx_write_managed(rtrim($n, "\n") . "\n");
+    }
+}
+
+function cx_managed_rename(string $ext, string $name) {
+    $t = cx_managed_text();
+    $n = preg_replace('/^(; BEGIN cawp-ext ' . $ext . ")\n; .*? - created /m", "$1\n; " . addcslashes($name, '\\$') . ' - created ', $t, 1, $count);
+    if ($count) {
+        cx_write_managed($n);
+    }
+}
+
+function cx_include_installed(): bool {
+    return (bool)preg_match('/^#include\s+pjsip_cawp_managed\.conf\s*$/m', (string)@file_get_contents(CUSTOM_POST));
+}
+
+function cx_backup(string $tag) {
+    global $db, $amp_conf;
+    if (!is_dir(BACKUP_DIR)) {
+        mkdir(BACKUP_DIR, 0700, true);
+    }
+    $stamp = date('Ymd-His') . '-' . getmypid();
+    $dir = BACKUP_DIR . "/$stamp-$tag";
+    mkdir($dir, 0700);
+    foreach ([CUSTOM_POST, MANAGED] as $f) {
+        if (is_file($f)) {
+            copy($f, $dir . '/' . basename($f));
+        }
+    }
+    // the IssabelPBX rows the change touches (users / devices / sip / ringgroups), as JSON
+    $rows = [];
+    foreach (['users', 'devices', 'sip', 'ringgroups'] as $table) {
+        $r = $db->getAll("SELECT * FROM $table", [], DB_FETCHMODE_ASSOC);
+        $rows[$table] = DB::IsError($r) ? ['error' => $r->getMessage()] : $r;
+    }
+    file_put_contents($dir . '/issabel-rows.json', json_encode($rows, JSON_UNESCAPED_UNICODE));
+    $all = glob(BACKUP_DIR . '/*', GLOB_ONLYDIR);
+    sort($all);
+    foreach (array_slice($all, 0, max(0, count($all) - BACKUP_KEEP)) as $old) {
+        array_map('unlink', glob($old . '/*'));
+        @rmdir($old);
+    }
+    return $dir;
+}
+
+function cx_apply_config(): array {
+    global $db;
+    $o = [];
+    exec(RETRIEVE_CONF . ' 2>&1', $o, $rc);
+    if ($rc !== 0) {
+        cx_fail(500, 'retrieve_conf_failed', 'retrieve_conf exited ' . $rc . ': ' . substr(implode(' ', $o), -400));
+    }
+    $db->query("UPDATE admin SET value = 'false' WHERE variable = 'need_reload'");
+    $r = cx_ast('core reload', $rc2);
+    return ['retrieve_conf' => 'ok', 'reload' => $r === null ? 'unreachable' : 'ok'];
+}
+
+function cx_issabel_row(string $ext): ?array {
+    global $db;
+    $u = $db->getRow('SELECT extension, name FROM users WHERE extension = ?', [$ext], DB_FETCHMODE_ASSOC);
+    $d = $db->getRow('SELECT id, tech, description FROM devices WHERE id = ?', [$ext], DB_FETCHMODE_ASSOC);
+    if (DB::IsError($u) || DB::IsError($d)) {
+        cx_fail(500, 'db_error', 'cannot read the IssabelPBX tables');
+    }
+    if (!$u && !$d) {
+        return null;
+    }
+    return ['extension' => $ext, 'name' => $u ? $u['name'] : ($d ? $d['description'] : null),
+            'user' => (bool)$u, 'device' => (bool)$d, 'tech' => $d ? $d['tech'] : null];
+}
+
+function cx_describe(array $row, ?array $states, array $managed): array {
+    $ext = $row['extension'];
+    $st = $states === null ? null : ($states[$ext] ?? false);
+    return [
+        'extension' => $ext,
+        'name' => $row['name'],
+        'tech' => $row['tech'],
+        'managed' => in_array($ext, $managed, true),
+        // endpoint: true/false; null = Asterisk could not be asked (unknown)
+        'endpoint' => $st === null ? null : ($st !== false),
+        'state' => $st ? $st['state'] : null,
+        'registered' => $st === null ? null : ($st !== false && $st['contacts'] > 0),
+        'in_call' => $st === null ? null : ($st !== false && $st['channels'] > 0),
+        'channels' => $st ? $st['channels'] : null,
+    ];
+}
+
+function cx_ringgroups_with(string $ext): array {
+    global $db;
+    $r = $db->getAll('SELECT grpnum, grplist FROM ringgroups', [], DB_FETCHMODE_ASSOC);
+    $hits = [];
+    if (!DB::IsError($r)) {
+        foreach ($r as $g) {
+            $members = array_map(function ($m) { return rtrim(trim($m), '#'); }, preg_split('/[-&]/', (string)$g['grplist']));
+            if (in_array($ext, $members, true)) {
+                $hits[] = $g['grpnum'];
+            }
+        }
+    }
+    return $hits;
+}
+
+/* ------------------------------------------------------------------------------- main */
+$argv = $_SERVER['argv'];
+$CAWP_OP = $argv[1] ?? '';
+$CAWP_EXT = null;
+if (!in_array($CAWP_OP, ['list', 'status', 'create', 'rename', 'delete'], true)) {
+    cx_fail(422, 'invalid_operation', 'usage: cawp-ext-provision list | status <ext> | create <ext> <name> | rename <ext> <name> | delete <ext>');
+}
+$want = ['list' => 2, 'status' => 3, 'create' => 4, 'rename' => 4, 'delete' => 3][$CAWP_OP];
+if (count($argv) !== $want) {
+    cx_fail(422, 'invalid_arguments', "wrong number of arguments for $CAWP_OP");
+}
+if ($CAWP_OP !== 'list') {
+    $CAWP_EXT = cx_valid_ext($argv[2]);
+}
+$CAWP_NAME = in_array($CAWP_OP, ['create', 'rename'], true) ? cx_valid_name($argv[3]) : null;
+
+$CAWP_WRITE = in_array($CAWP_OP, ['create', 'rename', 'delete'], true);
+if ($CAWP_WRITE) {
+    $lock = fopen(LOCK, 'c');
+    $deadline = time() + 120;
+    while (!flock($lock, LOCK_EX | LOCK_NB)) {
+        if (time() > $deadline) {
+            cx_fail(503, 'busy', 'another provisioning change is running');
+        }
+        usleep(250000);
+    }
+}
+
+// IssabelPBX bootstrap (globals $db, $astman, $amp_conf; core module functions)
+$bootstrap_settings['issabelpbx_auth'] = false;
+ob_start();
+include '/etc/issabelpbx.conf';
+ob_end_clean();
+global $db, $astman;
+if (!function_exists('core_users_add') || !isset($db)) {
+    cx_fail(500, 'bootstrap_failed', 'the IssabelPBX bootstrap did not load the core module');
+}
+
+if ($CAWP_OP === 'list') {
+    $users = $db->getAll('SELECT u.extension, u.name, d.tech FROM users u LEFT JOIN devices d ON d.id = u.extension
+                           ORDER BY LENGTH(u.extension), u.extension', [], DB_FETCHMODE_ASSOC);
+    if (DB::IsError($users)) {
+        cx_fail(500, 'db_error', 'cannot read the IssabelPBX users table');
+    }
+    $states = cx_endpoint_states();
+    $managed = cx_managed_list();
+    cx_out(['ok' => true, 'asterisk' => $states !== null, 'range' => [RANGE_MIN, RANGE_MAX],
+         'include_installed' => cx_include_installed(),
+         'items' => array_map(function ($u) use ($states, $managed) {
+             return cx_describe(['extension' => $u['extension'], 'name' => $u['name'], 'tech' => $u['tech']], $states, $managed);
+         }, $users)]);
+}
+
+if ($CAWP_OP === 'status') {
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null) {
+        cx_fail(404, 'not_found', "extension $CAWP_EXT does not exist on the PBX");
+    }
+    cx_out(['ok' => true, 'item' => cx_describe($row, cx_endpoint_states(), cx_managed_list())]);
+}
+
+if ($CAWP_OP === 'create') {
+    if (!cx_include_installed()) {
+        cx_fail(500, 'include_missing', CUSTOM_POST . ' does not #include pjsip_cawp_managed.conf');
+    }
+    if (cx_issabel_row($CAWP_EXT) !== null) {
+        cx_fail(409, 'exists', "extension $CAWP_EXT already exists on the PBX");
+    }
+    if (in_array($CAWP_EXT, cx_managed_list(), true)) {
+        cx_fail(409, 'exists', "extension $CAWP_EXT already has a managed block (stale); remove it by hand");
+    }
+    $sip = $db->getAssoc('SELECT keyword, data FROM sip WHERE id = ?', false, [TEMPLATE]);
+    if (DB::IsError($sip) || !$sip) {
+        cx_fail(500, 'template_missing', 'template extension ' . TEMPLATE . ' has no sip settings');
+    }
+    cx_template_sections();                                   // refuse early if the WebRTC template is missing
+    $bk = cx_backup("create-$CAWP_EXT");
+    foreach ($sip as $k => $v) {
+        if (!in_array($k, ['account', 'callerid', 'secret', 'dial', 'mailbox'], true)) {
+            $_REQUEST['devinfo_' . $k] = $v;
+        }
+    }
+    // a random secret that is not used by any other device (the browser never uses it)
+    do {
+        $secret = bin2hex(random_bytes(16));
+    } while ($db->getOne("SELECT COUNT(*) FROM sip WHERE keyword = 'secret' AND data = ?", [$secret]) > 0);
+    $_REQUEST['devinfo_secret'] = $secret;
+    $_REQUEST['devinfo_dial'] = '';
+    $_REQUEST['devinfo_mailbox'] = '';
+    $vars = [
+        'extension' => $CAWP_EXT, 'name' => $CAWP_NAME, 'outboundcid' => '', 'sipname' => '', 'password' => '',
+        'voicemail' => 'novm', 'ringtimer' => 0, 'cfringtimer' => 0, 'concurrency_limit' => 0,
+        'answermode' => 'disabled', 'callwaiting' => 'enabled', 'noanswer' => '', 'recording' => '',
+        'noanswer_cid' => '', 'busy_cid' => '', 'chanunavail_cid' => '',
+        'recording_in_external' => 'recording_in_external=always',
+        'recording_out_external' => 'recording_out_external=always',
+        'recording_in_internal' => 'recording_in_internal=always',
+        'recording_out_internal' => 'recording_out_internal=always',
+        'recording_ondemand' => 'enabled', 'recording_priority' => 10, 'pinless' => 'disabled',
+    ];
+    $undo = function (string $why) use ($bk) {
+        global $CAWP_EXT;
+        ob_start();
+        core_devices_del($CAWP_EXT);
+        core_users_del($CAWP_EXT);
+        ob_end_clean();
+        cx_managed_remove($CAWP_EXT);
+        needreload();
+        cx_fail(500, 'create_failed', $why . ' (rolled back; backup ' . $bk . ')');
+    };
+    ob_start();
+    $okUser = core_users_add($vars);
+    $msg = ob_get_clean();
+    if ($okUser === false) {
+        cx_fail(500, 'create_failed', 'core_users_add refused: ' . trim(strip_tags($msg)));
+    }
+    ob_start();
+    $okDev = core_devices_add($CAWP_EXT, 'pjsip', '', 'fixed', $CAWP_EXT, $CAWP_NAME);
+    ob_end_clean();
+    if ($okDev === false || cx_issabel_row($CAWP_EXT) === null || !cx_issabel_row($CAWP_EXT)['device']) {
+        $undo('core_devices_add failed');
+    }
+    needreload();
+    foreach (['in/external', 'out/external', 'in/internal', 'out/internal'] as $k) {
+        $astman->database_put('AMPUSER', "$CAWP_EXT/recording/$k", 'always');
+    }
+    cx_managed_add($CAWP_EXT, $CAWP_NAME);
+    $applied = cx_apply_config();
+    $show = cx_ast("pjsip show endpoint $CAWP_EXT");
+    $endpoint = $show === null ? null : (strpos($show, 'Unable to find object') === false
+        && (bool)preg_match('/^\s*Endpoint:\s+' . $CAWP_EXT . '\b/m', $show));
+    $webrtc = $show === null ? null : (bool)preg_match('/^\s*webrtc\s*:\s*(yes|true)\s*$/m', $show);
+    cx_plog('ok', "created $CAWP_NAME endpoint=" . var_export($endpoint, true));
+    cx_out(['ok' => true, 'created' => true, 'item' => cx_describe(cx_issabel_row($CAWP_EXT), cx_endpoint_states(), cx_managed_list()),
+         'endpoint_verified' => $endpoint, 'webrtc' => $webrtc, 'backup' => $bk] + $applied);
+}
+
+if ($CAWP_OP === 'rename') {
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null || !$row['user']) {
+        cx_fail(404, 'not_found', "extension $CAWP_EXT does not exist on the PBX");
+    }
+    if ($row['name'] === $CAWP_NAME) {
+        cx_out(['ok' => true, 'renamed' => false, 'item' => cx_describe($row, cx_endpoint_states(), cx_managed_list())]);
+    }
+    $bk = cx_backup("rename-$CAWP_EXT");
+    $db->query('UPDATE users SET name = ? WHERE extension = ?', [$CAWP_NAME, $CAWP_EXT]);
+    $db->query('UPDATE devices SET description = ? WHERE id = ?', [$CAWP_NAME, $CAWP_EXT]);
+    $db->query("UPDATE sip SET data = ? WHERE id = ? AND keyword = 'callerid'", [$CAWP_NAME . ' <' . $CAWP_EXT . '>', $CAWP_EXT]);
+    $astman->database_put('AMPUSER', "$CAWP_EXT/cidname", '"' . $CAWP_NAME . '"');   // quoted: the CLI splits on spaces
+    cx_managed_rename($CAWP_EXT, $CAWP_NAME);
+    needreload();
+    $applied = cx_apply_config();
+    cx_plog('ok', "renamed to $CAWP_NAME");
+    cx_out(['ok' => true, 'renamed' => true, 'item' => cx_describe(cx_issabel_row($CAWP_EXT), cx_endpoint_states(), cx_managed_list()),
+         'backup' => $bk] + $applied);
+}
+
+if ($CAWP_OP === 'delete') {
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null) {
+        cx_fail(404, 'not_found', "extension $CAWP_EXT does not exist on the PBX");
+    }
+    if (!in_array($CAWP_EXT, cx_managed_list(), true)) {
+        cx_fail(409, 'not_managed', "extension $CAWP_EXT was not created by the app; delete it in IssabelPBX");
+    }
+    $ch = cx_active_channels($CAWP_EXT);
+    if ($ch === null) {
+        cx_fail(503, 'asterisk_unreachable', 'cannot check the active channels; not deleting');
+    }
+    if ($ch > 0) {
+        cx_fail(409, 'in_call', "extension $CAWP_EXT has $ch active channel(s)");
+    }
+    $groups = cx_ringgroups_with($CAWP_EXT);
+    if ($groups) {
+        cx_fail(409, 'in_ring_group', "extension $CAWP_EXT is a member of ring group(s) " . implode(', ', $groups), ['ring_groups' => $groups]);
+    }
+    $bk = cx_backup("delete-$CAWP_EXT");
+    ob_start();
+    core_devices_del($CAWP_EXT);
+    core_users_del($CAWP_EXT);
+    if (function_exists('core_users_cleanastdb')) {
+        core_users_cleanastdb($CAWP_EXT);
+    }
+    ob_end_clean();
+    cx_managed_remove($CAWP_EXT);
+    needreload();
+    $applied = cx_apply_config();
+    $show = cx_ast("pjsip show endpoint $CAWP_EXT");
+    $gone = $show === null ? null : (strpos($show, 'Unable to find object') !== false);
+    cx_plog('ok', 'deleted gone=' . var_export($gone, true));
+    cx_out(['ok' => true, 'deleted' => true, 'extension' => $CAWP_EXT, 'endpoint_gone' => $gone, 'backup' => $bk] + $applied);
+}

@@ -27,6 +27,10 @@ Modules:
     campaign_pool     the pool definition (saved clients-list filter), order, exclusions, contact
     campaign_dispatch one call per ready member through dispatch.authorize(); the service loop
 
+  Call control (2026-10-20, migration 0075):
+    call_control      transfers, conferences, supervisor listening: API requests + the service's ControlWorker
+    callctl_dialplan  the cawp-callctl.conf dialplan and ConfBridge profiles (offline artifact)
+
 Nothing in this package contacts a PBX by itself. The only process that opens an AMI
 session or listens for FastAGI is the `calling` service (CAWP-API/calling/).
 """

@@ -411,17 +411,45 @@ def dashbord_collector_v2():
 
 
 # =========================================================================== #
+#  Users on the home dashboard cards (Allcollector/v2, commentsReport/v2)
+# =========================================================================== #
+def _dashboard_users():
+    """Active users shown on the all-collectors and daily notes/calls cards, with the contract
+    each one is grouped under -> [(User, contract_id or None)].
+
+    The cards used to list only users whose profile carries `users.contract_id`. Users created
+    without it (every collector of the a-alaoula install, 2026-10) vanished from the home page.
+    Now: every active user except SuperAdmin accounts (plus any SuperAdmin that does carry a
+    contract); the contract is the profile's, else the contract of the portfolio holding most of
+    the user's unarchived cases, else None (shown without a target; hidden only when a contract
+    filter is chosen)."""
+    from models import Role
+    rows = (db.session.query(User, Role.name)
+            .outerjoin(Role, Role.id == User.role_id)
+            .filter(User.is_active == True).all())
+    users = [u for u, role in rows if u.contract_id is not None or role != "SuperAdmin"]
+    missing = [u.id for u in users if u.contract_id is None]
+    derived = {}
+    if missing:
+        ranked = (db.session.query(Clints.user_id, Portfolios.contract_id,
+                                   func.count(Clints.id).label("n"))
+                  .join(Portfolios, Portfolios.id == Clints.portfolios_id)
+                  .filter(Clints.is_archive == False, Clints.user_id.in_(missing))
+                  .group_by(Clints.user_id, Portfolios.contract_id).all())
+        for user_id, contract_id, n in sorted(ranked, key=lambda r: (str(r[0]), -r[2], str(r[1]))):
+            derived.setdefault(user_id, contract_id)
+    return [(u, u.contract_id if u.contract_id is not None else derived.get(u.id)) for u in users]
+
+
+# =========================================================================== #
 #  /dashbord/Allcollector/v2
 # =========================================================================== #
 def _allcollector_payload():
     now = datetime.datetime.now()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    users_rows = (db.session.query(
-        User.id, User.frist_name, User.last_name, User.target_amount, User.target_percent,
-        User.target_is_percentage, User.contract_id)
-        .filter(User.is_active == True, User.contract_id != None).all())
-    active_user_ids = [u.id for u in users_rows]
+    users_rows = _dashboard_users()
+    active_user_ids = [u.id for u, _c in users_rows]
     tusers = [{
         "id": str(u.id),
         "frist_name": u.frist_name,
@@ -429,8 +457,8 @@ def _allcollector_payload():
         "target_amount": u.target_amount,
         "target_percent": u.target_percent,
         "target_is_percentage": u.target_is_percentage,
-        "contract_id": str(u.contract_id) if u.contract_id else None,
-    } for u in users_rows]
+        "contract_id": str(contract_id) if contract_id else None,
+    } for u, contract_id in users_rows]
 
     contracts_rows = db.session.query(
         Contract.id, Contract.name, Contract.monthly_target_amount,
@@ -505,9 +533,11 @@ def dashbord_all_collector_v2():
 def _comments_report_db():
     """users / contracts / today's comments, in three queries and zero Python loops
     over the ORM identity map."""
-    users_rows = db.session.query(User).filter(
-        User.is_active == True, User.contract_id != None).all()
-    users_list = [u.as_dict() for u in users_rows]
+    users_list = []
+    for u, contract_id in _dashboard_users():
+        d = u.as_dict()
+        d["contract_id"] = contract_id      # the grouping contract (profile's or derived)
+        users_list.append(d)
 
     contracts_list = [c.as_dict() for c in Contract.query.all()]
 

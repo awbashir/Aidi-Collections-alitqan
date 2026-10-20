@@ -68,7 +68,53 @@ GREETING_RE = re.compile(r"^Asterisk Call Manager/\d+\.\d+(?:\.\d+)?$")
 CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 ROUTING_KEYS = ("ActionID", "Event", "Response", "Action")
 ALLOWED_ACTIONS = frozenset({"Ping", "Originate", "Hangup", "CoreStatus", "CoreShowChannels",
-                             "Getvar", "Status", "BridgeInfo"})
+                             "Getvar", "Status", "BridgeInfo",
+                             # call control (2026-10-20, services/calling/call_control.py): only with
+                             # the fields checked by call_control_fields_ok() below
+                             "Setvar", "Redirect", "PlayDTMF"})
+# Call control needs the `call` write class, which would also allow a GLOBAL Setvar (e.g. the AGI
+# URL) or a Redirect into any context. This client refuses both, whatever the caller passes:
+# Setvar only on a named channel and only CAWP_CTL_* / CAWP_SPY_* variables with plain values;
+# Redirect only into the cawp-callctl-* contexts; PlayDTMF only ChanSpy's mode digits 4/5/6.
+CALL_CONTROL_VARIABLE_RE = re.compile(r"^CAWP_(?:CTL|SPY)_[A-Z]{1,20}$")
+CALL_CONTROL_VALUE_RE = re.compile(r"^[A-Za-z0-9_./+-]{0,150}$")
+CALL_CONTROL_CONTEXT_RE = re.compile(r"^cawp-callctl-[a-z]{1,20}$")
+CALL_CONTROL_CHANNEL_RE = re.compile(r"^[A-Za-z0-9_./+@:-]{1,150}$")
+CALL_CONTROL_EXTEN_RE = re.compile(r"^(?:[0-9]{2,6}|[a-z]{1,20})$")
+
+
+def call_control_fields_ok(action: str, fields) -> bool:
+    """Field allowlist of the call-control actions (other actions: True)."""
+    if action not in ("Setvar", "Redirect", "PlayDTMF"):
+        return True
+    d: dict[str, list[str]] = {}
+    for k, v in fields:
+        d.setdefault(k.lower(), []).append(v)
+    if any(len(v) > 1 for v in d.values()):
+        return False
+    one = {k: v[0] for k, v in d.items()}
+    chan = one.get("channel", "")
+    if not CALL_CONTROL_CHANNEL_RE.match(chan):
+        return False
+    if action == "Setvar":
+        return (set(one) == {"channel", "variable", "value"} and bool(CALL_CONTROL_VARIABLE_RE.match(one["variable"]))
+                and bool(CALL_CONTROL_VALUE_RE.match(one["value"])))
+    if action == "PlayDTMF":
+        return set(one) == {"channel", "digit", "receive"} and one["digit"] in ("4", "5", "6") and one["receive"] == "yes"
+    allowed = {"channel", "context", "exten", "priority", "extrachannel", "extracontext", "extraexten", "extrapriority"}
+    if not {"channel", "context", "exten", "priority"} <= set(one) or set(one) - allowed:
+        return False
+    if not CALL_CONTROL_CONTEXT_RE.match(one["context"]) or not CALL_CONTROL_EXTEN_RE.match(one["exten"]) \
+            or one["priority"] != "1":
+        return False
+    if "extrachannel" in one:
+        if not CALL_CONTROL_CHANNEL_RE.match(one["extrachannel"]) \
+                or not CALL_CONTROL_CONTEXT_RE.match(one.get("extracontext", "")) \
+                or not CALL_CONTROL_EXTEN_RE.match(one.get("extraexten", "")) or one.get("extrapriority") != "1":
+            return False
+    elif {"extracontext", "extraexten", "extrapriority"} & set(one):
+        return False
+    return True
 UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 EPOCH_VARIABLE = "COLLECTIONS_HUMAN_PBX_EPOCH"
 
@@ -441,6 +487,8 @@ class AmiSession:
         fields = list(fields)
         if any(not isinstance(p, (list, tuple)) or len(p) != 2 or not isinstance(p[0], str)
                or p[0].lower() in ("action", "actionid", "event", "response") for p in fields):
+            raise AmiError("ami_action_invalid", "invalid action fields")
+        if not internal and not call_control_fields_ok(action, fields):
             raise AmiError("ami_action_invalid", "invalid action fields")
         with self._lock:
             if self.closed.is_set() or (self._state != "ready" and not internal):

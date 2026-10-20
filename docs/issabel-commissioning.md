@@ -84,6 +84,46 @@ Why these privileges, and what they deny (all checked on the test PBX):
 - `reporting` gives read-only actions: Getvar of the epoch global, CoreStatus, CoreShowChannels and ShowDialPlan.
 - There is **no** `system`, `command`, `config` or `call` write, so this account cannot use CLI `Command`, `Reload`/`ModuleLoad`, `Setvar` (which could overwrite the AGI URL global), `Redirect`, transfers or `Bridge`.
 - Hanging up a call from the application (`Hangup`) would need `call` write. That also grants `Setvar`, so it is deliberately left out. The dialplan's absolute timeout enforces the maximum duration on the PBX (section 6). If P1 decides it needs a server-side hang-up, that is a separate reviewed change.
+- **2026-10-20, call control (section 3b):** transfers, conferences and supervisor listening need `call` write (`Redirect`, `Setvar`, `PlayDTMF`, `Hangup`). The account becomes `write = originate,reporting,call`. `call` would also allow a *global* `Setvar` (for example of `COLLECTIONS_AGI_URL`) or a `Redirect` into any context, so the client (`services/calling/ami.py`, `call_control_fields_ok`) refuses those whatever the caller passes: `Setvar` only on a named channel and only `CAWP_CTL_*`/`CAWP_SPY_*` variables with plain values, `Redirect` only into `cawp-callctl-*` contexts, `PlayDTMF` only the digits 4/5/6 with `Receive: yes`. The ACL (one host) and TLS stay. `system`, `command`, `config` remain refused (`pbx-verify.sh`).
+
+## 3b. Call control: transfer, conference, supervisor listening (2026-10-20)
+
+Server-controlled, never SIP REFER: every endpoint keeps `allow_transfer = no` (the click-to-call gate needs it). The `calling` service sends AMI actions into its own contexts; nothing else reaches them.
+
+Files (generated, review before installing):
+
+```sh
+cd CAWP-API
+echo '{"post_call_context":"cawp-survey","record":true,"max_call_seconds":3600,"ring_seconds":30,"recall_seconds":20}' \
+  | python -m services.calling.callctl_dialplan > cawp-callctl.conf          # -> /etc/asterisk/cawp-callctl.conf
+python -m services.calling.callctl_dialplan --confbridge > confbridge_custom.conf  # -> /etc/asterisk/confbridge_custom.conf
+```
+
+Install on Issabel (back up first; check `core show channels` shows no customer call before reloading):
+
+```sh
+B=/root/cawp-backup-callctl-$(date +%Y%m%d-%H%M%S); mkdir -p $B
+cp -a /etc/asterisk/manager_custom.conf /etc/asterisk/extensions_custom.conf /etc/asterisk/confbridge_custom.conf $B/
+install -o root -g asterisk -m 0640 cawp-callctl.conf /etc/asterisk/cawp-callctl.conf
+cat confbridge_custom.conf > /etc/asterisk/confbridge_custom.conf      # confbridge.conf already #includes it
+printf '\n; CAWP call control (services/calling/callctl_dialplan.py)\n#include cawp-callctl.conf\n' >> /etc/asterisk/extensions_custom.conf
+sed -i '/^\[cawp-calling\]/,/^\[/{s/^write = originate,reporting$/write = originate,reporting,call/}' /etc/asterisk/manager_custom.conf
+asterisk -rx "dialplan reload"; asterisk -rx "module reload app_confbridge.so"; asterisk -rx "manager reload"
+```
+
+Check: `dialplan show cawp-callctl-room`, `confbridge show profile bridge cawp_room`, `confbridge show profile user cawp_customer`, `manager show user cawp-calling` (write perm includes call), `module show like app_chanspy` / `app_confbridge`. The calling service must reconnect (restart it) to log in with the new permissions. Rollback: copy the backup files back and run the same three reloads.
+
+What happens on the PBX (Asterisk 18):
+
+| Action | AMI from the calling service | Dialplan |
+|---|---|---|
+| Blind transfer | `Setvar` CAWP_CTL_ID/FROM on the peer, CAWP_CTL_ID on the agent; one dual `Redirect` (peer → `cawp-callctl-xfer,<ext>`, agent → `cawp-callctl-done`) | the peer dials the target with the `X-CAWP-Control` header (pre-dial handler); no answer → rings the transferring agent back once; MixMonitor `<date>/<uniqueid>-cc.wav` on the customer leg |
+| Consult first | `Setvar` room/holder; dual `Redirect` (peer → `cawp-callctl-hold`, agent → room); `Originate` the target into the room | hold music; if the agent's channel disappears and the target is in the room, the customer joins it, else post-call |
+| Complete / cancel | `Redirect` peer → room + agent → done / `Hangup` target + `Redirect` peer → room | |
+| Add participant | `Setvar` room on both; dual `Redirect` into the ConfBridge room; `Originate` the invitee | profiles `cawp_room`, `cawp_customer` (marked), `cawp_member` (end_marked) |
+| Listen / whisper / join | `Originate` the supervisor's own extension into `cawp-callctl-spy,<mode>` | `ChanSpy(<agent channel>,qdEu[w|B])`; `PlayDTMF Receive` 4/5/6 switches the mode |
+
+The click-to-call agent leg is never masqueraded (Redirect keeps the channel and its uniqueid), so the attempt's evidence stays attributed; the agent's own MixMonitor keeps recording while the agent is in a room, and the customer leg gets its own recording once it leaves the agent. `CALLING_CONTROL_ENABLED=0` on the calling service turns the worker off.
 
 **Option without AMI TLS:** keep AMI bound to `127.0.0.1:5038` and run an SSH tunnel from the calling host (`ssh -N -L 127.0.0.1:5038:127.0.0.1:5038 pbx`). Then set `CALLING_AMI_TLS=0` with `CALLING_AMI_HOST=127.0.0.1` on the calling host. The client accepts plaintext only to loopback. Never expose 5038 on the network.
 

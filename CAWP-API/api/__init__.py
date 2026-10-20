@@ -30,6 +30,8 @@ MODULES = [
     "api.calling_sip",       # Phase 5 P3: short-lived SIP credentials for the in-app softphone
     "api.calling_survey",    # post-call IVR survey: per-contract switch and results (0066)
     "api.calling_monitor",   # call monitor: live calls and calls by user over time (0067)
+    "api.calling_control",   # call control: transfers, conferences, supervisor listening (0075)
+    "api.calling_extensions",  # extensions on the PBX: create / rename / delete / auto-create for new users (0077)
     "api.ai",                # Phase 6 Q0/Q1: AI status, data policy, drafts
     "api.quality",           # Phase 6 Q2: quality workspace
     "api.voice_lab",         # Phase 6 Q3: voice training lab sessions
@@ -37,6 +39,7 @@ MODULES = [
     "api.comment_status",    # note statuses: soft DELETE (0068); POST/PUT stay in app.py
     "api.same_identity",     # case page: other accounts of the same debtor identity (0072)
     "api.previous_status_import",  # previous statuses import from the old system (0074)
+    "api.team_dashboard",    # team performance dashboard: calls and status updates per user (2026-10-20)
 ]
 
 

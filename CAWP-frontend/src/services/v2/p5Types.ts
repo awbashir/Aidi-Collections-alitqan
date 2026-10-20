@@ -470,7 +470,12 @@ export type MonitorUserStats = MonitorAgent &
         internal: number
         talk_seconds: number
         handled: number
-    }
+    } & MonitorChartCounts
+
+/** Charts (2026-10-20): every call (missed rings included), answered in any direction, ring seconds summed over every call. */
+export type MonitorChartCounts = { calls: number; answered: number; ring_seconds: number }
+export type MonitorOutcome = 'answered' | 'no_answer' | 'busy' | 'failed' | 'unknown'
+export type MonitorWay = 'outbound' | 'inbound_answered' | 'inbound_missed' | 'internal'
 
 export type MonitorStats = {
     scope: MonitorScope
@@ -481,8 +486,22 @@ export type MonitorStats = {
     granularity: 'hour' | 'day'
     truncated: boolean
     users: MonitorUserStats[]
-    series: Array<{ bucket: string; total: number; by_extension: Record<string, number> }>
-    totals: MonitorTalkOver & {
+    /** `total` / `by_extension` = handled calls; `by_outcome` / `by_direction` = every call (2026-10-20). */
+    series: Array<{
+        bucket: string
+        total: number
+        by_extension: Record<string, number>
+        by_outcome: Record<MonitorOutcome, number>
+        by_direction: Record<MonitorWay, number>
+    }>
+    /** The client number the statistics follow (last 9 digits), null for every call. */
+    number: string | null
+    /** Answered calls by talk time: min < talk <= max seconds (max null = no upper bound). */
+    talk_distribution: Array<{ min: number; max: number | null; count: number }>
+    /** Handled calls by weekday (0 = Sunday) x hour of day, and the days of that weekday in the period. */
+    heatmap: Array<{ weekday: number; days: number; hours: number[] }>
+    totals: MonitorTalkOver & MonitorChartCounts & {
+        internal: number
         handled: number
         outbound: number
         outbound_answered: number

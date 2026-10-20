@@ -37,9 +37,11 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   PhoneOff, // blocked clients
+  Hash, // extensions on the PBX
   Mic, // Phase 6 Q3: voice training lab
   BrainCircuit, // Phase 6: AI administration
   BadgeCheck, // Phase 6: quality workspace
+  ChartColumnStacked, // team performance dashboard
 } from "lucide-react";
 
 
@@ -85,7 +87,9 @@ const navigationIcon: NavigationIcons = {
   call_review: <ShieldAlert strokeWidth={2} size={18} />,
   calling_admin: <SlidersHorizontal strokeWidth={2} size={18} />,
   calling_blocks: <PhoneOff strokeWidth={2} size={18} />,
+  calling_extensions: <Hash strokeWidth={2} size={18} />,
   call_monitor: <Activity strokeWidth={2} size={18} />,
+  team_dashboard: <ChartColumnStacked strokeWidth={2} size={18} />,
   /* Phase 6 Q3 (voice training lab) */
   voice_lab: <Mic strokeWidth={2} size={18} />,
   /* Phase 6: AI administration and the quality workspace */

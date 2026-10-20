@@ -66,7 +66,15 @@ const UserNew = () => {
     delete values.id;
     // The form has no active switch; a new account must be able to sign in.
     values.is_active = true;
-    const result = await newUser<{ status?: boolean; message?: string }, FormModel>(values);
+    const result = await newUser<
+      {
+        status?: boolean;
+        message?: string;
+        /* 2026-10-20: the PBX extension created for the new user (added key; absent when off) */
+        extension_provisioning?: { state: string; extension?: string; assigned?: boolean; error_code?: string | null };
+      },
+      FormModel
+    >(values);
     setSubmitting(false);
     // Legacy errors come back as HTTP 201 with status:false (core/http.error_response).
     if (result?.status === false) {
@@ -78,7 +86,23 @@ const UserNew = () => {
       );
       return;
     }
+    announceExtension(result?.extension_provisioning);
     popNotification("New");
+  };
+
+  /* What happened to the new user's PBX extension (the Extensions page retries a pending one). */
+  const announceExtension = (
+    p: { state: string; extension?: string; assigned?: boolean; error_code?: string | null } | undefined
+  ) => {
+    if (!p || p.state === "skipped") return;
+    const ok = p.state === "active" && p.assigned;
+    const key = ok ? "assigned" : p.state === "active" ? "notAssigned" : p.state === "pending" ? "pending" : "failed";
+    toast.push(
+      <Notification title={String(t("p10.extprov.title"))} type={ok ? "success" : "warning"} duration={ok ? 4000 : 9000}>
+        {t(`p10.extprov.userNew.${key}`, { ext: p.extension || "", error: p.error_code || "" })}
+      </Notification>,
+      { placement: "top-center" }
+    );
   };
 
   const popNotification = (keyword: string) => {

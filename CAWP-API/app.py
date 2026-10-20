@@ -814,9 +814,18 @@ def create_user():
     except Exception as e:
         db.session.rollback()
         return error_response("حدث خطأ أثناء إنشاء المستخدم", e)
-      
-    
-    return jsonify( user.as_dict()),200
+
+    out = user.as_dict()
+    # 2026-10-20: create (and assign) the user's PBX extension when auto-provisioning is on
+    # (migration 0077). Best effort after the commit: never fails the user creation; a PBX
+    # outage leaves a "pending" request that the extensions page retries. Added key only.
+    from services.calling import extension_provisioning
+    prov = extension_provisioning.on_user_created(str(out.get('id') or user.id))
+    if prov is not None:
+        out['extension_provisioning'] = prov
+        if prov.get('assigned') and 'extension' in out:
+            out['extension'] = prov.get('extension')     # the users.extension mirror set by the assign
+    return jsonify(out),200
 
 # update user
 @app.route('/uesrs/<id>', methods=['PUT'])

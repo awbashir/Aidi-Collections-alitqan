@@ -1,6 +1,8 @@
 /**
  * One call line: state, timer, the attempt/case link (with the minimal live-call panel), and
  * the in-call controls. Followers (status-only tabs) see the line without controls.
+ * Transfer / consult / add a participant are server-controlled (CallControlBox, 2026-10-20):
+ * the browser never sends a SIP REFER.
  */
 import classNames from 'classnames'
 import { useEffect, useRef, useState } from 'react'
@@ -20,15 +22,13 @@ import {
 } from 'lucide-react'
 import StatusPill from '@/components/shared/StatusPill'
 import { caseLink } from '@/utils/v2/links'
-import { DTMF_KEYS, fetchLiveAttempt, isInternalTarget } from '@/services/softphone'
+import { DTMF_KEYS, fetchLiveAttempt } from '@/services/softphone'
 import type { Line, LiveAttempt, SoftphoneEngine } from '@/services/softphone'
+import { btnDanger, btnPrimary, btnSecondary } from './buttons'
+import CallControlBox, { IncomingControlInfo, ListenModes } from './CallControlBox'
 import { ATTEMPT_TONE, LINE_TONE, clock, lineStateLabel } from './labels'
 
-const btn =
-    'inline-flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-[13px] font-extrabold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-azure-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
-export const btnSecondary = `${btn} border-slate-300 bg-white text-navy-600 hover:bg-slate-50 dark:border-night-border dark:bg-night-card dark:text-night-strong`
-export const btnPrimary = `${btn} border-navy-600 bg-navy-600 text-white hover:bg-ink-800 active:bg-ink-950`
-export const btnDanger = `${btn} border-danger bg-danger text-white hover:opacity-90`
+export { btnDanger, btnPrimary, btnSecondary }
 
 function useNow(active: boolean) {
     const [now, setNow] = useState(Date.now())
@@ -131,66 +131,18 @@ export const AttemptLive = ({ attemptId }: { attemptId: string }) => {
     )
 }
 
-const TransferBox = ({ engine, line, pattern }: { engine: SoftphoneEngine; line: Line; pattern: string | null }) => {
-    const { t } = useTranslation()
-    const [target, setTarget] = useState('')
-    const [error, setError] = useState<string | null>(null)
-    const ok = isInternalTarget(target, pattern)
-    return (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input
-                data-testid="sp-transfer-input"
-                dir="ltr"
-                inputMode="numeric"
-                value={target}
-                aria-label={t('sp.line.transferTo') as string}
-                placeholder={t('sp.line.transferPlaceholder') as string}
-                onChange={(e) => {
-                    setTarget(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
-                    setError(null)
-                }}
-                className="h-9 w-32 rounded-md border border-slate-300 px-3 text-[13.5px] tabular-nums focus:border-azure-500 focus:outline-none focus:ring-2 focus:ring-azure-500/20 dark:border-night-border dark:bg-night-card"
-            />
-            <button
-                type="button"
-                data-testid="sp-transfer"
-                disabled={!ok}
-                className={btnSecondary}
-                onClick={() => {
-                    try {
-                        engine.transfer(line.id, target)
-                    } catch (e) {
-                        setError((e as { code?: string }).code || 'error')
-                    }
-                }}
-            >
-                <ArrowRightLeft size={15} aria-hidden />
-                {t('sp.line.transfer')}
-            </button>
-            <div className="w-full text-[11.5px] text-gray-500">{t('sp.line.transferHint')}</div>
-            {error && <div className="w-full text-[12px] text-danger">{t(`sp.error.${error}`, error)}</div>}
-            {line.transfer && (
-                <div data-testid="sp-transfer-state" data-state={line.transfer.state} className="w-full text-[12px]">
-                    {t(`sp.line.transferState.${line.transfer.state}`, { target: line.transfer.target })}
-                    {line.transfer.detail ? ` (${line.transfer.detail})` : ''}
-                </div>
-            )}
-        </div>
-    )
-}
-
 const LineCard = ({
     engine,
     line,
     current,
     controls,
-    pattern,
 }: {
     engine: SoftphoneEngine
     line: Line
     current: boolean
     controls: boolean
-    pattern: string | null
+    /** The internal dial pattern (kept for callers; call control targets come from the API). */
+    pattern?: string | null
 }) => {
     const { t } = useTranslation()
     const live = line.state !== 'ended'
@@ -198,6 +150,7 @@ const LineCard = ({
     const [keypad, setKeypad] = useState(false)
     const [transfer, setTransfer] = useState(false)
     const established = line.state === 'active' || line.state === 'held'
+    const listening = line.control?.role === 'listen'
     const Icon = line.direction === 'incoming' ? PhoneIncoming : PhoneOutgoing
     return (
         <li
@@ -241,7 +194,8 @@ const LineCard = ({
                     {line.autoAnswered ? t('sp.line.autoAnswered') : line.autoAnswerDecision ? t(`sp.decision.${line.autoAnswerDecision}`) : t('sp.line.checkingTag')}
                 </div>
             )}
-            {!line.attemptTag && line.direction === 'incoming' && line.state === 'ringing' && (
+            {(line.control || line.controlTag) && <IncomingControlInfo line={line} />}
+            {!line.attemptTag && !line.controlTag && line.direction === 'incoming' && line.state === 'ringing' && (
                 <div className="mt-2 text-[12px] text-gray-600" data-testid="sp-line-decision" data-decision={line.autoAnswerDecision || 'no_tag'}>
                     {t('sp.decision.no_tag')}
                 </div>
@@ -290,26 +244,30 @@ const LineCard = ({
                                 {line.held ? <Play size={15} aria-hidden /> : <Pause size={15} aria-hidden />}
                                 {line.held ? t('sp.line.resume') : t('sp.line.hold')}
                             </button>
-                            <button
-                                type="button"
-                                data-testid="sp-keypad"
-                                aria-pressed={keypad}
-                                className={btnSecondary}
-                                onClick={() => setKeypad((k) => !k)}
-                            >
-                                <Grid3x3 size={15} aria-hidden />
-                                {t('sp.line.keypad')}
-                            </button>
-                            <button
-                                type="button"
-                                data-testid="sp-transfer-open"
-                                aria-pressed={transfer}
-                                className={btnSecondary}
-                                onClick={() => setTransfer((x) => !x)}
-                            >
-                                <ArrowRightLeft size={15} aria-hidden />
-                                {t('sp.line.transfer')}
-                            </button>
+                            {!listening && (
+                                <button
+                                    type="button"
+                                    data-testid="sp-keypad"
+                                    aria-pressed={keypad}
+                                    className={btnSecondary}
+                                    onClick={() => setKeypad((k) => !k)}
+                                >
+                                    <Grid3x3 size={15} aria-hidden />
+                                    {t('sp.line.keypad')}
+                                </button>
+                            )}
+                            {!listening && (
+                                <button
+                                    type="button"
+                                    data-testid="sp-transfer-open"
+                                    aria-pressed={transfer}
+                                    className={btnSecondary}
+                                    onClick={() => setTransfer((x) => !x)}
+                                >
+                                    <ArrowRightLeft size={15} aria-hidden />
+                                    {t('p10.callctl.open')}
+                                </button>
+                            )}
                         </>
                     )}
                     {!current && established && (
@@ -325,7 +283,10 @@ const LineCard = ({
                     )}
                 </div>
             )}
-            {controls && established && keypad && (
+            {controls && established && listening && line.control && (
+                <ListenModes controlId={line.control.id} initialMode={line.control.mode} />
+            )}
+            {controls && established && keypad && !listening && (
                 <div className="mt-2 grid w-[180px] grid-cols-3 gap-1.5" role="group" aria-label={t('sp.line.keypad') as string}>
                     {DTMF_KEYS.map((k) => (
                         <button
@@ -340,7 +301,7 @@ const LineCard = ({
                     ))}
                 </div>
             )}
-            {controls && established && transfer && <TransferBox engine={engine} line={line} pattern={pattern} />}
+            {controls && established && transfer && !listening && <CallControlBox line={line} />}
         </li>
     )
 }

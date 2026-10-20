@@ -109,9 +109,13 @@ export const DERIVED_KEYS = {
     /* call review: calls_manage, or calls_supervise (2026-10-17: supervisors without calling admin) */
     call_review: (p: Record<string, unknown>) => p.calls_manage === true || p.calls_supervise === true,
     calling_admin: (p: Record<string, unknown>) => p.calls_manage === true,
+    /* 2026-10-20: extensions on the PBX ("التحويلات") */
+    calling_extensions: (p: Record<string, unknown>) => p.calls_manage === true,
     /* blocked clients (2026-10-17): only supervisors block or lift a client */
     calling_blocks: (p: Record<string, unknown>) => p.calls_manage === true || p.calls_supervise === true,
     call_monitor: (p: Record<string, unknown>) => p.reports_calls === true || p.calls_manage === true,
+    /* 2026-10-20: the team performance dashboard, supervisors and admins only (GET /v2/dashboards/team) */
+    team_dashboard: (p: Record<string, unknown>) => p.calls_supervise === true || p.calls_manage === true,
     /* Phase 6: the quality workspace (quality_review | quality_approve). */
     quality_any: (p: Record<string, unknown>) => QUALITY_KEYS.some((k) => p[k] === true),
     /* 2026-10-19: the previous statuses import (the API also requires the SuperAdmin role). */

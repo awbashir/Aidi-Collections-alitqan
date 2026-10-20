@@ -58,7 +58,8 @@ export const outcomeLabel = (t: Translate, outcome: string) => t(`p5.outcome.${o
 export const reasonLabel = (t: Translate, code: string | null | undefined) =>
     code
         ? t(`p5.reason.${code}`, {
-              defaultValue: t(`p5.refusal.${code}`, { defaultValue: code.replace(/_/g, ' ') }),
+              // p10.callctl.reason: call control (2026-10-20), e.g. `transferred`
+              defaultValue: t(`p5.refusal.${code}`, { defaultValue: t(`p10.callctl.reason.${code}`, { defaultValue: code.replace(/_/g, ' ') }) }),
           })
         : ''
 

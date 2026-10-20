@@ -13,9 +13,12 @@ import type { ApexOptions } from 'apexcharts'
 import type { Direction } from '@/@types/theme'
 import type { ReactNode } from 'react'
 
-const notDonut = ['line', 'bar', 'area']
+/* `heatmap` takes the axis chrome (categories, legend offset) of the line default;
+ * `radialBar` the line default's palette and tooltip with no axis — both are
+ * shaped by the caller's `customOptions`. */
+const notDonut = ['line', 'bar', 'area', 'heatmap']
 
-type ChartType = 'line' | 'bar' | 'area' | 'donut'
+type ChartType = 'line' | 'bar' | 'area' | 'donut' | 'heatmap' | 'radialBar'
 
 export interface ChartProps {
     series?: ApexOptions['series']

@@ -12,6 +12,13 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/dashboard2")),
     authority: [],
   },
+  /* Team performance dashboard (`team_dashboard` = calls_supervise | calls_manage, derived). */
+  {
+    key: "team_dashboard",
+    path: "/team-dashboard",
+    component: lazy(() => import("@/views/teamDashboard")),
+    authority: [],
+  },
   {
     key: "users",
     path: "/users",
@@ -716,6 +723,13 @@ export const protectedRoutes = [
     key: "calling_admin",
     path: "/calling-admin",
     component: lazy(() => import("@/views/phase5/admin")),
+    authority: [],
+  },
+  /* Extensions on the PBX ("التحويلات", 2026-10-20; `calling_extensions` = calls_manage). */
+  {
+    key: "calling_extensions",
+    path: "/calling-extensions",
+    component: lazy(() => import("@/views/phase5/extensions")),
     authority: [],
   },
   /* Blocked clients (do-not-call is a supervisor decision; `calling_blocks` = calls_supervise | calls_manage). */

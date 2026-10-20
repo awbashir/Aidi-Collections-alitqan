@@ -113,6 +113,29 @@ export type Line = {
     endedAt: number | null
     endCause: string | null
     transfer: { target: string; state: 'sending' | 'accepted' | 'failed'; detail?: string } | null
+    /** X-CAWP-Control (32 hex) on an incoming call placed by call control (2026-10-20). */
+    controlTag?: string | null
+    /** What the API says about that call (`GET /v2/calling/control/incoming/<tag>`), or null. */
+    control?: LineControl | null
+}
+
+/** A ringing call from call control: a transfer, a consultation, a conference invite, the agent's
+ * own blind transfer ringing back, or a supervisor's own listening call (the only auto-answered one). */
+export type LineControl = {
+    id: string
+    role: 'listen' | 'transfer' | 'consult' | 'invite' | 'recall'
+    kind: string
+    fromName: string | null
+    fromExtension: string
+    targetExtension: string
+    targetName: string | null
+    mode: 'listen' | 'whisper' | 'barge' | null
+    caseId: string | null
+    caseName: string | null
+    caseAccount: string | null
+    caseInScope: boolean
+    /** The call has a case that is outside my scope (no details shown). */
+    caseHidden: boolean
 }
 
 export type AutoAnswerReason =
@@ -123,6 +146,8 @@ export type AutoAnswerReason =
     | 'attempt_not_live'
     | 'check_failed'
     | 'busy_on_another_line'
+    | 'own_listen_call'
+    | 'control_ring'
 
 export type Diagnostics = {
     secureContext: boolean

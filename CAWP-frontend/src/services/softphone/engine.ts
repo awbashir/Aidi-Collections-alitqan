@@ -23,8 +23,9 @@ import { isV2Error } from '../v2/http'
 import { softphoneApi } from './api'
 import { MicMeter, Ringer, micConstraints, microphonePermission, routeTo, supportedCodecs } from './audio'
 import { autoAnswerDecision, isDtmf, isExternalTarget, isInternalTarget, parseAttemptTag } from './policy'
+import { CONTROL_HEADER, callControlApi, parseControlTag } from './control'
 import { TabCoordinator } from './tabs'
-import type { AutoAnswerReason, CallingDevices, Diagnostics, Line, LiveAttempt, PhoneStatus, Snapshot } from './types'
+import type { AutoAnswerReason, CallingDevices, Diagnostics, Line, LineControl, LiveAttempt, PhoneStatus, Snapshot } from './types'
 
 export const MAX_LINES = 4
 const ENDED_LINE_VISIBLE_MS = 8000
@@ -491,6 +492,8 @@ export class SoftphoneEngine {
         const id = `L${this.lineSeq}`
         const header = this.meta?.attemptHeader || 'X-CAWP-Attempt'
         const tag = incoming ? parseAttemptTag((e as IncomingRTCSessionEvent).request.getHeader(header)) : null
+        // call control (2026-10-20): transfers, consultations, invites and our own listening calls
+        const controlTag = incoming ? parseControlTag((e as IncomingRTCSessionEvent).request.getHeader(CONTROL_HEADER)) : null
         const remoteUri = session.remote_identity?.uri
         const line: Line = {
             id,
@@ -511,6 +514,8 @@ export class SoftphoneEngine {
             endedAt: null,
             endCause: null,
             transfer: null,
+            controlTag,
+            control: null,
         }
         this.sessions.set(id, session)
         this.set({
@@ -519,7 +524,48 @@ export class SoftphoneEngine {
             openRequest: this.snapshot.openRequest + 1,
         })
         this.wire(id, session)
-        if (incoming) void this.decideIncoming(id, tag)
+        if (incoming && controlTag && !tag) void this.decideControl(id, controlTag)
+        else if (incoming) void this.decideIncoming(id, tag)
+    }
+
+    /**
+     * A call placed by call control. Only the caller's OWN listening call (the API says
+     * `auto_answer`: requested by this user, to this extension, in the last minute) is answered
+     * automatically, and never over another active call. Transfers, consultations, invites and a
+     * transfer ringing back ring normally, showing who and the case (when it is in my scope).
+     */
+    private async decideControl(id: string, controlTag: string) {
+        const busy = this.snapshot.lines.some((l) => l.id !== id && l.state === 'active' && !l.held)
+        let control: LineControl | null = null
+        let auto = false
+        try {
+            const info = await withTimeout(callControlApi.incoming(controlTag), 3000)
+            control = {
+                id: info.id,
+                role: info.role,
+                kind: info.kind,
+                fromName: info.from.name,
+                fromExtension: info.from.extension,
+                targetExtension: info.target.extension,
+                targetName: info.target.name,
+                mode: info.mode,
+                caseId: info.case?.in_scope ? info.case.id : null,
+                caseName: info.case?.in_scope ? info.case.name || null : null,
+                caseAccount: info.case?.in_scope ? info.case.account_number || null : null,
+                caseInScope: !!info.case?.in_scope,
+                caseHidden: !!info.case && !info.case.in_scope,
+            }
+            auto = info.auto_answer && info.role === 'listen'
+        } catch {
+            /* unknown control: ring normally */
+        }
+        const decision: AutoAnswerReason = auto ? (busy ? 'busy_on_another_line' : 'own_listen_call') : 'control_ring'
+        this.setLine(id, { control, autoAnswerDecision: decision })
+        const session = this.sessions.get(id)
+        if (!session || session.isEnded()) return
+        if (decision === 'own_listen_call') this.answer(id, true)
+        else this.syncRinger()
+        this.set({ openRequest: this.snapshot.openRequest + 1 })
     }
 
     private wire(id: string, session: RTCSession) {

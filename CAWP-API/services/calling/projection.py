@@ -30,6 +30,14 @@ Facts and rules (docs/phase5-spec.md "Evidence, not inference"):
   changed only by reconciliation. After a wrap-up nothing on the attempt changes: new evidence
   is attached (call_events) and flagged `late_evidence` for review. A failed attempt that
   later shows a customer leg is flagged `evidence_conflict`.
+* call control (2026-10-20, services/calling/call_control.py): the cawp-callctl dialplan reports
+  `transfer_blind` / `transferred` / `customer_on_hold` / `conference` on the attempt. The
+  conversation (`bridged`) is still the agent's Dial bridge with the customer. Once the agent's
+  leg is gone and the customer was handed over (transferred, or left in a room with someone), the
+  collector's attempt is `ended` without waiting for the customer leg: reason `transferred`
+  (blind or attended transfer) or `agent_hung_up` (the agent left a conference), duration = the
+  agent's time from the bridge to its hangup. Evidence after the wrap-up of such an attempt
+  (the customer still talking to the target) is expected and not flagged.
 """
 from __future__ import annotations
 
@@ -65,6 +73,9 @@ DIAL_STATUS_REASON = {"BUSY": "customer_busy", "NOANSWER": "customer_no_answer",
 AGENT_CAUSE_REASON = {17: "agent_busy", 18: "agent_no_answer", 19: "agent_no_answer", 21: "agent_rejected"}
 # OriginateResponse Reason (Asterisk AST_CONTROL_*): 1 hangup, 3 ring timeout, 5 busy, 8 congestion
 ORIGINATE_REASON = {1: "agent_rejected", 3: "agent_no_answer", 5: "agent_busy", 8: "agent_unavailable"}
+# CollectionsCall states of the call-control dialplan (services/calling/callctl_dialplan.py)
+TRANSFER_STATES = frozenset({"transfer_blind", "transferred"})
+HANDOVER_STATES = frozenset({"transfer_blind", "transferred", "customer_on_hold", "conference"})
 
 
 def _num(v):
@@ -335,6 +346,15 @@ def _conclude(f: Facts) -> None:
             f.reason = AGENT_CAUSE_REASON.get(a.cause, "agent_unavailable")
         return
     c = next(iter(f.customer.values()))
+    handed_over = bool(HANDOVER_STATES & set(f.user_states)) and f.bridged is not None
+    if handed_over and agent_gone and (c.hangup is None or a.hangup <= c.hangup):
+        # call control: the collector's part ends with the agent's leg (the customer may talk on)
+        f.terminal = "ended"
+        f.end_ts = a.hangup
+        f.hangup_cause = a.cause
+        f.reason = "transferred" if TRANSFER_STATES & set(f.user_states) else "agent_hung_up"
+        f.duration = max(0, int((a.hangup - f.bridged).to_integral_value(rounding=decimal.ROUND_HALF_UP)))
+        return
     if not agent_gone or c.hangup is None:
         return
     f.terminal = "ended"
@@ -342,7 +362,8 @@ def _conclude(f: Facts) -> None:
     f.hangup_cause = c.cause if c.cause is not None else a.cause
     if f.bridged is not None:
         f.reason = "customer_hung_up" if _first_to_hang_up(c, a) == "c" else "agent_hung_up"
-        end = f.bridge_end or min(a.hangup, c.hangup)
+        # after call control the conversation went on outside the first bridge (room / hold)
+        end = min(a.hangup, c.hangup) if handed_over else (f.bridge_end or min(a.hangup, c.hangup))
         f.duration = max(0, int((end - f.bridged).to_integral_value(rounding=decimal.ROUND_HALF_UP)))
     elif c.answered is not None:
         f.reason = "not_bridged"
@@ -455,6 +476,8 @@ def project(session, attempt_id, *, trigger_event_id=None) -> dict | None:
            "flagged": None, "released": False}
     has_evidence = facts.first_ts is not None or facts.originate is not None or facts.user_states
     if a["wrapped_up_at"] is not None:
+        if HANDOVER_STATES & set(facts.user_states) and facts.terminal == "ended":
+            return out                                   # the handed-over customer talks on: expected
         if trigger_event_id is not None and flag(session, a, "late_evidence", "evidence_after_wrapup",
                                                  detail={"facts": facts.summary(), "state": a["state"]},
                                                  event_id=trigger_event_id):
@@ -566,7 +589,7 @@ def project(session, attempt_id, *, trigger_event_id=None) -> dict | None:
 PROJECTION_REASONS = frozenset({
     *DIAL_STATUS_REASON.values(), *AGENT_CAUSE_REASON.values(), *ORIGINATE_REASON.values(),
     "agent_unavailable", "authorization_denied", "agent_hung_up_before_dial", "agent_hung_up",
-    "customer_hung_up", "customer_not_answered", "customer_answer_not_observed"})
+    "customer_hung_up", "customer_not_answered", "customer_answer_not_observed", "transferred"})
 
 
 def _refinable(current, new) -> bool:

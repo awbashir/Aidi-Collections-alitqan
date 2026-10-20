@@ -1,0 +1,253 @@
+"""Team performance dashboard (services/team_dashboard.py, api/team_dashboard.py; 2026-10-20)."""
+from __future__ import annotations
+
+import datetime as dt
+import io
+import json
+import uuid
+
+import pytest
+
+from services import team_dashboard
+from services.calling import monitor
+from test_calling_helpers import CL, cl, make_case, new_contract, new_supervisor, new_user, pgc, run  # noqa: F401
+
+DAY = "2026-09-03"
+
+
+@pytest.fixture(scope="module")
+def td_app(cl):
+    """A small app with only the dashboard routes."""
+    import os
+
+    from flask import Flask
+    from sqlalchemy.pool import NullPool
+
+    import api.team_dashboard
+    from core.serialization import ORJSONProvider
+    from extensions import db, jwt
+    from test_calling_helpers import MAIN_DB, db_url
+
+    app = Flask("cawp_test_team_dashboard")
+    app.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI=db_url(MAIN_DB, "psycopg2"),
+                      SQLALCHEMY_ENGINE_OPTIONS={"poolclass": NullPool}, SQLALCHEMY_TRACK_MODIFICATIONS=False,
+                      JWT_SECRET_KEY=os.environ["JWT_SECRET_KEY"])
+    app.json = ORJSONProvider(app)
+    db.init_app(app)
+    jwt.init_app(app)
+    app.register_blueprint(api.team_dashboard.bp)
+    return app
+
+
+def token(app, user):
+    from flask_jwt_extended import create_access_token
+    with app.app_context():
+        return {"Authorization": f"Bearer {create_access_token(identity=str(user))}"}
+
+
+def scalar(pgc, sql, *params):
+    with pgc.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchone()[0]
+
+
+def fresh_ext(pgc, first: str) -> str:
+    while True:
+        ext = f"{first}{uuid.uuid4().int % 900 + 100}"
+        if not scalar(pgc, "SELECT count(*) FROM user_extensions WHERE extension = %s AND released_at IS NULL", ext):
+            return ext
+
+
+def own(pgc, user, ext):
+    run(pgc, "INSERT INTO user_extensions (extension, user_id, assign_reason) VALUES (%s, %s, 'test')", ext, user)
+
+
+def status(pgc, name, parent=None):
+    sid = str(uuid.uuid4())
+    run(pgc, 'INSERT INTO "CommentStatuses" (id, name, contract_id, "CommentReachability_id", is_active, parent_id, color) '
+             "VALUES (%s, %s, NULL, %s, true, %s, '#123456')", sid, f"{name} {sid[:6]}", CL.reach, parent)
+    return sid
+
+
+def note(pgc, case, author, main, sub=None, *, hour=10, text="Called", deleted=False):
+    at = f"{DAY} {hour:02d}:15:00+03"
+    run(pgc, """INSERT INTO "Comments" (clint_id, user_id, "contactMethod_id", comment, comment_status_id,
+                                         comment_sub_status_id, create_at, update_at, is_deleted)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        case, author, CL.method, text, main, sub, at, at, deleted)
+
+
+def world(pgc):
+    """member (in sup's team) and other (outside); one case each; statuses S1 (+ sub S1a) and S2."""
+    member, other = new_user(pgc, name="Member"), new_user(pgc, name="Other")
+    sup = new_supervisor(pgc, users=[member])
+    cid, portfolio = new_contract(pgc, "td contract")
+    _, other_portfolio = new_contract(pgc, "td other contract")
+    mine, theirs = make_case(pgc, member, portfolio), make_case(pgc, other, other_portfolio)
+    s1, s2 = status(pgc, "TD one"), status(pgc, "TD two")
+    s1a = status(pgc, "TD one-a", parent=s1)
+    note(pgc, mine, member, s1, s1a, hour=9)
+    note(pgc, mine, member, s1, hour=10)
+    note(pgc, theirs, member, s1, s1a, hour=10)                 # a case outside the supervisor's scope
+    note(pgc, mine, member, s2, hour=11)
+    note(pgc, mine, member, s1, text="حالة سابقة (من النظام السابق)\nold", hour=10)      # imported: excluded
+    note(pgc, mine, member, s2, hour=10, deleted=True)                                  # deleted: excluded
+    note(pgc, theirs, other, s2, hour=12)
+    run(pgc, 'INSERT INTO "paymentDates" (clint_id, user_id, payment_date, amount, create_at) '
+             "VALUES (%s, %s, %s, 250.5, %s)", mine, member, f"{DAY} 12:00:00+03", f"{DAY} 12:00:00+03")
+    e1, e2 = fresh_ext(pgc, "7"), fresh_ext(pgc, "8")
+    own(pgc, member, e1)
+    own(pgc, other, e2)
+    at = lambda h, m=0: dt.datetime(2026, 9, 3, h, m)  # noqa: E731
+    rows = [
+        {"calldate": at(9), "channel": f"PJSIP/{e1}-1", "dstchannel": "SIP/ITC-1", "disposition": "ANSWERED",
+         "billsec": 70, "duration": 80, "linkedid": "T1"},
+        {"calldate": at(9, 30), "channel": f"PJSIP/{e1}-2", "dstchannel": "SIP/ITC-2", "disposition": "NO ANSWER",
+         "billsec": 0, "duration": 20, "linkedid": "T2"},
+        {"calldate": at(10), "channel": "Local/FMGL;2", "dstchannel": f"PJSIP/{e1}-3", "disposition": "ANSWERED",
+         "billsec": 30, "duration": 35, "linkedid": "T3"},
+        {"calldate": at(11), "channel": f"PJSIP/{e2}-4", "dstchannel": "SIP/ITC-4", "disposition": "ANSWERED",
+         "billsec": 15, "duration": 20, "linkedid": "T4"},
+    ]
+    return {"member": member, "other": other, "sup": sup, "contract": cid, "mine": mine, "theirs": theirs,
+            "s1": s1, "s1a": s1a, "s2": s2, "e1": e1, "e2": e2, "rows": rows}
+
+
+def call(app, fn, *args, **kw):
+    from extensions import db
+    with app.app_context():
+        try:
+            return fn(*args, **kw)
+        finally:
+            db.session.remove()
+
+
+def test_aggregates_notes_calls_and_promises_excluding_imported_and_deleted(td_app, pgc):
+    w = world(pgc)
+    args = {"from": DAY, "user_id": f"{w['member']},{w['other']}"}
+    d = call(td_app, team_dashboard.dashboard, args, user_id=CL.super, rows=w["rows"])
+    assert d["scope"] == "all" and d["granularity"] == "hour" and d["calls"]["available"] is True
+    users = {u["user_id"]: u for u in d["users"]}
+    assert set(users) == {w["member"], w["other"]}
+    m = users[w["member"]]
+    assert m["notes"] == 4 and m["clients"] == 2                     # imported + deleted notes not counted
+    assert m["by_status"] == {w["s1"]: 3, w["s2"]: 1}
+    assert m["top_status"]["id"] == w["s1"] and m["top_status"]["count"] == 3
+    assert m["calls_made"] == 2 and m["answered"] == 1 and m["not_answered"] == 1 and m["inbound_answered"] == 1
+    assert m["talk_seconds"] == 100 and m["answer_rate"] == 0.5 and m["extensions"] == [w["e1"]]
+    assert m["promises"] == 1 and m["promises_amount"] == "250.50"
+    assert users[w["other"]]["notes"] == 1 and users[w["other"]]["calls_made"] == 1
+    t = d["totals"]
+    assert t["notes"] == 5 and t["clients"] == 2 and t["calls_made"] == 3 and t["answered"] == 2
+    assert t["promises"] == 1 and t["answer_rate"] == round(2 / 3, 4)
+    donut = {s["key"]: s["count"] for s in d["statuses"]}
+    assert donut == {w["s1"]: 3, w["s2"]: 2}
+    assert len(d["series"]) == 24
+    ten = next(b for b in d["series"] if b["bucket"] == f"{DAY} 10:00")
+    assert ten["total"] == 2 and ten["by_status"] == {w["s1"]: 2}                 # Riyadh hours
+    # the contract filter narrows the notes and promises, never the calls
+    c = call(td_app, team_dashboard.dashboard, {**args, "contract_id": w["contract"]}, user_id=CL.super, rows=w["rows"])
+    cu = {u["user_id"]: u for u in c["users"]}
+    assert cu[w["member"]]["notes"] == 3 and cu[w["other"]]["notes"] == 0 and cu[w["other"]]["calls_made"] == 1
+    assert c["calls"]["contract_filtered"] is False
+
+
+def test_sub_status_toggle(td_app, pgc):
+    w = world(pgc)
+    d = call(td_app, team_dashboard.dashboard, {"from": DAY, "user_id": w["member"], "group": "sub_status"},
+             user_id=CL.super, rows=w["rows"])
+    m = d["users"][0]
+    assert d["group"] == "sub_status"
+    assert m["by_status"] == {w["s1a"]: 2, f"none:{w['s1']}": 1, f"none:{w['s2']}": 1}
+    legend = {s["key"]: s for s in d["statuses"]}
+    assert legend[w["s1a"]]["parent_id"] == w["s1"] and legend[w["s1a"]]["parent_name"].startswith("TD one")
+    assert legend[f"none:{w['s1']}"]["no_sub"] is True and legend[f"none:{w['s1']}"]["id"] is None
+    assert m["top_status"]["id"] == w["s1"]                                        # always the main status
+    with pytest.raises(Exception) as bad:
+        call(td_app, team_dashboard.dashboard, {"from": DAY, "group": "nope"}, user_id=CL.super, rows=[])
+    assert bad.value.status == 422
+
+
+def test_supervisor_sees_only_the_team_and_cases_in_scope(td_app, pgc):
+    from core.api_response import ApiError
+    w = world(pgc)
+    d = call(td_app, team_dashboard.dashboard, {"from": DAY}, user_id=w["sup"], rows=w["rows"])
+    assert d["scope"] == "team"
+    users = {u["user_id"]: u for u in d["users"]}
+    assert set(users) == {w["member"], w["sup"]}                                  # team + self, other excluded
+    assert users[w["member"]]["notes"] == 3                                        # the note on `theirs` is out of scope
+    assert users[w["member"]]["calls_made"] == 2 and users[w["sup"]]["notes"] == 0
+    assert d["totals"]["calls_made"] == 2 and d["totals"]["notes"] == 3
+    assert {o["id"] for o in d["options"]["users"]} == {w["member"], w["sup"]}
+    with pytest.raises(ApiError) as refused:
+        call(td_app, team_dashboard.dashboard, {"from": DAY, "user_id": w["other"]}, user_id=w["sup"], rows=w["rows"])
+    assert refused.value.status == 403 and refused.value.code == "not_in_scope"
+    one = call(td_app, team_dashboard.dashboard, {"from": DAY, "user_id": w["member"]}, user_id=w["sup"], rows=w["rows"])
+    assert [u["user_id"] for u in one["users"]] == [w["member"]]
+
+
+def test_calls_unknown_when_the_pbx_records_are_unavailable(td_app, pgc, monkeypatch):
+    from core.api_response import ApiError
+    w = world(pgc)
+
+    def down(*a, **k):
+        raise ApiError(503, "cdr_unavailable", "the PBX call records are unavailable")
+    monkeypatch.setattr(monitor, "_cdr_rows", down)
+    d = call(td_app, team_dashboard.dashboard, {"from": DAY, "user_id": w["member"]}, user_id=CL.super)
+    assert d["calls"] == {"available": False, "error": "cdr_unavailable", "truncated": False, "contract_filtered": False}
+    m = d["users"][0]
+    assert m["calls_made"] is None and m["answer_rate"] is None and d["totals"]["talk_seconds"] is None
+    assert m["notes"] == 4
+
+
+def run_role(pgc, perms: dict) -> str:
+    rid = str(uuid.uuid4())
+    run(pgc, "INSERT INTO roles (id, name, permission) VALUES (%s, %s, %s)", rid, f"td role {rid[:8]}", json.dumps(perms))
+    return rid
+
+
+def test_permission_and_validation(td_app, pgc, monkeypatch):
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi, ext=None, **k: [])
+    client = td_app.test_client()
+    collector = new_user(pgc, CL.collector_role)
+    assert client.get("/v2/dashboards/team", headers=token(td_app, collector)).status_code == 403
+    assert client.get("/v2/dashboards/team/export", headers=token(td_app, collector)).status_code == 403
+    watcher = new_user(pgc, run_role(pgc, {"calls_supervise": True}))
+    r = client.get("/v2/dashboards/team", query_string={"from": DAY}, headers=token(td_app, watcher))
+    assert r.status_code == 200, r.data[:300]
+    assert r.get_json()["data"]["scope"] == "own"
+    assert [u["user_id"] for u in r.get_json()["data"]["users"]] == [watcher]
+    for bad in ({"from": "2026-01-01", "to": "2026-03-01"}, {"user_id": "x"}, {"contract_id": str(uuid.uuid4())},
+                {"granularity": "week"}):
+        resp = client.get("/v2/dashboards/team", query_string=bad, headers=token(td_app, CL.super))
+        assert resp.status_code == 422, bad
+
+
+def test_export_is_scoped_xlsx_and_audited(td_app, pgc, monkeypatch):
+    import openpyxl
+    w = world(pgc)
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi, ext=None, **k: w["rows"])
+    client = td_app.test_client()
+    r = client.get("/v2/dashboards/team/export", query_string={"from": DAY}, headers=token(td_app, w["sup"]))
+    assert r.status_code == 200 and r.headers["Cache-Control"] == "private, no-store", r.data[:300]
+    wb = openpyxl.load_workbook(io.BytesIO(r.data))
+    assert [s.title for s in wb.worksheets] == ["أداء الموظفين", "الحالات حسب الموظف", "التحديثات حسب الوقت", "معلومات"]
+    users = wb.worksheets[0]
+    assert users.cell(1, 1).value == "الموظف" and users.cell(1, 11).value == "تحديثات الحالة"
+    names = [users.cell(i, 1).value for i in range(2, users.max_row + 1)]
+    assert names[-1] == "الإجمالي" and len(names) == 3                              # member, sup, totals
+    row = next(i for i in range(2, users.max_row) if users.cell(i, 2).value == w["e1"])
+    assert users.cell(row, 3).value == 2 and users.cell(row, 4).value == 1 and users.cell(row, 11).value == 3
+    assert users.cell(users.max_row, 11).value == 3
+    r = client.get("/v2/dashboards/team/export", query_string={"from": DAY, "user_id": w["other"]},
+                   headers=token(td_app, w["sup"]))
+    assert r.status_code == 403
+    r = client.get("/v2/dashboards/team/export", query_string={"from": DAY, "user_id": w["member"], "group": "sub_status"},
+                   headers=token(td_app, CL.super))
+    assert r.status_code == 200
+    st = openpyxl.load_workbook(io.BytesIO(r.data)).worksheets[1]
+    heads = [st.cell(1, c).value for c in range(3, st.max_column + 1)]
+    assert any("(بدون حالة فرعية)" in h for h in heads) and any(" / " in h for h in heads)
+    n = scalar(pgc, "SELECT count(*) FROM audit_events WHERE action = 'team_dashboard.export' AND actor_user_id IN (%s, %s)",
+               w["sup"], CL.super)
+    assert n >= 2

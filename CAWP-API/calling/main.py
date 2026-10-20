@@ -18,6 +18,10 @@ What it does when CALLING_ENABLED=1 (config: calling/config.py):
   inventory (CoreShowChannels) and a CDR lookup, or leaves them for human review;
 * P1: reports a heartbeat into calling_service_status every 2 s (AMI state, PBX epoch); the
   API dispatches only while a fresh heartbeat shows a connected session.
+* call control (2026-10-20, services/calling/call_control.py ControlWorker): transfers,
+  conferences and supervisor listening queued by the API (call_control_ops), sent once on the live
+  session for their PBX epoch, and followed on the channel list (CALLING_CONTROL_ENABLED=0 turns it
+  off; it runs only with the dispatcher).
 * P2: runs progressive campaigns (services/calling/campaign_dispatch.py CampaignDispatcher):
   one call per ready campaign member, authorized by the same code as POST /v2/calls and sent by
   the dispatcher above; only while this process has a connected AMI session and a running
@@ -116,6 +120,7 @@ class CallingService:
         self.reconciler = None
         self.campaigns = None
         self.live = None
+        self.controls = None
         self._status_failing = False
 
     # ---- lifecycle ------------------------------------------------------------------
@@ -146,6 +151,10 @@ class CallingService:
             from services.calling.dispatch import Dispatcher
             self.dispatcher = Dispatcher(self.app, self.current_ctx, self.worker_id)
             self.dispatcher.start()
+            if (os.getenv("CALLING_CONTROL_ENABLED") or "1").strip() != "0":
+                from services.calling.call_control import ControlWorker
+                self.controls = ControlWorker(self.app, self.current_ctx, self.worker_id)
+                self.controls.start()
         if self.cfg.reconcile_seconds:
             from services.calling import cdr_lookup
             from services.calling.reconcile import Reconciler
@@ -225,6 +234,8 @@ class CallingService:
             self.consumer.stopping = True
         if self.live is not None:
             self.live.stop()
+        if self.controls is not None:
+            self.controls.stop()
         if self.campaigns is not None:
             self.campaigns.stop()
         if self.dispatcher is not None:
@@ -273,6 +284,7 @@ class CallingService:
                             **self.reconciler.stats} if self.reconciler else None),
             "campaigns": ({"running": self.campaigns.is_alive(), "last_tick_at": self.campaigns.last_tick_at,
                            **self.campaigns.stats} if self.campaigns else None),
+            "controls": ({"running": self.controls.is_alive(), **self.controls.stats} if self.controls else None),
         }
 
     def report_status(self, final: bool = False):
@@ -289,7 +301,8 @@ class CallingService:
         detail = {"ami_down_since": self.ami_down_since,
                   "dispatcher": dict(self.dispatcher.stats) if self.dispatcher else None,
                   "reconciler": dict(self.reconciler.stats) if self.reconciler else None,
-                  "campaigns": dict(self.campaigns.stats) if self.campaigns else None}
+                  "campaigns": dict(self.campaigns.stats) if self.campaigns else None,
+                  "controls": dict(self.controls.stats) if self.controls else None}
         with self.app.app_context():
             try:
                 db.session.execute(text("""

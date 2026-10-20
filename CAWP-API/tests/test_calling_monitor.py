@@ -594,3 +594,81 @@ def test_calls_export_filters_by_number(mon_app, pgc, monkeypatch):
     after = run_q(pgc, "SELECT after FROM audit_events WHERE action = 'call_monitor.export' AND actor_user_id = %s "
                        "ORDER BY id DESC LIMIT 1", CL.super)
     assert after["number"] == "+966" + n_theirs[1:]
+
+
+# --------------------------------------------------------------------------- charts (2026-10-20)
+def test_stats_chart_fields_are_additive_and_consistent(mon_app, pgc, monkeypatch):
+    member, other = new_user(pgc), new_user(pgc)
+    e1, e2 = fresh_ext(pgc, "6"), fresh_ext(pgc, "5")
+    own(pgc, member, e1)
+    own(pgc, other, e2)
+    sun = lambda h, m=0: dt.datetime(2026, 10, 18, h, m)  # noqa: E731     a Sunday
+    mon = lambda h, m=0: dt.datetime(2026, 10, 19, h, m)  # noqa: E731
+
+    def out(at, n, disposition, billsec=0, duration=10, dst="0501112222"):
+        return {"calldate": at, "channel": f"PJSIP/{e1}-{n}", "dstchannel": f"SIP/ITC_SIP_Trunk-{n}", "lastapp": "Dial",
+                "dcontext": "from-internal", "disposition": disposition, "billsec": billsec, "duration": duration,
+                "linkedid": f"H{n}", "src": "+966125123082", "dst": dst}
+    rows = [
+        out(sun(9), 1, "ANSWERED", 45, 55),                       # 0-1 min, ring 10
+        out(sun(9, 10), 2, "ANSWERED", 61, 66),                   # 1-2 min, ring 5
+        out(sun(9, 20), 3, "ANSWERED", 300, 310),                 # 3-5 min (upper bound inclusive)
+        out(sun(10), 4, "NO ANSWER", 0, 30),
+        out(sun(10, 5), 5, "BUSY", 0, 4),
+        {**out(sun(10, 6), 6, "CONGESTION", 0, 0), "dstchannel": ""},   # no Dial row: failed
+        {**out(sun(10, 7), 7, "ANSWERED", 0, 0), "dstchannel": ""},     # only a post-dial row: unknown
+        out(mon(14), 8, "ANSWERED", 700, 703, dst="0559998888"),  # 10+ min, Monday
+        # Monday inbound ring group: e2 answers, e1 misses
+        {"calldate": mon(15), "channel": "SIP/ITC_SIP_Trunk-9", "dstchannel": f"PJSIP/{e2}-9", "lastapp": "Dial",
+         "dcontext": "ext-group", "disposition": "ANSWERED", "duration": 128, "billsec": 120, "linkedid": "R9",
+         "src": "0559998888", "dst": "600"},
+        {"calldate": mon(15), "channel": "Local/FMGL;2", "dstchannel": f"PJSIP/{e1}-10", "lastapp": "Dial",
+         "dcontext": "from-internal", "disposition": "NO ANSWER", "duration": 8, "billsec": 0, "linkedid": "R9",
+         "src": "0559998888", "dst": e1},
+    ]
+    from extensions import db
+    with mon_app.app_context():
+        st = monitor.stats({"from": "2026-10-18", "to": "2026-10-19"}, user_id=CL.super, rows=rows)
+        hourly = monitor.stats({"from": "2026-10-18", "to": "2026-10-19", "granularity": "hour"}, user_id=CL.super, rows=rows)
+        db.session.remove()
+    assert st["granularity"] == "day" and st["number"] is None
+    # the existing keys are unchanged
+    u = {x["extension"]: x for x in st["users"]}
+    assert (u[e1]["outbound"], u[e1]["outbound_answered"], u[e1]["inbound_missed"], u[e1]["handled"]) == (8, 4, 1, 8)
+    assert (u[e2]["inbound_answered"], u[e2]["talk_seconds"]) == (1, 120)
+    # per user: every call, answered in any direction, ring time summed over every call
+    assert (u[e1]["calls"], u[e1]["answered"], u[e1]["ring_seconds"]) == (9, 4, 10 + 5 + 10 + 30 + 4 + 0 + 0 + 3 + 8)
+    assert (u[e2]["calls"], u[e2]["answered"], u[e2]["ring_seconds"]) == (1, 1, 8)
+    tot = st["totals"]
+    assert (tot["calls"], tot["answered"], tot["internal"], tot["ring_seconds"]) == (10, 5, 0, 78)
+    # per bucket: outcome and direction over EVERY call; `total` stays the handled calls
+    sunday, monday = st["series"]
+    assert sunday["by_outcome"] == {"answered": 3, "no_answer": 1, "busy": 1, "failed": 1, "unknown": 1}
+    assert sunday["by_direction"] == {"outbound": 7, "inbound_answered": 0, "inbound_missed": 0, "internal": 0}
+    assert monday["by_outcome"] == {"answered": 2, "no_answer": 1, "busy": 0, "failed": 0, "unknown": 0}
+    assert monday["by_direction"] == {"outbound": 1, "inbound_answered": 1, "inbound_missed": 1, "internal": 0}
+    assert (sunday["total"], monday["total"]) == (7, 2)
+    assert sum(sum(s["by_outcome"].values()) for s in hourly["series"]) == 10
+    # talk-time distribution: answered calls, upper bound inclusive, consistent with talk_over_60
+    dist = st["talk_distribution"]
+    assert [(b["min"], b["max"]) for b in dist] == [(0, 60), (60, 120), (120, 180), (180, 300), (300, 600), (600, None)]
+    assert [b["count"] for b in dist] == [1, 2, 0, 1, 0, 1]                  # 45 | 61, 120 | - | 300 | - | 700
+    assert sum(b["count"] for b in dist[1:]) == tot["talk_over_60"] and sum(b["count"] for b in dist) == tot["answered"]
+    # heatmap: weekday (Sunday first) x hour of the handled calls, and the days of each weekday in the period
+    heat = {r["weekday"]: r for r in st["heatmap"]}
+    assert [r["weekday"] for r in st["heatmap"]] == list(range(7))
+    assert [heat[w]["days"] for w in range(7)] == [1, 1, 0, 0, 0, 0, 0]
+    assert (heat[0]["hours"][9], heat[0]["hours"][10], heat[1]["hours"][14], heat[1]["hours"][15]) == (3, 4, 1, 1)
+    assert sum(map(sum, (r["hours"] for r in st["heatmap"]))) == tot["handled"]
+    # the client's number narrows the statistics (the summary download keeps every call)
+    monkeypatch.setattr(monitor, "_cdr_rows", lambda lo, hi, ext=None, number=None: rows)
+    client = mon_app.test_client()
+    d = client.get("/v2/calling/monitor/stats", query_string={"from": "2026-10-18", "to": "2026-10-19", "number": "+966559998888"},
+                   headers=token(mon_app, CL.super)).get_json()["data"]
+    assert d["number"] == "559998888" and d["totals"]["calls"] == 3 and d["totals"]["handled"] == 2
+    assert {x["extension"]: x["calls"] for x in d["users"]} == {e1: 2, e2: 1}
+    import openpyxl
+    r = client.get("/v2/calling/monitor/stats/export", query_string={"from": "2026-10-18", "to": "2026-10-19",
+                                                                     "number": "0559998888"}, headers=token(mon_app, CL.super))
+    sheet = openpyxl.load_workbook(io.BytesIO(r.data)).worksheets[0]
+    assert sum(sheet.cell(i, 3).value for i in range(2, sheet.max_row)) == 9   # handled, every call

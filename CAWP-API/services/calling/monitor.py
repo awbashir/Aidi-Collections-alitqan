@@ -41,6 +41,10 @@ Search by the client's number (customer request 2026-10-19): `number` on calls()
 export_calls keeps the calls whose number matches (services/calling/number_search.py: digits only,
 the last 9); without `extension` the search covers every extension of the scope.
 
+Charts (customer request 2026-10-20): stats() also returns, additively, per-bucket outcome and
+direction counts, the talk-time distribution, a weekday x hour heatmap, per-user ring time and
+answered counts, and follows `number` (the summary download does not: it keeps every call).
+
 Result, answered, ring and talk of one merged call (fix 2026-10-19, _merge(); the statistics,
 the call detail, the calls page and both downloads use the same classification):
 * only a Dial row (a non-empty dstchannel: the Dial to the trunk or to an agent) says whether
@@ -80,6 +84,10 @@ MAX_DAYS = 31
 MAX_CDR_ROWS = 200_000
 TALK_BUCKETS = (60, 120, 180)            # answered calls with talk time strictly longer than these (seconds)
 PAGE_SIZE, MAX_PAGE_SIZE = 50, 200
+# the charts (2026-10-20, stats()): answered calls by talk time, (above, up to and including) seconds
+TALK_DISTRIBUTION = ((0, 60), (60, 120), (120, 180), (180, 300), (300, 600), (600, None))
+OUTCOMES = ("answered", "no_answer", "busy", "failed", "unknown")
+DIRECTIONS = ("outbound", "inbound_answered", "inbound_missed", "internal")
 
 
 # --------------------------------------------------------------------------- scope
@@ -291,15 +299,42 @@ def _over(seconds, answered=True) -> dict:
     return {f"talk_over_{b}": int(bool(answered) and seconds > b) for b in TALK_BUCKETS}
 
 
+def _outcome(c) -> str:
+    """The chart outcome of one merged call: answered / no_answer / busy / failed / unknown (an
+    empty or unexpected result stays unknown)."""
+    if c["answered"]:
+        return "answered"
+    return {"NO ANSWER": "no_answer", "BUSY": "busy", "FAILED": "failed", "CONGESTION": "failed"}.get(c["result"], "unknown")
+
+
+def _talk_bucket(seconds) -> int:
+    """Index in TALK_DISTRIBUTION of an answered call's talk time (upper bound inclusive)."""
+    for i, (_lo, top) in enumerate(TALK_DISTRIBUTION):
+        if top is None or seconds <= top:
+            return i
+    return len(TALK_DISTRIBUTION) - 1
+
+
 def stats(args, user_id=None, rows=None) -> dict:
+    """Calls by user over time. Added for the charts (2026-10-20, every key additive):
+    per user and in the totals `calls` (every call incl. missed rings), `answered` (any
+    direction) and `ring_seconds` (sum over every call); in each series bucket `by_outcome`
+    (_outcome) and `by_direction` over EVERY call (the bucket's `total` stays "handled");
+    `talk_distribution` (answered calls by talk time, TALK_DISTRIBUTION, upper bound inclusive so
+    the buckets above 60 s add up to talk_over_60); `heatmap` (handled calls by weekday, Sunday
+    first, x hour of day, with the number of such days in the period); `number` (number_search)
+    keeps only the calls with that client number, as on the calls page."""
     full = scope(user_id)
     sc = narrow(full, args.get("extension"))
     start, end, lo, hi = _range(args)
     gran = args.get("granularity") or ("hour" if start == end else "day")
     if gran not in ("hour", "day"):
         raise ApiError(422, VALIDATION_FAILED, "granularity must be hour or day", {"granularity": "invalid"})
-    cdr = _rows_for(sc, lo, hi, rows)
+    number = numsearch.needle(args.get("number"))
+    cdr = _rows_for(sc, lo, hi, rows, number)
     calls = _merge(cdr, sc["extensions"])
+    if number:
+        calls = [c for c in calls if c["direction"] != "internal" and numsearch.matches(c["number"], number)]
     fmt = "%Y-%m-%d %H:00" if gran == "hour" else "%Y-%m-%d"
     buckets = []
     t = lo
@@ -307,38 +342,63 @@ def stats(args, user_id=None, rows=None) -> dict:
         buckets.append(t.strftime(fmt))
         t += _dt.timedelta(hours=1) if gran == "hour" else _dt.timedelta(days=1)
     per_user: dict[str, dict] = {}
-    series = {b: {"bucket": b, "total": 0, "by_extension": {}} for b in buckets}
+    series = {b: {"bucket": b, "total": 0, "by_extension": {}, "by_outcome": dict.fromkeys(OUTCOMES, 0),
+                  "by_direction": dict.fromkeys(DIRECTIONS, 0)} for b in buckets}
+    talk_dist = [0] * len(TALK_DISTRIBUTION)
+    days = [0] * 7                                        # weekday, Sunday first
+    d = start
+    while d <= end:
+        days[(d.weekday() + 1) % 7] += 1
+        d += _dt.timedelta(days=1)
+    heat = [[0] * 24 for _ in range(7)]
     for c in calls:
         ext, talk = c["extension"], c["talk_seconds"]
         u = per_user.setdefault(ext, {**_agent(ext, sc["owners"]), "outbound": 0, "outbound_answered": 0,
                                       "inbound_answered": 0, "inbound_missed": 0, "internal": 0, "talk_seconds": 0,
-                                      **_over(0)})
+                                      **_over(0), "calls": 0, "answered": 0, "ring_seconds": 0})
         if c["direction"] == "outbound":
             u["outbound"] += 1
             u["outbound_answered"] += c["answered"]
+            way = "outbound"
         elif c["direction"] == "inbound":
-            u["inbound_answered" if c["answered"] else "inbound_missed"] += 1
+            way = "inbound_answered" if c["answered"] else "inbound_missed"
+            u[way] += 1
         else:
             u["internal"] += 1
+            way = "internal"
         u["talk_seconds"] += talk if c["answered"] else 0
         for k, v in _over(talk, c["answered"]).items():
             u[k] += v
+        u["calls"] += 1
+        u["answered"] += c["answered"]
+        u["ring_seconds"] += c["ring_seconds"]
+        if c["answered"]:
+            talk_dist[_talk_bucket(talk)] += 1
+        handled = c["direction"] != "inbound" or c["answered"]            # calls handled, not every ring
+        if handled:
+            heat[(c["at"].weekday() + 1) % 7][c["at"].hour] += 1
         b = series.get(c["at"].strftime(fmt))
-        if b is not None and (c["direction"] != "inbound" or c["answered"]):   # calls handled, not every ring
+        if b is not None:
+            b["by_outcome"][_outcome(c)] += 1
+            b["by_direction"][way] += 1
+        if b is not None and handled:
             b["total"] += 1
             b["by_extension"][ext] = b["by_extension"].get(ext, 0) + 1
     users = sorted(per_user.values(), key=lambda u: -(u["outbound"] + u["inbound_answered"] + u["internal"]))
     for u in users:
         u["handled"] = u["outbound"] + u["inbound_answered"] + u["internal"]
     return {"scope": sc["kind"], "extension": sc.get("filtered"), "options": options(full),
-            "from": start.isoformat(), "to": end.isoformat(), "granularity": gran,
+            "from": start.isoformat(), "to": end.isoformat(), "granularity": gran, "number": number,
             "truncated": len(cdr) > MAX_CDR_ROWS, "users": users, "series": list(series.values()),
             "totals": {"handled": sum(u["handled"] for u in users), "outbound": sum(u["outbound"] for u in users),
                        "outbound_answered": sum(u["outbound_answered"] for u in users),
                        "inbound_answered": sum(u["inbound_answered"] for u in users),
                        "inbound_missed": sum(u["inbound_missed"] for u in users),
                        "talk_seconds": sum(u["talk_seconds"] for u in users),
-                       **{k: sum(u[k] for u in users) for k in _over(0)}}}
+                       **{k: sum(u[k] for u in users) for k in _over(0)},
+                       **{k: sum(u[k] for u in users) for k in ("internal", "calls", "answered", "ring_seconds")}},
+            "talk_distribution": [{"min": a, "max": b, "count": n} for (a, b), n in zip(TALK_DISTRIBUTION, talk_dist)],
+            "heatmap": [{"weekday": i, "days": days[i], "hours": heat[i]} for i in range(7)]}
 
 
 # --------------------------------------------------------------------------- call detail + downloads
@@ -561,7 +621,8 @@ def _info_sheet(wb, data, owners, kind_ar):
 def export_summary(args, dest_dir: str, user_id=None, rows=None) -> tuple[str, str, int]:
     """XLSX: the per-user table with totals, the calls over time, and the period. -> (path, name, users)."""
     from core.reports.xlsx import Workbook
-    data = stats({**args, "granularity": args.get("granularity") or None}, user_id=user_id, rows=rows)
+    data = stats({**args, "granularity": args.get("granularity") or None, "number": None},   # every call, as before
+                 user_id=user_id, rows=rows)
     owners = scope(user_id)["owners"]
     name = f"call-monitor-summary-{data['from']}_{data['to']}{'-' + data['extension'] if data['extension'] else ''}.xlsx"
     path = os.path.join(dest_dir, name)

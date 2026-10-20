@@ -5,7 +5,10 @@
  *   channel snapshot grouped into calls, and each extension's state. A stale or failed
  *   snapshot is shown as "unknown", never as "no calls".
  * - Calls by user over time (`GET /v2/calling/monitor/stats`): the PBX call records per agent
- *   extension, by hour (one day) or by day, with a chart per user and a chart over time.
+ *   extension, by hour (one day) or by day. Charts (2026-10-20, ./charts): calls over time by
+ *   outcome / direction / user (zoom; a day opens by hour), calls by user, answer rate, talk-time
+ *   distribution, average ring / talk time, busy hours; a user's bar opens their calls. They follow
+ *   the number search too (the stats with `number`); the tiles and the table stay every call.
  * - Downloads (XLSX, same period and user filter): the per-user summary and the call detail
  *   (one row per call: time, number, client, line, result, ring/talk time, recorded).
  * - Talk-time counts (2026-10-17): answered calls longer than 1 / 2 / 3 minutes (strictly), per
@@ -19,14 +22,13 @@
  * scope's own extensions (`options`), and the API refuses any other (403 not_in_scope).
  * Extensions are attributed to their current owner.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import classNames from 'classnames'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import Table from '@/components/ui/Table'
-import Chart from '@/components/shared/Chart'
 import { Ltr } from '@/components/v2/Display'
 import { EmptyState, ErrorState, SkeletonLines, SkeletonRows } from '@/components/v2/States'
 import { PageHead, TableFrame, rowClass } from '@/components/v2/ListParts'
@@ -39,10 +41,12 @@ import { Card, Fact, Notice } from '../parts'
 import NumberSearch from '../calls/NumberSearch'
 import NumberCalls from './NumberCalls'
 import UserCalls from './UserCalls'
+import { ListenButton, ListenPanel } from './LiveControls'
+import { useListen } from './useListen'
+import MonitorCharts from './charts'
 
 const { THead, TBody, Tr, Th, Td } = Table
 const POLL_MS = 3000
-const TOP_USERS = 8
 const describe = (e: unknown, t: Translate) => describeP5Error(e, t)
 
 const clock = (seconds: number) => {
@@ -107,6 +111,8 @@ const STATE_TONE: Record<string, string> = {
 const LiveSection = ({ ext, onOptions }: { ext: string; onOptions: (o: MonitorAgent[]) => void }) => {
     const { t } = useTranslation()
     const { data, error, elapsed } = useLive(ext)
+    const listen = useListen()
+    const canListen = !!listen.caps?.listen
     useEffect(() => {
         if (data) onOptions(data.options)
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -121,6 +127,7 @@ const LiveSection = ({ ext, onOptions }: { ext: string; onOptions: (o: MonitorAg
                     {t('p5.monitor.staleHint', { age: data.snapshot.age_seconds === null ? '—' : Math.round(data.snapshot.age_seconds) })}
                 </Notice>
             )}
+            <ListenPanel listen={listen} />
             <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 <Fact label={t('p5.monitor.activeCalls')}>
                     <Ltr>{stale ? '—' : formatCount(data.summary.active_calls)}</Ltr>
@@ -147,6 +154,7 @@ const LiveSection = ({ ext, onOptions }: { ext: string; onOptions: (o: MonitorAg
                             <Th>{t('p5.monitor.agent')}</Th>
                             <Th>{t('p5.monitor.number')}</Th>
                             <Th>{t('p5.monitor.duration')}</Th>
+                            {canListen && <Th>{t('p10.callctl.monitor.actions')}</Th>}
                         </Tr>
                     </THead>
                     <TBody>
@@ -166,11 +174,16 @@ const LiveSection = ({ ext, onOptions }: { ext: string; onOptions: (o: MonitorAg
                                     <Td className="tabular-nums">
                                         <Ltr>{clock(c.duration_seconds + elapsed)}</Ltr>
                                     </Td>
+                                    {canListen && (
+                                        <Td>
+                                            <ListenButton listen={listen} call={c} />
+                                        </Td>
+                                    )}
                                 </Tr>
                             ))
                         ) : (
                             <tr>
-                                <td colSpan={5}>
+                                <td colSpan={canListen ? 6 : 5}>
                                     <EmptyState title={stale ? t('p5.monitor.unknown') : t('p5.monitor.noCalls')} />
                                 </td>
                             </tr>
@@ -217,28 +230,17 @@ const StatsSection = ({ ext }: { ext: string }) => {
         [from, to, gran, ext]
     )
     const data: MonitorStats | undefined = q.data
-    const byUser = useMemo(() => {
-        const users = (data?.users || []).slice(0, 20)
-        return {
-            categories: users.map(agentLabel),
-            series: [
-                { name: t('p5.monitor.outAnswered') as string, data: users.map((u) => u.outbound_answered) },
-                { name: t('p5.monitor.outUnanswered') as string, data: users.map((u) => u.outbound - u.outbound_answered) },
-                { name: t('p5.monitor.inAnswered') as string, data: users.map((u) => u.inbound_answered) },
-                { name: t('p5.monitor.internal') as string, data: users.map((u) => u.internal) },
-            ],
-        }
-    }, [data, t])
-    const overTime = useMemo(() => {
-        const users = (data?.users || []).slice(0, TOP_USERS)
-        const top = new Set(users.map((u) => u.extension))
-        const series = (data?.series || [])
-        const labels = series.map((s) => (data?.granularity === 'hour' ? s.bucket.slice(11, 16) : s.bucket.slice(5)))
-        const lines = users.map((u) => ({ name: agentLabel(u), data: series.map((s) => s.by_extension[u.extension] || 0) }))
-        const others = series.map((s) => Object.entries(s.by_extension).reduce((n, [e, v]) => (top.has(e) ? n : n + v), 0))
-        if (others.some((v) => v > 0)) lines.push({ name: t('p5.monitor.others') as string, data: others })
-        return { labels, lines }
-    }, [data, t])
+    /* The charts follow the number search too (2026-10-20): the same statistics for that number's calls. */
+    const nq = useV2Query(
+        number ? (signal) => callMonitorApi.stats({ from, to, granularity: gran, extension: ext || undefined, number }, signal) : null,
+        [from, to, gran, ext, number]
+    )
+    const chartData: MonitorStats | undefined = number ? (nq.loading ? undefined : nq.data) : data
+    const drillDay = (day: string) => {
+        setFrom(day)
+        setTo(day)
+        setGran('hour')
+    }
     const totals = data?.totals
     const [opened, setOpened] = useState<MonitorAgent | null>(null)
     const [downloading, setDownloading] = useState<'summary' | 'calls' | null>(null)
@@ -335,34 +337,16 @@ const StatsSection = ({ ext }: { ext: string }) => {
                             <Ltr>{`${formatCount(totals.talk_over_60)} / ${formatCount(totals.talk_over_120)} / ${formatCount(totals.talk_over_180)}`}</Ltr>
                         </Fact>
                     </div>
-                    <div className="grid gap-4 xl:grid-cols-2">
-                        <Card title={t('p5.monitor.byUserTitle')} testId="p5-monitor-chart-users">
-                            {byUser.categories.length ? (
-                                <Chart
-                                    type="bar"
-                                    height={Math.max(260, byUser.categories.length * 34)}
-                                    series={byUser.series}
-                                    xAxis={byUser.categories}
-                                    customOptions={{ chart: { stacked: true }, plotOptions: { bar: { horizontal: true, borderRadius: 4 } }, legend: { position: 'top' } }}
-                                />
-                            ) : (
-                                <EmptyState title={t('p5.monitor.noStats')} />
-                            )}
-                        </Card>
-                        <Card title={t(data.granularity === 'hour' ? 'p5.monitor.overTimeHour' : 'p5.monitor.overTimeDay')} testId="p5-monitor-chart-time">
-                            {overTime.lines.length ? (
-                                <Chart
-                                    type="bar"
-                                    height={320}
-                                    series={overTime.lines}
-                                    xAxis={overTime.labels}
-                                    customOptions={{ chart: { stacked: true }, plotOptions: { bar: { borderRadius: 3, columnWidth: '60%' } }, legend: { position: 'top' } }}
-                                />
-                            ) : (
-                                <EmptyState title={t('p5.monitor.noStats')} />
-                            )}
-                        </Card>
-                    </div>
+                    {number && nq.error ? (
+                        <ErrorState error={nq.error} onRetry={nq.reload} describe={describe} />
+                    ) : chartData ? (
+                        <>
+                            {number && <Notice tone="info">{t('p10.moncharts.byNumber', { number: chartData.number || number })}</Notice>}
+                            <MonitorCharts data={chartData} onOpenUser={setOpened} onDrillDay={drillDay} />
+                        </>
+                    ) : (
+                        <SkeletonLines rows={8} />
+                    )}
                     <TableFrame>
                         <Table data-testid="p5-monitor-users">
                             <THead>
