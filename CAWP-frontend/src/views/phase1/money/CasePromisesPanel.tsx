@@ -9,7 +9,7 @@
  *   payment's history (PaymentTimeline).
  * Nothing about state (overdue, fulfilled) is computed here; it is the API's.
  */
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { HiOutlineChevronDown, HiOutlinePlus } from 'react-icons/hi'
 import Button from '@/components/ui/Button'
@@ -29,6 +29,7 @@ import BalanceBreakdown from './BalanceBreakdown'
 import PaymentTimeline from './PaymentTimeline'
 import PromiseDetail from './PromiseDetail'
 import { isImportedBaseline, isPositiveMoney } from './moneyMath'
+import { PROMISE_CHANGED_EVENT } from './requiredPromise'
 
 const { THead, TBody, Tr, Th, Td } = Table
 
@@ -235,6 +236,14 @@ const CasePromisesPanel = ({ caseData, onChanged }: CasePanelProps) => {
     const [createOpen, setCreateOpen] = useState(false)
     const [open, setOpen] = useState<string | null>(null)
     const q = useV2Query((signal) => moneyApi.casePromises(caseId, signal), [caseId, refreshKey])
+    /* 0079: a note / call result with a promise-to-pay status created (or linked) a promise */
+    useEffect(() => {
+        const onPromise = (e: Event) => {
+            if ((e as CustomEvent<{ caseId: string }>).detail?.caseId === caseId) setRefreshKey((n) => n + 1)
+        }
+        window.addEventListener(PROMISE_CHANGED_EVENT, onPromise)
+        return () => window.removeEventListener(PROMISE_CHANGED_EVENT, onPromise)
+    }, [caseId])
     const data = q.data
     const items = data?.items || []
 

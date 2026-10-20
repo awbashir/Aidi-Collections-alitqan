@@ -66,31 +66,34 @@ type ApiResponse = {
 };
 
 // Transform function to convert API data to component format
+// Every list may be missing and every lookup may miss (2026-10-20: a user whose contract was not in
+// `contracts` crashed the whole home page), so nothing here assumes a field is present.
 const transformApiDataToCollectors = (apiData: ApiResponse): CollectorData[] => {
-    return apiData.users.map(user => {
+    const list = <T,>(v: T[] | undefined | null): T[] => (Array.isArray(v) ? v : []);
+    return list(apiData?.users).filter(Boolean).map(user => {
         // Find user's clients
-        const userClients = apiData.clients.filter(client => client.user_id === user.id);
+        const userClients = list(apiData?.clients).filter(client => client?.user_id === user.id);
         
         // Find user's payments
-        const userPayments = apiData.payments.filter(payment => payment.user_id === user.id);
+        const userPayments = list(apiData?.payments).filter(payment => payment?.user_id === user.id);
         
         // Find user's contract
-        const userContract = apiData.contracts.find(contract => contract.id === user.contract_id);
+        const userContract = list(apiData?.contracts).find(contract => contract?.id === user.contract_id);
         
         return {
             user: {
                 id: user.id,
-                name: user.frist_name + ' ' + user.last_name,
+                name: [user.frist_name, user.last_name].filter(Boolean).join(' ') || '—',
                 target_amount: user.target_amount,
                 target_percent: user.target_percent,
                 target_is_percentage: user.target_is_percentage,
                 contract_id: user.contract_id
             },
             clients: userClients.map(client => ({
-                amount: client.amount
+                amount: Number(client?.amount) || 0
             })),
             payments: userPayments.map(payment => ({
-                amount: payment.amount,
+                amount: Number(payment?.amount) || 0,
                 payment_date: payment.payment_date
             })),
             contract: userContract ? {
@@ -176,7 +179,7 @@ const AllCollectorsKPI = ({ data = [], className }: AllCollectorsKPIProps) => {
         return [
             { value: 'all', label: t('all_contracts') || 'All Contracts' },
             ...uniqueContracts.map(contract => ({
-                value: contract.id.toString(),
+                value: String(contract.id),
                 label: contract.name
             }))
         ];
@@ -359,14 +362,14 @@ const AllCollectorsKPI = ({ data = [], className }: AllCollectorsKPIProps) => {
                                         size={40}
                                         className="bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-100"
                                     >
-                                        {collector.user.name.charAt(0)}
+                                        {(collector.user?.name || '?').charAt(0)}
                                     </Avatar>
                                     <div>
                                         <h6 className="text-[13.5px] font-extrabold text-navy-600 dark:text-night-strong">
-                                            {collector.user.name}
+                                            {collector.user?.name || '—'}
                                         </h6>
                                         <p className="text-[12.5px] text-gray-600 dark:text-night-muted">
-                                            {collector.contract.name}
+                                            {collector.contract?.name ?? '—'}
                                         </p>
                                     </div>
                                 </div>

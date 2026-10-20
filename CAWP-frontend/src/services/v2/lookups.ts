@@ -15,6 +15,8 @@ export type CommentStatusOption = Option & {
     is_active?: boolean | null
     /** 0068: the main status of a sub-status (null = a main status). Deleted statuses are not listed. */
     parent_id?: string | null
+    /** 0079: a note with this status needs a promise (amount + due date); a sub-status carries its main status's flag. */
+    requires_promise?: boolean
 }
 
 const cache = new Map<string, Promise<unknown>>()
@@ -85,6 +87,7 @@ export const lookups = {
                         color?: string | null
                         is_active?: boolean | null
                         parent_id?: string | null
+                        requires_promise?: boolean
                     }
                 >
             }>('/comment_status')
@@ -97,6 +100,7 @@ export const lookups = {
                     color: c.color ?? null,
                     is_active: c.is_active ?? null,
                     parent_id: c.parent_id ?? null,
+                    requires_promise: c.requires_promise === true,
                 })
             )
         }),

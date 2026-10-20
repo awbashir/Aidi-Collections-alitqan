@@ -5594,6 +5594,217 @@
     }
   },
   "p10": {
+    "homedash": {
+      "allContracts": "All contracts",
+      "buckets": {
+        "ageOver": "Over {{n}} days",
+        "ageRange": "{{from}}–{{to}} days",
+        "ageSubtitle": "Open cases by days since they entered the system, with what is still outstanding.",
+        "ageTitle": "Debt ageing",
+        "amountSubtitle": "Open cases by outstanding amount (original debt minus approved payments).",
+        "amountTitle": "Outstanding amounts",
+        "cases": "Cases",
+        "outstanding": "Outstanding",
+        "settled": "Settled"
+      },
+      "byContract": {
+        "hint": "Click a contract to filter the whole page.",
+        "title": "Collected by contract"
+      },
+      "calls": {
+        "answerRate": "Answer rate",
+        "answered": "Answered",
+        "handled": "Calls handled",
+        "inboundMissed": "Missed inbound",
+        "monitor": "Open call monitor",
+        "none": "No calls yet today",
+        "notAnswered": "Not answered",
+        "otherResult": "Unknown result",
+        "outbound": "Outbound calls",
+        "talk": "Talk time",
+        "title": "Calls today by hour",
+        "truncated": "Too many call records: the figures may be incomplete.",
+        "unknown": "The PBX call records cannot be read right now, so the call figures are unknown (not zero).",
+        "unknownTitle": "Call figures unavailable"
+      },
+      "cardError": "This card could not be shown",
+      "chartsNote": "Collections are approved payments of {{month}} by payment date (Asia/Riyadh). Pending, rejected and reversed payments never count.",
+      "clearFilter": "Clear filter",
+      "collections": {
+        "cumulative": "Cumulative",
+        "daily": "Collected per day",
+        "pace": "Target pace",
+        "subtitle": "Month to date: {{total}}",
+        "subtitleTarget": "Month to date: {{total}} of a {{target}} target",
+        "title": "Collections this month"
+      },
+      "collectorFilter": "Collector: {{name}}",
+      "contract": "Contract",
+      "details": "Details",
+      "filterHere": "Filter",
+      "firstContact": {
+        "hint": "{{contacted}} of {{open}} open cases have a note this month.",
+        "title": "First-contact rate this month"
+      },
+      "heatmap": {
+        "subtitle": "Notes by weekday and hour, {{from}} to {{to}}",
+        "title": "When the work happens"
+      },
+      "inactive": "inactive",
+      "kpi": {
+        "collected": "Collected",
+        "collectedRule": "Approved payments only. Pending, rejected and reversed money never counts.",
+        "debt": "Original debt",
+        "myCases": "My clients",
+        "notContacted7": "No note in 7 days",
+        "noteClients": "on {{n}} clients",
+        "notes": "Notes",
+        "notesRule": "Deleted notes and statuses imported from the old system are not counted.",
+        "openCases": "Open cases",
+        "payments": "{{n}} payments",
+        "pending": "Pending approval",
+        "pendingRule": "Waiting for approval: not counted as collected until approved.",
+        "previous": "Previous ({{range}})",
+        "promises": "Promises due",
+        "target": "Month target"
+      },
+      "leaderboard": {
+        "achievedTarget": "Achieved / target",
+        "achievement": "Achievement",
+        "collected": "Collected (period)",
+        "collector": "Collector",
+        "empty": "No collectors in your scope",
+        "firstContact": "First contact",
+        "focus": "Click to filter the page to this collector",
+        "keptRate": "Kept rate",
+        "neglect": "No note 7d",
+        "neglectTitle": "No note in 14 days: {{d14}}, 30 days: {{d30}}, never: {{never}}",
+        "note": "Target and achievement are the collector's whole month; the other columns follow the period and contract filters. Collected money is counted for the case's current owner.",
+        "notes": "Notes",
+        "openCases": "Open cases",
+        "openCasesOf": "Open the cases of {{name}}",
+        "promises": "Promises due",
+        "subtitle": "Kept rate: promises due in the last {{days}} days, kept vs broken.",
+        "title": "Collectors leaderboard"
+      },
+      "legacyTitle": "More details",
+      "neglect": {
+        "d14": "No note in 14 days",
+        "d30": "No note in 30 days",
+        "d7": "No note in 7 days",
+        "never": "Never contacted",
+        "subtitle": "Of {{n}} open cases",
+        "title": "Cases needing attention"
+      },
+      "noCases": "No open cases",
+      "noCollections": "No collections in this period",
+      "noContract": "No contract",
+      "noData": "No data yet",
+      "noNotes": "No notes yet",
+      "noPromises": "No promises in this window",
+      "noStatus": "No status",
+      "notesToday": {
+        "subtitle": "{{n}} notes today, by main status",
+        "title": "Notes today by hour"
+      },
+      "open": "Open",
+      "other": "Other",
+      "period": "Period",
+      "periods": {
+        "month": "This month",
+        "today": "Today",
+        "week": "Last 7 days"
+      },
+      "promiseStates": {
+        "hint": "Promises due in the period",
+        "title": "My promises"
+      },
+      "promises": {
+        "subtitle": "Last 7 days and next 14 days by due date. Click a bar to open those promises.",
+        "title": "Promises by due date"
+      },
+      "reach": {
+        "noNote": "No note yet",
+        "subtitle": "Reachability of each open case's latest note",
+        "title": "Contact reachability"
+      },
+      "recovery": {
+        "cases": "Cases",
+        "collected": "Collected",
+        "contract": "Contract / portfolio",
+        "debt": "Debt",
+        "rate": "Recovery rate",
+        "subtitle": "Open cases: approved payments ÷ original debt. Click a row to see its portfolios.",
+        "title": "Recovery by contract and portfolio"
+      },
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "rules": "Figures follow your scope. Money is approved payments only (pending, rejected and reversed never count). Dates are Asia/Riyadh.",
+      "scope": {
+        "all": "All extensions",
+        "own": "My extension",
+        "team": "My team"
+      },
+      "state": {
+        "fulfilled": "Kept",
+        "open": "Open",
+        "overdue": "Broken"
+      },
+      "target": {
+        "achieved": "Achieved",
+        "behind": "Behind the target pace",
+        "collectors": "Collectors",
+        "expected": "Expected by today",
+        "month": "Month {{month}}",
+        "onPace": "On pace",
+        "remaining": "Remaining",
+        "someUnknown": "{{n}} collectors have no known target for this month.",
+        "target": "Target",
+        "title": "Target progress",
+        "unknown": "No target set",
+        "unknownHint": "Set a target for the collector or the contract to see progress.",
+        "workDays": "Work days passed"
+      },
+      "today": "Today",
+      "trendUnknown": "No figure in the previous period to compare with",
+      "vsPrevious": "Change vs the previous period"
+    },
+    "promise": {
+      "title": "Promise to pay (required)",
+      "whyStatus": "This note status records a promise to pay: enter the amount and the date the client promised. The promise is created with the note.",
+      "whyOutcome": "\"Promise discussed\" records a promise to pay: enter the amount and the date the client promised. The promise is created with the call result.",
+      "modeNew": "New promise",
+      "modeLink": "Link an open promise ({{count}})",
+      "linkLabel": "Open promise",
+      "linkHint": "The client already has an open promise; link it instead of recording a new one.",
+      "amount": "Promised amount",
+      "balanceHint": "Outstanding balance: {{outstanding}}",
+      "due": "Payment date",
+      "dueHint": "Riyadh date, today or later.",
+      "state": {
+        "open": "Open",
+        "overdue": "Overdue"
+      },
+      "amountRequired": "Enter the promised amount.",
+      "amountFormat": "Enter a number with at most 2 decimals.",
+      "amountPositive": "The amount must be greater than 0.",
+      "amountAboveBalance": "The amount is above the outstanding balance ({{outstanding}}).",
+      "dueRequired": "Choose the payment date.",
+      "dueInPast": "The payment date cannot be before today ({{today}}, Riyadh).",
+      "linkRequired": "Choose the open promise to link.",
+      "fixFields": "Enter the promised amount and payment date first.",
+      "noteSaved": "Note saved and the promise to pay recorded.",
+      "aiRefused": "This status records a promise to pay, which needs the amount and the date. An AI draft can't create a promise: copy the text and save the note from the client's note form or the call result.",
+      "settingsLabel": "Promise to pay",
+      "settingsCheckbox": "Requires a promise to pay (amount and date)",
+      "settingsHint": "A note with this status can only be saved with the promised amount and payment date; the promise is created with the note. Bulk notes and imports don't ask for it.",
+      "settingsInherited": "Taken from the main status \"{{name}}\".",
+      "err": {
+        "promise_required": "This status (or \"promise discussed\") needs the promised amount and payment date.",
+        "promise_needs_conversation": "A promise-to-pay status needs the outcome \"Connected\" or \"Promise discussed\".",
+        "promise_not_linkable": "The chosen promise is no longer open on this client. Record a new promise."
+      }
+    },
     "callctl": {
       "title": "Call control",
       "open": "Transfer / add",

@@ -85,8 +85,8 @@ function transformCommentsData(comments, t, mode = "daily", statusFilter = "all"
     };
   }
 
-  // Apply status filter first
-  let statusFilteredComments = comments;
+  // Apply status filter first (rows without a date are skipped: nothing may throw here)
+  let statusFilteredComments = comments.filter(c => c && c.create_at);
   if (statusFilter === "active") {
     statusFilteredComments = comments?.filter(c => c?.status?.is_active);
   } else if (statusFilter === "inactive") {

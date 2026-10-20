@@ -453,6 +453,14 @@ def save_as_note(draft_id, body: dict, expected: int) -> dict:
     case_id = str(r["case_id"])
     contract_id = I.case_row(case_id).get("contract_id")
     v = _note_fields(body, contract_id)
+    # 0079: a promise-to-pay status needs a promise (amount + due date), and a draft never
+    # creates one: the collector saves such a note from the note form or the call result.
+    from services import promise_required
+    if promise_required.status_requires_promise(v["status_id"], v["sub_status_id"], _s()):
+        raise ApiError(422, "promise_required",
+                       "this note status records a promise to pay, which needs the promise amount and due date: "
+                       "copy the text and save the note from the case's note form or call result",
+                       {"comment_status_id": "requires_promise"})
     state = _s().execute(text("SELECT is_locked, is_archive FROM clints WHERE id = CAST(:id AS uuid) FOR NO KEY UPDATE"),
                          {"id": case_id}).mappings().first()
     if state["is_locked"]:

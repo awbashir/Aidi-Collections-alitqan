@@ -76,7 +76,7 @@ const KPICollector = ({ data = [], className }: KPICollectorProps) => {
     const AccountCount = data?.clients?.length || 0;
     
     // Calculate total amount from clients
-    const totalAmount = data?.clients?.reduce((acc, item) => acc + item.amount, 0) || 0
+    const totalAmount = data?.clients?.reduce((acc, item) => acc + (Number(item?.amount) || 0), 0) || 0
     
     // Calculate Monthly Target based on priority:
     // 1. User's personal target (if set)
@@ -119,11 +119,12 @@ const KPICollector = ({ data = [], className }: KPICollectorProps) => {
 
     // Calculate achieved amount for current month
     const achieved = data?.payments?.filter(payment => {
+        if (!payment?.payment_date) return false;
         const paymentDate = new Date(payment.payment_date);
         const currentDate = new Date();
         return paymentDate.getMonth() === currentDate.getMonth() && 
                paymentDate.getFullYear() === currentDate.getFullYear();
-    })?.reduce((acc, item) => acc + item.amount, 0) || 0;
+    })?.reduce((acc, item) => acc + (Number(item?.amount) || 0), 0) || 0;
 
     // Get current month and year
     const currentMonth = new Date().toLocaleDateString('en-US', { month: 'long' })
@@ -333,7 +334,7 @@ const KPICollector = ({ data = [], className }: KPICollectorProps) => {
                                      <NumericFormat
                                         thousandSeparator
                                         displayType="text"
-                                        value={Math.round(((MonthlyTarget - achieved) / (WorkDays - daysPassed)))}
+                                        value={WorkDays - daysPassed > 0 ? Math.round(((MonthlyTarget - achieved) / (WorkDays - daysPassed))) : 0}
                                     />
                                 </span>
                                 <span className="pb-0.5 text-[12.5px] font-normal text-gray-600 dark:text-night-muted">

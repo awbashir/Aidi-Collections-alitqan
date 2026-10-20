@@ -74,7 +74,8 @@ const ActionAvatar = ({ actionType }: { actionType: number }) => {
 const DailyPaymentsAll = (props: RecentAcivityProps) => {
 
     const { t } = useTranslation()
-    const { data = [], className, title = t('dailyPayments'), extra } = props
+    const { className, title = t('dailyPayments'), extra } = props
+    const data = Array.isArray(props.data) ? props.data.filter(Boolean) : []
 
     return (
         <Card className={className}>

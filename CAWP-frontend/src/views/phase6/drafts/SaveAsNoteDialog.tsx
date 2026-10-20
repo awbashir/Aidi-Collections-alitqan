@@ -4,6 +4,9 @@
  * reachability, status filtered by the case's contract, contact method defaulting to mobile).
  * The user confirms they reviewed the AI-generated text. There is no callback, promise, payment,
  * call or message: the API refuses those fields (`422 draft_note_only`).
+ * A promise-to-pay status (0079, `requires_promise`) needs a promise, which a draft never
+ * creates: the dialog explains it and the API refuses it (`422 promise_required`); the
+ * collector saves such a note from the note form or the call result.
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -14,9 +17,10 @@ import { Notice } from '@/views/phase5/parts'
 import { NoteFields } from '@/views/phase5/wrapup/fields'
 import { emptyNote, noteValid } from '@/views/phase5/wrapup/draft'
 import type { NoteDraft } from '@/views/phase5/wrapup/draft'
+import { describePromiseCode } from '@/views/phase1/money/requiredPromise'
 import { AiGeneratedNotice, CheckField } from '../parts'
 
-const describe = (e: unknown, t: Translate) => describeP6Error(e, t)
+const describe = (e: unknown, t: Translate) => describePromiseCode(e, t) ?? describeP6Error(e, t)
 
 const SaveAsNoteDialog = ({
     draft,
@@ -43,6 +47,7 @@ const SaveAsNoteDialog = ({
     const { t } = useTranslation()
     const [note, setNote] = useState<NoteDraft>(emptyNote())
     const [confirmed, setConfirmed] = useState(false)
+    const [needsPromise, setNeedsPromise] = useState(false)
     useEffect(() => {
         if (isOpen) {
             setNote({ ...emptyNote(), text })
@@ -56,7 +61,7 @@ const SaveAsNoteDialog = ({
             isOpen={isOpen}
             title={t('p6.drafts.saveTitle')}
             confirmLabel={t('p6.drafts.saveConfirm')}
-            canSubmit={!blocked && confirmed && noteValid(note)}
+            canSubmit={!blocked && !needsPromise && confirmed && noteValid(note)}
             width={720}
             testId="p6-save-note"
             describeError={describe}
@@ -86,7 +91,20 @@ const SaveAsNoteDialog = ({
                 </Notice>
             )}
             <p className="mb-3 text-[13px] text-gray-700 dark:text-night-body">{t('p6.drafts.saveHint')}</p>
-            <NoteFields value={note} onChange={setNote} contractId={contractId} active={isOpen} testId="p6-note" textHint={t('p6.drafts.noteHint')} />
+            <NoteFields
+                value={note}
+                onChange={setNote}
+                contractId={contractId}
+                active={isOpen}
+                testId="p6-note"
+                textHint={t('p6.drafts.noteHint')}
+                onRequiresPromise={setNeedsPromise}
+            />
+            {needsPromise && (
+                <Notice tone="warning" className="mb-3" testId="p10-ai-note-promise">
+                    {t('p10.promise.aiRefused')}
+                </Notice>
+            )}
             <div className="rounded-md border border-gray-300 p-3 dark:border-night-border">
                 <CheckField checked={confirmed} onChange={setConfirmed} testId="p6-save-note-reviewed">
                     <span className="text-[13.5px] text-gray-800 dark:text-night-body">{t('p6.drafts.saveConfirmCheck')}</span>

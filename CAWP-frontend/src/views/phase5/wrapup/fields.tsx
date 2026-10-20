@@ -2,7 +2,8 @@
  * Form pieces shared by the wrap-up dialog and the manual call log: the outcome picker,
  * the note (text, reachability, status, contact method: the legacy note form's rules),
  * the optional callback, and the optional EXPLICITLY AGREED promise (outcome `connected`
- * only, with the promises key). "Promise discussed" never creates a promise.
+ * only, with the promises key). 2026-10-20 (0079): "promise discussed" and a promise-to-pay
+ * note status REQUIRE a promise (RequiredPromiseSection, requiredPromiseForm.ts).
  */
 import classNames from 'classnames'
 import { useEffect, useMemo } from 'react'
@@ -17,9 +18,12 @@ import { OUTCOMES } from '@/services/v2'
 import { noteStatusOptions, subStatusesOf } from '@/utils/commentStatusTree'
 import { riyadhToday } from '@/utils/v2/format'
 import { usePermissions } from '@/utils/v2/hooks'
+import RequiredPromiseFields from '@/views/phase1/money/RequiredPromiseFields'
+import { statusRequiresPromise } from '@/views/phase1/money/requiredPromise'
 import { Notice } from '../parts'
 import { MOBILE_METHOD_ID, useNoteLookups } from './draft'
 import type { CallbackDraft, NoteDraft, PromiseDraft } from './draft'
+import type { RequiredPromiseState } from './requiredPromiseForm'
 
 const selectProps = { size: 'sm' as const, menuPosition: 'fixed' as const, isClearable: true }
 
@@ -92,6 +96,7 @@ export const NoteFields = ({
     textHint,
     activeOnly,
     optional,
+    onRequiresPromise,
 }: {
     value: NoteDraft
     onChange: (v: NoteDraft) => void
@@ -105,6 +110,8 @@ export const NoteFields = ({
     activeOnly?: boolean
     /** Wrap-up / manual log: text, reachability and status are optional (a status writes the case note). */
     optional?: boolean
+    /** 0079: told whether the chosen status (or sub-status) records a promise to pay. */
+    onRequiresPromise?: (required: boolean) => void
 }) => {
     const { t } = useTranslation()
     const lk = useNoteLookups(active)
@@ -120,6 +127,11 @@ export const NoteFields = ({
         [lk.statuses, contractId, value.reach, activeOnly]
     )
     const subOptions = useMemo(() => subStatusesOf(lk.statuses, value.status), [lk.statuses, value.status])
+    const requiresPromise = statusRequiresPromise(lk.statuses, value.status, value.subStatus)
+    useEffect(() => {
+        onRequiresPromise?.(requiresPromise)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requiresPromise])
     useEffect(() => {
         if (value.status && !lk.loading && !statusOptions.some((s) => s.value === value.status))
             onChange({ ...value, status: undefined, subStatus: undefined })
@@ -237,13 +249,7 @@ export const PromiseFields = ({
     testId?: string
 }) => {
     const { t } = useTranslation()
-    if (outcome === 'promise_discussed') {
-        return (
-            <Notice tone="info" testId={`${testId}-discussed`}>
-                {t('p5.wrapup.discussedNotPromise')}
-            </Notice>
-        )
-    }
+    /* "promise discussed" REQUIRES a promise (RequiredPromiseSection) since 2026-10-20 */
     if (outcome !== 'connected') return null
     if (!canPromise) return <Note className="mb-3">{t('p5.wrapup.promiseNoKey')}</Note>
     return (
@@ -277,6 +283,43 @@ export const PromiseFields = ({
                 </div>
             )}
         </div>
+    )
+}
+
+/**
+ * The REQUIRED promise (0079): the outcome "promise discussed" or a promise-to-pay note status.
+ * A promise-to-pay status with another outcome is explained instead (the API refuses it).
+ */
+export const RequiredPromiseSection = ({
+    caseId,
+    state,
+    active,
+    testId = 'p10-promise',
+}: {
+    caseId: string | null | undefined
+    state: RequiredPromiseState
+    active: boolean
+    testId?: string
+}) => {
+    const { t } = useTranslation()
+    if (state.mismatch) {
+        return (
+            <Notice tone="warning" className="mb-3" testId={`${testId}-mismatch`}>
+                {t('p10.promise.err.promise_needs_conversation')}
+            </Notice>
+        )
+    }
+    if (!state.reason) return null
+    return (
+        <RequiredPromiseFields
+            caseId={caseId}
+            value={state.draft}
+            onChange={state.setDraft}
+            reason={state.reason}
+            active={active}
+            onOutstanding={state.setOutstanding}
+            testId={testId}
+        />
     )
 }
 

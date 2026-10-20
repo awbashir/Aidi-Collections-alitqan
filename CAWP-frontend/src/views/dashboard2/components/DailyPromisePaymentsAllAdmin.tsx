@@ -75,7 +75,8 @@ const ActionAvatar = ({ actionType }: { actionType: number }) => {
 const DailyPromisePaymentsAllAdmin = (props: RecentAcivityProps) => {
 
     const { t } = useTranslation()
-    const { data = [], className, title = t('dailyAppointments'), extra } = props
+    const { className, title = t('dailyAppointments'), extra } = props
+    const data = Array.isArray(props.data) ? props.data.filter(Boolean) : []
 
     // Calculate statistics
     const totalPayment = data.reduce((sum, timeline) => sum + (timeline.amount || 0), 0)

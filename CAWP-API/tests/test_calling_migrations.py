@@ -182,8 +182,8 @@ def test_wrapups_and_blocks(pgc, world):
     note = str(uuid.uuid4())
     ins = ("INSERT INTO call_wrapups (attempt_id, case_id, outcome, note_id, reviewed_by, promise_id) "
            "VALUES (%s, %s, %s, %s, %s, %s)")
-    code, _ = err(pgc, ins, a, world["case1"], "promise_discussed", note, world["u1"], str(uuid.uuid4()))
-    assert code == "23514"                                     # promise_discussed never carries a promise
+    code, _ = err(pgc, ins, a, world["case1"], "busy", note, world["u1"], str(uuid.uuid4()))
+    assert code == "23514"                     # a promise only with connected / promise_discussed (0079)
     code, _ = err(pgc, ins, a, world["case1"], "do_not_call", note, world["u1"], None)
     assert code == "23514"                                     # DNC must link its block
     run(pgc, ins, a, world["case1"], "busy", note, world["u1"], None)

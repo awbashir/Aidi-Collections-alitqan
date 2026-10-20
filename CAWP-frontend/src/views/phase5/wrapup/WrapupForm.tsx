@@ -11,6 +11,8 @@
  * - A deleted case (`case.missing`): only the outcome and the text; the API keeps them for a
  *   supervisor's review.
  * - Note text is never required.
+ * - 2026-10-20 (0079): the outcome "promise discussed" or a promise-to-pay note status needs the
+ *   promise amount and due date (or an open promise linked); the API creates it with the wrap-up.
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -24,7 +26,9 @@ import { usePermissions } from '@/utils/v2/hooks'
 import { Notice, OutcomeBadge } from '../parts'
 import { announceWrapped } from '../live/callDock'
 import type { CaseFacts } from './caseFacts'
-import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields } from './fields'
+import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields, RequiredPromiseSection } from './fields'
+import { useRequiredPromise } from './requiredPromiseForm'
+import { announcePromiseChanged } from '@/views/phase1/money/requiredPromise'
 import {
     callbackValid,
     callbackValue,
@@ -59,6 +63,8 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
     const [dncReason, setDncReason] = useState('')
     const [replacement, setReplacement] = useState<string | undefined>(undefined)
     const [candidates, setCandidates] = useState<Option[] | null>(null)
+    const missing = !!view?.case?.missing
+    const required = useRequiredPromise(outcome, missing)
 
     const reset = () => {
         setOutcome(undefined)
@@ -69,20 +75,25 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
         setDncReason('')
         setReplacement(undefined)
         setCandidates(null)
+        required.reset()
     }
 
-    const missing = !!view?.case?.missing
     const canSubmit =
         !!view &&
         view.actions.can_wrapup &&
         !!outcome &&
-        (missing || (wrapupNoteValid(note, callback) && callbackValid(callback) && promiseValid(promise, outcome))) &&
+        (missing ||
+            (wrapupNoteValid(note, callback) &&
+                callbackValid(callback) &&
+                (required.required || required.mismatch ? required.valid : promiseValid(promise, outcome)))) &&
         (candidates === null || !!replacement)
 
     const submit = async (key: string): Promise<CallDetail | null> => {
         if (!view || !outcome) return null
         /* A deleted case: the outcome and the text only (kept for review). */
         const noteBody = missing ? (note.text.trim() ? { text: note.text.trim() } : undefined) : wrapupNoteBody(note)
+        /* the required promise (0079), else the optional explicitly agreed one */
+        const promiseBody = missing ? undefined : required.required ? required.body() : promiseValue(promise, outcome)
         try {
             const res = await callsApi.wrapup(
                 view.id,
@@ -91,7 +102,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
                     outcome,
                     ...(noteBody ? { note: noteBody } : {}),
                     ...(!missing && callbackValue(callback) ? { callback_at: callbackValue(callback) } : {}),
-                    ...(!missing && promiseValue(promise, outcome) ? { promise: promiseValue(promise, outcome) } : {}),
+                    ...(promiseBody ? { promise: promiseBody } : {}),
                     ...(outcome === 'wrong_number' && wrongReason.trim() ? { wrong_number_reason: wrongReason.trim() } : {}),
                     ...(outcome === 'wrong_number' && replacement ? { replacement_default_id: replacement } : {}),
                     ...(outcome === 'do_not_call' && dncReason.trim() ? { do_not_call_reason: dncReason.trim() } : {}),
@@ -106,6 +117,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
                 review ? 8000 : 2500
             )
             announceWrapped({ attemptId: view.id, caseId: view.case?.id || null, needsReview: review })
+            if (promiseBody && !review) announcePromiseChanged(view.case?.id)
             reset()
             return res
         } catch (e) {
@@ -143,6 +155,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
         replacement,
         setReplacement,
         candidates,
+        required,
         reset,
         canSubmit,
         submit,
@@ -204,7 +217,9 @@ export const WrapupFields = ({
                     {t('p8.clientpage.bridgeRule')}
                 </div>
             )}
-            {!missing && <PromiseFields outcome={outcome} value={form.promise} onChange={form.setPromise} canPromise={canPromise} />}
+            {!missing && !form.required.required && !form.required.mismatch && (
+                <PromiseFields outcome={outcome} value={form.promise} onChange={form.setPromise} canPromise={canPromise} />
+            )}
             <BlockingOutcomeFields
                 outcome={outcome}
                 wrongReason={form.wrongReason}
@@ -248,7 +263,20 @@ export const WrapupFields = ({
                 </DialogField>
             ) : (
                 <>
-                    <NoteFields value={note} onChange={setNote} contractId={facts?.contractId ?? null} active={active} optional />
+                    <NoteFields
+                        value={note}
+                        onChange={setNote}
+                        contractId={facts?.contractId ?? null}
+                        active={active}
+                        optional
+                        onRequiresPromise={form.required.setStatusNeedsPromise}
+                    />
+                    <RequiredPromiseSection
+                        caseId={view.case?.id}
+                        state={form.required}
+                        active={active}
+                        testId={testId === 'p5-wrapup' ? 'p10-promise' : `${testId}-promise`}
+                    />
                     <div className="text-eyebrow mb-2">{t('p5.wrapup.callbackSection')}</div>
                     <CallbackFields value={callback} onChange={form.setCallback} />
                     {callback.date && !note.status && (

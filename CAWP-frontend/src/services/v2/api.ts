@@ -70,10 +70,12 @@ export const worklistApi = {
             }
             next?: { due_at: string; next_action: string }
             no_further_action_reason?: string
+            /** 0079: required with a promise-to-pay note status (a new promise, or an open one linked) */
+            promise?: { amount: string; due_date: string } | { promise_id: string }
         },
         key: string
     ) =>
-        v2Post<{ completed: FollowUp; next: FollowUp | null; outcome_comment_id: string }>(
+        v2Post<{ completed: FollowUp; next: FollowUp | null; outcome_comment_id: string; promise?: PromiseRow }>(
             `/v2/follow-ups/${enc(id)}/complete`,
             body,
             key

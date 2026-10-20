@@ -43,6 +43,16 @@ import {
   CallResultDone,
   CallResultForm,
 } from "@/views/phase5/wrapup/CallResultForm";
+import RequiredPromiseFields from "@/views/phase1/money/RequiredPromiseFields";
+import {
+  announcePromiseChanged,
+  emptyRequiredPromise,
+  requiredPromiseLegacyFields,
+  requiredPromiseValid,
+  statusRequiresPromise,
+} from "@/views/phase1/money/requiredPromise";
+import type { RequiredPromiseDraft } from "@/views/phase1/money/requiredPromise";
+import { riyadhToday } from "@/utils/v2/format";
 
 // Types
 import type { FieldProps } from "formik";
@@ -111,6 +121,15 @@ const Comments = ({ data }: NotificationSettingProps) => {
   const [commentStatus, setCommentStatus] = useState([]);
   const [commentStatusLoading, setCommentStatusLoading] = useState(false);
   const [call, setCall] = useState([]);
+  /* 0079: a promise-to-pay status («وعد بالسداد») needs the promise amount and
+   * due date (or an open promise linked); POST /comments creates it with the note. */
+  const [reqPromise, setReqPromise] = useState<RequiredPromiseDraft>(
+    emptyRequiredPromise()
+  );
+  const [promiseOutstanding, setPromiseOutstanding] = useState<string | null>(
+    null
+  );
+  const [promiseTried, setPromiseTried] = useState(false);
 
   /* 2026-10-17, one entry: while a call of this case waits for its wrap-up,
    * this form is the call's result ("نتيجة المكالمة"): one save closes the
@@ -177,6 +196,7 @@ const Comments = ({ data }: NotificationSettingProps) => {
     contract_id: option.contract_id,
     parent_id: option.parent_id ?? null,
     deleted_at: option.deleted_at ?? null,
+    requires_promise: option.requires_promise === true,
   }));
 
   // The shared note-status rule (utils/commentStatusTree.noteStatusOptions, the same as
@@ -297,6 +317,25 @@ const Comments = ({ data }: NotificationSettingProps) => {
     values: ProfileFormModel,
     setSubmitting: (isSubmitting: boolean) => void
   ) => {
+    // 0079: the required promise is checked before anything is sent
+    const needsPromise = statusRequiresPromise(
+      commentsStatusOptions,
+      values.comment_status_id,
+      values.comment_sub_status_id
+    );
+    if (
+      needsPromise &&
+      !requiredPromiseValid(reqPromise, riyadhToday(), promiseOutstanding)
+    ) {
+      setPromiseTried(true);
+      toast.push(
+        <Notification title={String(t("p10.promise.fixFields"))} type="danger" />,
+        { placement: "top-center" }
+      );
+      setSubmitting(false);
+      return;
+    }
+
     // Handle delinquency update separately (but don't return early)
     if (
       values.delinquencyReason_id &&
@@ -346,9 +385,13 @@ const Comments = ({ data }: NotificationSettingProps) => {
     delete sendValues.delinquencyReason_id;
     // 0068: the optional sub-status is sent only when one was chosen
     if (!sendValues.comment_sub_status_id) delete sendValues.comment_sub_status_id;
+    // 0079: promise_amount + promise_date (or promise_id) with a promise-to-pay status
+    const payload = needsPromise
+      ? { ...sendValues, ...requiredPromiseLegacyFields(reqPromise) }
+      : sendValues;
 
     // Post the comment
-    dispatch(postComments(sendValues))
+    dispatch(postComments(payload as unknown as Parameters<typeof postComments>[0]))
       .then((action: any) => {
         // a refused note comes back as 201 {status: false, message} (e.g. a deleted status)
         if (action?.payload?.status === false) {
@@ -362,8 +405,20 @@ const Comments = ({ data }: NotificationSettingProps) => {
           return;
         }
         dispatch(getComments(clint?.id));
+        if (needsPromise) {
+          announcePromiseChanged(clint?.id ? String(clint.id) : null);
+          setReqPromise(emptyRequiredPromise());
+          setPromiseTried(false);
+        }
         toast.push(
-          <Notification title={t("comments.addSuccess")} type="success" />,
+          <Notification
+            title={String(
+              needsPromise
+                ? t("p10.promise.noteSaved")
+                : t("comments.addSuccess")
+            )}
+            type="success"
+          />,
           { placement: "top-center" }
         );
       })
@@ -470,6 +525,11 @@ const Comments = ({ data }: NotificationSettingProps) => {
               (option: any) => option.value === values.contact
             )?.label;
             const statusOptions = statusesFor(values.comment_reachability_id);
+            const needsPromise = statusRequiresPromise(
+              commentsStatusOptions,
+              values.comment_status_id,
+              values.comment_sub_status_id
+            );
 
             return (
               <Form>
@@ -672,6 +732,21 @@ const Comments = ({ data }: NotificationSettingProps) => {
                           }}
                         </Field>
                       </FormRow>
+                    )}
+
+                    {/* 0079: the required promise of a promise-to-pay status */}
+                    {needsPromise && (
+                      <div className="col-span-2">
+                        <RequiredPromiseFields
+                          caseId={clint?.id ? String(clint.id) : null}
+                          value={reqPromise}
+                          onChange={setReqPromise}
+                          reason="status"
+                          showErrors={promiseTried}
+                          onOutstanding={setPromiseOutstanding}
+                          testId="p10-note-promise"
+                        />
+                      </div>
                     )}
 
                     {/* Next Contact Date */}

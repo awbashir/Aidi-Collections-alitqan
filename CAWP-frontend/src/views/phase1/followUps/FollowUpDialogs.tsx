@@ -18,13 +18,23 @@ import { Note } from '@/components/v2/States'
 import { isV2Error, lookups, worklistApi } from '@/services/v2'
 import type { CommentStatusOption, FollowUp, Option } from '@/services/v2'
 import { mainStatusesFor, subStatusesOf } from '@/utils/commentStatusTree'
-import { riyadhInstant } from '@/utils/v2/format'
+import { riyadhInstant, riyadhToday } from '@/utils/v2/format'
+import RequiredPromiseFields from '@/views/phase1/money/RequiredPromiseFields'
+import {
+    announcePromiseChanged,
+    describePromiseError,
+    emptyRequiredPromise,
+    requiredPromiseBody,
+    requiredPromiseValid,
+    statusRequiresPromise,
+} from '@/views/phase1/money/requiredPromise'
+import type { RequiredPromiseDraft } from '@/views/phase1/money/requiredPromise'
 import { DueFields, FollowUpSummary, Segmented } from './parts'
 import { validDue } from './access'
 
 /** The follow-up fields a dialog needs (a list item, the case `current`, or a 409 hint). */
 export type FollowUpRef = Pick<FollowUp, 'id' | 'revision' | 'due_at'> &
-    Partial<Pick<FollowUp, 'next_action' | 'bucket' | 'days_late' | 'original_due_at' | 'case'>>
+    Partial<Pick<FollowUp, 'next_action' | 'bucket' | 'days_late' | 'original_due_at' | 'case' | 'case_id'>>
 
 /* The legacy note form defaults the contact method to "mobile" (Comments.tsx MOBILE_METHOD_ID). */
 const MOBILE_METHOD_ID = 'ff081c7e-4500-4a75-ae36-580f2ae90834'
@@ -124,8 +134,12 @@ export const CompleteFollowUpDialog = ({
     const [time, setTime] = useState('09:00')
     const [nextAction, setNextAction] = useState('')
     const [nfa, setNfa] = useState('')
+    /* 0079: a promise-to-pay outcome status needs the promise (amount + due date, or an open one linked) */
+    const [promise, setPromise] = useState<RequiredPromiseDraft>(emptyRequiredPromise())
+    const [outstanding, setOutstanding] = useState<string | null>(null)
 
     const contract = contractId ?? followUp?.case?.contract?.id ?? null
+    const caseId = followUp?.case_id ?? followUp?.case?.id ?? null
 
     useEffect(() => {
         if (!method && lk.methods.some((m) => m.value === MOBILE_METHOD_ID)) setMethod(MOBILE_METHOD_ID)
@@ -157,8 +171,11 @@ export const CompleteFollowUpDialog = ({
         setTime('09:00')
         setNextAction('')
         setNfa('')
+        setPromise(emptyRequiredPromise())
     }
 
+    const needsPromise = statusRequiresPromise(lk.statuses, status, subStatus)
+    const promiseOk = !needsPromise || requiredPromiseValid(promise, riyadhToday(), outstanding)
     const noteOk = text.trim() !== '' && !!status && !!method
     const nextOk = mode === 'next' ? validDue(date, time) && nextAction.trim() !== '' : nfa.trim() !== ''
 
@@ -178,9 +195,11 @@ export const CompleteFollowUpDialog = ({
                 ...(mode === 'next'
                     ? { next: { due_at: riyadhInstant(date, time), next_action: nextAction.trim() } }
                     : { no_further_action_reason: nfa.trim() }),
+                ...(needsPromise ? { promise: requiredPromiseBody(promise) } : {}),
             },
             key
         )
+        if (needsPromise) announcePromiseChanged(caseId)
         reset()
         onDone(res)
     }
@@ -190,9 +209,10 @@ export const CompleteFollowUpDialog = ({
             isOpen={isOpen && !!followUp}
             title={t('p1.followUps.complete.title')}
             confirmLabel={t('p1.followUps.complete.confirm')}
-            canSubmit={noteOk && nextOk}
+            canSubmit={noteOk && nextOk && promiseOk}
             width={620}
             onSubmit={submit}
+            describeError={describePromiseError}
             onClose={() => {
                 reset()
                 onClose()
@@ -277,6 +297,17 @@ export const CompleteFollowUpDialog = ({
                 </DialogField>
             )}
             {lk.failed && <Note className="-mt-2 mb-3 text-danger">{t('p1.followUps.lookupsFailed')}</Note>}
+            {needsPromise && (
+                <RequiredPromiseFields
+                    caseId={caseId}
+                    value={promise}
+                    onChange={setPromise}
+                    reason="status"
+                    active={isOpen}
+                    onOutstanding={setOutstanding}
+                    testId="p10-fu-promise"
+                />
+            )}
 
             <div className="text-eyebrow mb-2 mt-2">{t('p1.followUps.complete.then')}</div>
             <div className="mb-4">

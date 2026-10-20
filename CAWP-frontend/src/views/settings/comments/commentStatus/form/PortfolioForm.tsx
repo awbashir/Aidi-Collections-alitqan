@@ -25,6 +25,8 @@ type InitialData = {
   color: string;
   /** a sub-status's main status (0068) */
   parent_id?: string | null;
+  /** 0079: a note with this status needs a promise (a sub-status carries its main status's flag) */
+  requires_promise?: boolean;
 };
 
 export type FormModel = InitialData;
@@ -73,6 +75,7 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
       CommentReachability_id: null,
       color: DEFAULT_STATUS_COLOR,
       parent_id: null,
+      requires_promise: false,
     },
     onFormSubmit,
     onDiscard,
@@ -89,6 +92,7 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
           ...initialData,
           parent_id: initialData.parent_id ?? null,
           color: initialData.color || DEFAULT_STATUS_COLOR,
+          requires_promise: initialData.requires_promise === true,
         }}
         validationSchema={validationSchema}
         onSubmit={(values: FormModel, { setSubmitting }) => {
@@ -97,6 +101,7 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
           formData.contract_id = formData.contract_id || null;
           formData.parent_id = formData.parent_id || null;
           formData.color = formData.color || DEFAULT_STATUS_COLOR;
+          formData.requires_promise = formData.requires_promise === true;
 
           onFormSubmit?.(formData, setSubmitting);
         }}

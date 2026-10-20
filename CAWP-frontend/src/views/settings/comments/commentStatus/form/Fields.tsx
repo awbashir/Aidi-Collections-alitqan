@@ -7,6 +7,7 @@ import { Field, FormikErrors, FormikTouched } from "formik";
 import type { FieldProps } from "formik";
 import { useTranslation } from "react-i18next";
 import Select from "@/components/ui/Select";
+import Checkbox from "@/components/ui/Checkbox";
 import { apiGetCommentStatus } from "@/services/ClientsService";
 import { isMainStatus } from "@/utils/commentStatusTree";
 
@@ -33,6 +34,8 @@ export type StatusFormValues = {
   CommentReachability_id: string | null;
   color: string;
   parent_id: string | null;
+  /** 0079: a note with this status needs a promise (amount + due date) */
+  requires_promise?: boolean;
 };
 
 type StatusRow = Named & {
@@ -40,6 +43,7 @@ type StatusRow = Named & {
   CommentReachability_id?: string | null;
   parent_id?: string | null;
   deleted_at?: string | null;
+  requires_promise?: boolean;
 };
 
 type FieldsProps = {
@@ -92,6 +96,7 @@ const Fields = (props: FieldsProps) => {
           label: s.name,
           contract_id: s.contract_id ?? null,
           reach: s.CommentReachability_id ?? null,
+          requires_promise: s.requires_promise === true,
         })),
     [statuses, values.id]
   );
@@ -142,6 +147,8 @@ const Fields = (props: FieldsProps) => {
                     // a sub-status always takes its main status's contract and reachability
                     form.setFieldValue("contract_id", option.contract_id);
                     form.setFieldValue("CommentReachability_id", option.reach);
+                    // ... and its "requires a promise" flag (0079)
+                    form.setFieldValue("requires_promise", option.requires_promise);
                   }
                 }}
                 placeholder={t("p7.status.noParent")}
@@ -234,6 +241,38 @@ const Fields = (props: FieldsProps) => {
               }
               placeholder={t("select")}
             />
+          )}
+        </Field>
+      </FormItem>
+
+      {/* 0079: a note with this status needs the promise amount and due date */}
+      <FormItem label={String(t("p10.promise.settingsLabel"))}>
+        <Field name="requires_promise">
+          {({ form }: FieldProps) => (
+            <div data-testid="p10-status-requires-promise">
+              <Checkbox
+                checked={
+                  inherited
+                    ? parent?.requires_promise === true
+                    : values.requires_promise === true
+                }
+                disabled={inherited}
+                onChange={(checked: boolean) =>
+                  form.setFieldValue("requires_promise", checked)
+                }
+              >
+                <span className="text-[13.5px] text-gray-800 dark:text-night-body">
+                  {t("p10.promise.settingsCheckbox")}
+                </span>
+              </Checkbox>
+              <div className="mt-1 text-[12px] text-gray-600">
+                {inherited
+                  ? t("p10.promise.settingsInherited", {
+                      name: parent?.label ?? "",
+                    })
+                  : t("p10.promise.settingsHint")}
+              </div>
+            </div>
           )}
         </Field>
       </FormItem>

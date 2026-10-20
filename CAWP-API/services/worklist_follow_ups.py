@@ -10,6 +10,9 @@ Rules (docs/phase1-spec.md "Stream B", docs/PROJECT-NOTES.md §2.4):
   is an event;
 * completing late keeps `due_at` and records `completed_late`, so a missed callback stays
   a recorded fact;
+* an outcome note with a promise-to-pay status (0079, `requires_promise`) needs `promise` =
+  {amount, due_date} (created with the note, source `follow_up`) or {promise_id} (an open
+  promise of the case): 422 `promise_required` otherwise (services/promise_required.py);
 * writers lock the case row first (FOR NO KEY UPDATE, the same lock as the note trigger),
   then the follow-up, so concurrent writers on one case serialise in one order.
 
@@ -26,6 +29,7 @@ from core import audit
 from core.api_response import FORBIDDEN, NOT_FOUND, ApiError
 from core.revisions import RevisionConflict
 from services import comment_status_tree as status_tree
+from services import promise_required as promise_rules
 from services import worklist_common as wc
 from services.worklist_common import CLINTS, FOLLOW_UP_EVENTS as EV, FOLLOW_UPS as FU, USERS
 
@@ -375,6 +379,14 @@ def complete(session, scope, identity, follow_up_id, body, expected, *, can_mana
     _check_note_status(session, note)
     _check_lookup(session, CONTACT_METHODS, note["contact_method_id"], "outcome_note.contact_method_id")
     _check_lookup(session, REACHABILITY, note["comment_reachability_id"], "outcome_note.comment_reachability_id")
+    # 0079: a promise-to-pay status needs a promise; a promise needs such a status
+    promise_spec = promise_rules.parse(body.get("promise"), "promise")
+    if promise_rules.status_requires_promise(note["comment_status_id"], note["comment_sub_status_id"], session):
+        if promise_spec is None:
+            raise promise_rules.required_error("status")
+    elif promise_spec is not None:
+        raise ApiError(422, "promise_not_allowed", "a promise is recorded with a promise-to-pay note status",
+                       {"promise": "not_allowed_for_status"})
 
     case, row = _load_for_write(session, scope, identity, follow_up_id, expected, can_manage=can_manage)
     fid, case_id = str(row["id"]), str(row["case_id"])
@@ -414,10 +426,16 @@ def complete(session, scope, identity, follow_up_id, body, expected, *, can_mana
         _event(session, follow_up_id=next_id, case_id=case_id, event="created", actor_user_id=str(identity),
                due_at_after=next_due, comment_id=note_id, related_follow_up_id=fid, request_id=request_id)
 
+    promise = None
+    if promise_spec is not None:                                   # create (source follow_up) or link
+        promise = promise_rules.apply(case_id, str(identity), promise_spec, source="follow_up", comment_id=note_id)
+
     done = _get(session, fid)
     audit.record("follow_up.complete", "follow_up", fid, case_id=case_id, before=before, after=_audit_view(done),
                  reason=nfa)
     out = {"completed": follow_up_dict(done, day), "next": None, "outcome_comment_id": note_id}
+    if promise is not None:
+        out["promise"] = promise
     if next_id:
         new = _get(session, next_id)
         audit.record("follow_up.create", "follow_up", next_id, case_id=case_id, after=_audit_view(new),

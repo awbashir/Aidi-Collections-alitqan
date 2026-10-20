@@ -14,9 +14,14 @@ One wrap-up per attempt, saved in ONE transaction (the @idempotent route commits
    the text, if any, is kept in call_wrapups.note_text and a reachability is not recorded;
 4. an optional CALLBACK is that note's `next_contact_date` (a Riyadh date means 09:00 Riyadh;
    never before Riyadh today), so it needs a note status (422 `callback_needs_note_status`);
-5. an optional PROMISE is created through the Phase 1 promise service, only when
-   `promise.agreed` is exactly true and the outcome is `connected`. `promise_discussed`
-   NEVER creates a promise (422 if one is sent with it);
+5. a PROMISE is created through the Phase 1 promise service (services/promise_required.py).
+   Customer decision 2026-10-20 (migration 0079): the outcome `promise_discussed`, and a note
+   status with `requires_promise` («وعد بالسداد», or its sub-status), NEED one: `promise` =
+   {amount, due_date} (a new promise, source `call_wrapup`) or {promise_id} (link an open
+   promise of the case); without it 422 `promise_required`. Such a status needs the outcome
+   connected or promise_discussed (422 `promise_needs_conversation`). Otherwise a promise stays
+   optional, with outcome `connected` only and `promise.agreed` exactly true (and the promises
+   key). A required promise needs no promises key: the note right covers it (customer decision);
 6. `wrong_number` blocks that contact with the Phase 1 `is_blocked` flag (the same rules as
    the contact screen: blocking the default needs `replacement_default_id` when the debtor
    has other eligible contacts); `do_not_call` adds an active case calling block;
@@ -64,6 +69,7 @@ from core import audit, riyadh
 from core.api_response import NOT_FOUND, VALIDATION_FAILED, ApiError
 from core.revisions import RevisionConflict, parse_revision
 from services import comment_status_tree as status_tree
+from services import promise_required as promise_rules
 from services.calling import attempts as A
 from services.calling.common import (OUTCOMES, SUPERVISE_KEYS, can_supervise, case_in_scope, iso, me,
                                      optional_text, parse_uuid, required_text, s, scope_sql, sess)
@@ -180,24 +186,38 @@ def validate_wrapup(body: dict, case: dict | None) -> dict:
                            {"callback_at": (e.error or {}).get("callback_at", "invalid")
                             if isinstance(e.error, dict) else "invalid"}) from None
 
-    promise = body.get("promise")
-    if promise is not None:
-        if outcome == "promise_discussed":
-            _bad("promise", "'promise discussed' records a discussion only and never creates a promise; "
-                            "use outcome 'connected' with promise.agreed = true for an agreed promise",
-                 "not_allowed_for_outcome", code="promise_discussed_is_not_a_promise")
-        if outcome != "connected":
-            _bad("promise", "a promise can only be recorded with outcome 'connected'", "not_allowed_for_outcome",
-                 code="promise_not_allowed")
-        if not isinstance(promise, dict) or promise.get("agreed") is not True:
+    # 0079: a promise-to-pay status / the outcome promise_discussed need a promise. Not for a
+    # deleted case (`case` None): nothing can be written on it, the wrap-up only keeps the facts.
+    status_requires = status_id is not None and promise_rules.status_requires_promise(status_id, sub_id, sess())
+    if status_requires and outcome not in promise_rules.PROMISE_OUTCOMES:
+        _bad("note.comment_status_id", "this note status records a promise to pay: choose the outcome connected "
+                                       "or promise_discussed", "needs_conversation", code="promise_needs_conversation")
+    required = case is not None and (outcome in promise_rules.REQUIRED_OUTCOMES or status_requires)
+    raw_promise = body.get("promise")
+    promise = None
+    if raw_promise is not None:
+        if outcome not in promise_rules.PROMISE_OUTCOMES:
+            _bad("promise", "a promise can only be recorded with outcome 'connected' or 'promise_discussed'",
+                 "not_allowed_for_outcome", code="promise_not_allowed")
+        if not isinstance(raw_promise, dict):
+            _bad("promise", "promise must be an object: {amount, due_date} or {promise_id}")
+        agreed = raw_promise.get("agreed")
+        # an optional promise (connected, no promise status) needs the explicit agreement as
+        # before; a required one IS the agreement (`agreed` may be omitted, never false)
+        bad_agreed = (agreed is not None and agreed is not True) if required else agreed is not True
+        if bad_agreed:
             _bad("promise.agreed", "a promise needs promise.agreed = true (explicitly agreed by the debtor)",
                  "required", code="promise_not_agreed")
-        if set(promise) - {"agreed", "amount", "due_date"}:
-            _bad("promise", "promise may only contain agreed, amount and due_date")
-        from core.auth import has_permission
-        if not (has_permission("promises") or has_permission("clints_PayemntDates")):
-            raise ApiError(403, "forbidden", "recording a promise needs the promises permission",
-                           {"required_any": ["promises", "clints_PayemntDates"]})
+        promise = promise_rules.parse(raw_promise, "promise", extra_keys=("agreed",))
+        if promise is None and not required:
+            _bad("promise.amount", "promise.amount is required", "required")
+        if not required:
+            from core.auth import has_permission
+            if not (has_permission("promises") or has_permission("clints_PayemntDates")):
+                raise ApiError(403, "forbidden", "recording a promise needs the promises permission",
+                               {"required_any": ["promises", "clints_PayemntDates"]})
+    if required and promise is None:
+        raise promise_rules.required_error("status" if status_requires else "outcome")
 
     return {
         "outcome": outcome, "note_text": text_, "status_id": status_id, "sub_status_id": sub_id, "method_id": method_id,
@@ -382,11 +402,8 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
                             "follow_up_id": follow_up_id}, reason="call wrap-up")
 
     promise = None
-    if v["promise"] is not None:
-        from services import money as msvc
-        from services import money_promises as psvc
-        promise = psvc.create_promise(case_id, actor, msvc.caller_scope(actor),
-                                      {"amount": v["promise"].get("amount"), "due_date": v["promise"].get("due_date")})
+    if v["promise"] is not None:                                   # create (source call_wrapup) or link
+        promise = promise_rules.apply(case_id, actor, v["promise"], source="call_wrapup", comment_id=note_id)
 
     contact_blocked = False
     if v["outcome"] == "wrong_number":
@@ -412,7 +429,8 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
     released = A.release_reservation(attempt_id, "wrapup", by=actor, reason="wrap-up saved")
     audit.record("call.wrapup", "call_attempt", attempt_id, case_id=case_id, after={
         "wrapup_id": str(wid), "outcome": v["outcome"], "note_id": note_id, "follow_up_id": follow_up_id,
-        "promise_id": promise["id"] if promise else None, "contact_blocked": contact_blocked,
+        "promise_id": promise["id"] if promise else None,
+        "promise_linked": bool(promise and promise.get("linked")), "contact_blocked": contact_blocked,
         "calling_block_id": block_id, "reservation_released": released})
     return {"wrapup_id": str(wid)}
 
@@ -486,11 +504,13 @@ def wrapup(attempt_id, body: dict, expected_revision) -> str:
                        "a wrap-up is possible once the call ended or failed" +
                        (" (an uncertain call needs reconciliation first)" if attempt["state"] == "uncertain" else ""),
                        {"state": attempt["state"]})
-    v = validate_wrapup(body, case)
-    if v["outcome"] in CONVERSATION_OUTCOMES and attempt["bridged_at"] is None:
+    # the PBX evidence first: an unbridged "promise discussed" is refused as such, before its
+    # promise is asked for
+    if body.get("outcome") in CONVERSATION_OUTCOMES and attempt["bridged_at"] is None:
         raise ApiError(409, "conversation_not_evidenced",
                        "the PBX shows no bridged conversation for this call; choose no_answer, busy or wrong_number",
-                       {"outcome": v["outcome"], "state": attempt["state"]})
+                       {"outcome": body.get("outcome"), "state": attempt["state"]})
+    v = validate_wrapup(body, case)
     if case is None:
         # the case was deleted: its contacts may be gone too; keep the attempt's contact id only
         contact = {"id": attempt["contact_id"]} if attempt["contact_id"] else None
@@ -531,8 +551,7 @@ def _save_for_review(attempt: dict, case: dict, contact: dict | None, v: dict, r
         "note": {"comment_status_id": v["status_id"], "comment_sub_status_id": v["sub_status_id"],
                  "contact_method_id": v["method_id"], "comment_reachability_id": v["reach_id"]},
         "callback_at": iso(v["callback"]),
-        "promise": ({"agreed": True, "amount": v["promise"].get("amount"), "due_date": v["promise"].get("due_date")}
-                    if v["promise"] is not None else None),
+        "promise": promise_rules.deferred_view(v["promise"]),
         "wrong_number": ({"contact_id": str(contact["id"]), "replacement_default_id": v["replacement_default_id"],
                           "reason": v["wrong_number_reason"]} if v["outcome"] == "wrong_number" else None),
         "do_not_call": ({"reason": v["do_not_call_reason"] or "Do-not-call requested during a call"}

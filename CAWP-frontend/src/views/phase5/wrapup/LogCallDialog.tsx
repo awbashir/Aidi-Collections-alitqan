@@ -2,7 +2,8 @@
  * "Log a call" (`POST /v2/calls/manual`, key `calls`): a call made outside the PBX flow
  * (desk phone, mobile) with its wrap-up in one transaction: start time, duration (blank =
  * unknown, never 0), direction, outcome, note, optional callback, optional explicitly
- * agreed promise, optional transcript text. The manual log records what the collector
+ * agreed promise (REQUIRED with "promise discussed" or a promise-to-pay note status, 0079),
+ * optional transcript text. The manual log records what the collector
  * reports; PBX evidence rules apply only to PBX calls.
  *
  * A locked or archived case refuses a manual log (the legacy note rule, 409).
@@ -20,7 +21,9 @@ import { usePermissions } from '@/utils/v2/hooks'
 import { riyadhInstant, riyadhToday } from '@/utils/v2/format'
 import { Notice } from '../parts'
 import { announceWrapped } from '../live/callDock'
-import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields } from './fields'
+import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields, RequiredPromiseSection } from './fields'
+import { useRequiredPromise } from './requiredPromiseForm'
+import { announcePromiseChanged } from '@/views/phase1/money/requiredPromise'
 import {
     callbackValid,
     wrapupNoteBody,
@@ -77,6 +80,7 @@ const LogCallDialog = ({
     const [wrongReason, setWrongReason] = useState('')
     const [dncReason, setDncReason] = useState('')
     const [transcript, setTranscript] = useState('')
+    const required = useRequiredPromise(outcome)
 
     useEffect(() => {
         if (!isOpen || !caseInfo.identityNumber) return undefined
@@ -115,6 +119,7 @@ const LogCallDialog = ({
         setWrongReason('')
         setDncReason('')
         setTranscript('')
+        required.reset()
     }
 
     const durationKnown = minutes.trim() !== '' || seconds.trim() !== ''
@@ -131,10 +136,11 @@ const LogCallDialog = ({
         (outcome !== 'wrong_number' || !!contactId) &&
         wrapupNoteValid(note, callback) &&
         callbackValid(callback) &&
-        promiseValid(promise, outcome)
+        (required.required || required.mismatch ? required.valid : promiseValid(promise, outcome))
 
     const submit = async (key: string) => {
         if (!outcome) return
+        const promiseBody = required.required ? required.body() : promiseValue(promise, outcome)
         const res = await callsApi.logManual(
             {
                 case_id: caseInfo.id,
@@ -145,7 +151,7 @@ const LogCallDialog = ({
                 outcome,
                 ...(wrapupNoteBody(note) ? { note: wrapupNoteBody(note) } : {}),
                 ...(callbackValue(callback) ? { callback_at: callbackValue(callback) } : {}),
-                ...(promiseValue(promise, outcome) ? { promise: promiseValue(promise, outcome) } : {}),
+                ...(promiseBody ? { promise: promiseBody } : {}),
                 ...(outcome === 'wrong_number' && wrongReason.trim() ? { wrong_number_reason: wrongReason.trim() } : {}),
                 ...(outcome === 'do_not_call' && dncReason.trim() ? { do_not_call_reason: dncReason.trim() } : {}),
                 ...(transcript.trim() ? { transcript: transcript.trim() } : {}),
@@ -154,6 +160,7 @@ const LogCallDialog = ({
         )
         ToastNotification(String(t('p5.log.saved')), String(t('p5.log.title')), 'success')
         announceWrapped({ attemptId: res.id, caseId: caseInfo.id, needsReview: false })
+        if (promiseBody) announcePromiseChanged(caseInfo.id)
         reset()
         onDone?.(res)
     }
@@ -224,11 +231,22 @@ const LogCallDialog = ({
             <div className="mb-3">
                 <OutcomePicker value={outcome} onChange={setOutcome} testId="p5-log-outcome" />
             </div>
-            <PromiseFields outcome={outcome} value={promise} onChange={setPromise} canPromise={canPromise} testId="p5-log-promise" />
+            {!required.required && !required.mismatch && (
+                <PromiseFields outcome={outcome} value={promise} onChange={setPromise} canPromise={canPromise} testId="p5-log-promise" />
+            )}
             <BlockingOutcomeFields outcome={outcome} wrongReason={wrongReason} dncReason={dncReason} onWrongReason={setWrongReason} onDncReason={setDncReason} />
             {outcome === 'wrong_number' && !contactId && <div className="mb-3 text-[12px] text-danger">{t('p5.log.wrongNeedsContact')}</div>}
             <div className="text-eyebrow mb-2 mt-2">{t('p5.wrapup.noteSection')}</div>
-            <NoteFields value={note} onChange={setNote} contractId={caseInfo.contractId || null} active={isOpen} testId="p5-log-note" optional />
+            <NoteFields
+                value={note}
+                onChange={setNote}
+                contractId={caseInfo.contractId || null}
+                active={isOpen}
+                testId="p5-log-note"
+                optional
+                onRequiresPromise={required.setStatusNeedsPromise}
+            />
+            <RequiredPromiseSection caseId={caseInfo.id} state={required} active={isOpen} testId="p10-log-promise" />
             <div className="text-eyebrow mb-2">{t('p5.wrapup.callbackSection')}</div>
             <CallbackFields value={callback} onChange={setCallback} testId="p5-log-callback" />
             {callback.date && !note.status && (

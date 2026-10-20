@@ -63,6 +63,7 @@ from models import *  # noqa: F401,F403 - the 29 models + defult_permission
 from services import excel
 from services import sessions, sessions_admin_gates
 from services import comment_status_tree
+from services import promise_required
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1903,13 +1904,24 @@ def createComment():
         data = request.get_json()
         # 0068: refuse a deleted status or a sub-status as the main one; optional sub-status
         sub_status_id = data.pop('comment_sub_status_id', None) or None
+        # 0079: a promise-to-pay status needs promise_amount + promise_date (or promise_id)
+        promise_fields = promise_required.pop_legacy(data)
         problem = comment_status_tree.legacy_note_problem(data.get('comment_status_id'), sub_status_id)
         # status vs the case's contract and the chosen reachability (the wrap-up's checks)
         problem = problem or comment_status_tree.legacy_note_case_problem(
             data.get('comment_status_id'), data.get('comment_reachability_id'), data.get('clint_id'))
         if problem:
             return jsonify({"message": problem[1], "status": False, "error": problem[0]}), 201
+        promise_spec, promise_problem = promise_required.legacy_spec(
+            data.get('comment_status_id'), sub_status_id, promise_fields)
+        if promise_problem:
+            return jsonify(promise_problem), 201
         comment = Comments(**data)
+        if promise_spec is not None:
+            # the note and the promise in one transaction (services/promise_required.py)
+            body, code = promise_required.save_legacy_note(comment, sub_status_id, promise_spec,
+                                                           str(get_jwt_identity()))
+            return jsonify(body), code
         if sub_status_id is not None:
             return jsonify(comment_status_tree.insert_legacy_note(comment, sub_status_id)), 200
         db.session.add(comment)

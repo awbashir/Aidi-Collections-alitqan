@@ -346,7 +346,9 @@ export type WrapupBody = {
     outcome: Outcome
     note?: WrapupNote
     callback_at?: string
-    promise?: { agreed: true; amount: string; due_date: string }
+    /** 0079: `agreed` is needed only for an optional promise (outcome connected, no promise-to-pay status);
+     *  `{ promise_id }` links an open promise of the case. */
+    promise?: { agreed?: true; amount: string; due_date: string } | { promise_id: string }
     replacement_default_id?: string
     wrong_number_reason?: string
     do_not_call_reason?: string

@@ -16,6 +16,10 @@ Rules
   (`status_mismatch`), like the calling wrap-up. The optional sub-status of a note must be a live child of the
   note's main status (`not_a_sub_status`). `"Comments".comment_status_id` stays the MAIN
   status, so reports and filters that group by it are unchanged.
+* `requires_promise` (0079, customer decision 2026-10-20): a note with this status needs a
+  promise (amount + due date, services/promise_required.py). A sub-status carries its main
+  status's flag, copied and propagated like the contract and the reachability. Every row of
+  GET /comment_status and GET /comment_status/<id> has the key.
 
 The new columns are not mapped in models.py (their as_dict()/model_cols() are legacy wire
 contracts), so they are read and written here with SQL.
@@ -87,7 +91,7 @@ def invalidate_cache() -> None:
 _ROW = """
     SELECT s.id::text AS id, s.name, s.parent_id::text AS parent_id, s.deleted_at,
            s.deleted_by::text AS deleted_by, s.contract_id::text AS contract_id,
-           s."CommentReachability_id"::text AS reach
+           s."CommentReachability_id"::text AS reach, s.requires_promise
       FROM "CommentStatuses" s"""
 
 
@@ -101,17 +105,21 @@ def load(status_id, session=None, *, lock=False):
 
 
 def tree_columns(session=None) -> dict:
-    """{status id: {"parent_id", "deleted_at", "deleted_by"}} for every status (a small table)."""
+    """{status id: {"parent_id", "deleted_at", "deleted_by", "requires_promise"}} for every
+    status (a small table)."""
     rows = (session or _s()).execute(text("""
-        SELECT id::text, parent_id::text, deleted_at, deleted_by::text FROM "CommentStatuses"
+        SELECT id::text, parent_id::text, deleted_at, deleted_by::text, requires_promise FROM "CommentStatuses"
     """)).all()
-    return {r[0]: {"parent_id": r[1], "deleted_at": r[2], "deleted_by": r[3]} for r in rows}
+    return {r[0]: {"parent_id": r[1], "deleted_at": r[2], "deleted_by": r[3], "requires_promise": r[4]}
+            for r in rows}
 
 
 def with_tree(status_dict: dict, extra: dict | None, *, deleted=False) -> dict:
-    """A legacy as_dict() row plus `parent_id` (and `deleted_at` when asked)."""
+    """A legacy as_dict() row plus `parent_id`, `requires_promise` (0079) and `deleted_at`
+    when asked."""
     extra = extra or {}
     status_dict["parent_id"] = extra.get("parent_id")
+    status_dict["requires_promise"] = bool(extra.get("requires_promise") or False)
     if deleted:
         status_dict["deleted_at"] = extra.get("deleted_at")
     return status_dict
@@ -201,10 +209,11 @@ def legacy_note_case_problem(status_id, reach_id, clint_id) -> tuple[str, str] |
     return None
 
 
-def insert_legacy_note(comment, sub_id) -> dict:
+def insert_legacy_note(comment, sub_id, *, commit: bool = True) -> dict:
     """POST /comments with a sub-status: the same row the ORM would insert plus
     comment_sub_status_id (unmapped), in ONE insert so the note-history UPDATE trigger never
-    fires for it. Returns the legacy as_dict() plus `comment_sub_status_id`."""
+    fires for it. Returns the legacy as_dict() plus `comment_sub_status_id`. `commit=False`:
+    the caller commits (a promise is written in the same transaction, 0079)."""
     from models import Comments
     values = {}
     for c in Comments.__table__.columns:
@@ -214,7 +223,8 @@ def insert_legacy_note(comment, sub_id) -> dict:
     values.setdefault("id", str(uuid.uuid4()))
     values["comment_sub_status_id"] = as_uuid(sub_id)
     _s().execute(sa.insert(sa.table("Comments", *[sa.column(k) for k in values])).values(**values))
-    _s().commit()
+    if commit:
+        _s().commit()
     row = _s().get(Comments, uuid.UUID(values["id"]))
     out = row.as_dict()
     out["comment_sub_status_id"] = values["comment_sub_status_id"]
@@ -253,11 +263,27 @@ def _set_parent(status_id, parent_id) -> None:
                  {"p": parent_id, "id": str(status_id)})
 
 
+def _flag(value) -> bool:
+    """The settings form's checkbox (true/false, or the strings a form may send)."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def _set_requires_promise(status_id, value: bool) -> None:
+    """0079: the status's flag, and its sub-statuses' (they carry their main status's flag)."""
+    _s().execute(text("""
+        UPDATE "CommentStatuses" SET requires_promise = :v
+         WHERE (id = CAST(:id AS uuid) OR parent_id = CAST(:id AS uuid)) AND requires_promise IS DISTINCT FROM :v
+    """), {"v": bool(value), "id": str(status_id)})
+
+
 def create(data: dict) -> dict:
     """POST /comment_status: the legacy ORM insert, plus parent_id and the default colour."""
     from models import CommentStatuses
     data = dict(data or {})
     parent_id = data.pop("parent_id", None)
+    requires_promise = _flag(data.pop("requires_promise", False))
     for k in ("deleted_at", "deleted_by", "parent"):
         data.pop(k, None)
     if not data.get("color"):
@@ -268,14 +294,18 @@ def create(data: dict) -> dict:
         parent = _parent(parent_id)
         data["contract_id"] = parent["contract_id"]
         data["CommentReachability_id"] = parent["reach"]
+        requires_promise = bool(parent["requires_promise"])    # a sub-status carries its parent's flag
     status = CommentStatuses(**data)
     _s().add(status)
     _s().flush()
     if parent is not None:
         _set_parent(status.id, parent["id"])
+    if requires_promise:
+        _set_requires_promise(status.id, True)
     _s().commit()
     invalidate_cache()
-    return with_tree(status.as_dict(), {"parent_id": parent["id"] if parent else None})
+    return with_tree(status.as_dict(), {"parent_id": parent["id"] if parent else None,
+                                        "requires_promise": requires_promise})
 
 
 def update(status, data: dict) -> dict:
@@ -298,11 +328,15 @@ def update(status, data: dict) -> dict:
     if "parent_id" in data:
         parent_id = None if data["parent_id"] in (None, "") else data["parent_id"]
     parent = _parent(parent_id, self_id=status.id) if parent_id is not None else None
+    requires_promise = (_flag(data["requires_promise"]) if "requires_promise" in data
+                        else bool(current["requires_promise"]))
     if parent is not None:
         status.contract_id = parent["contract_id"]
         status.CommentReachability_id = parent["reach"]
+        requires_promise = bool(parent["requires_promise"])    # a sub-status carries its parent's flag
     _s().flush()
     _set_parent(status.id, parent["id"] if parent else None)
+    _set_requires_promise(status.id, requires_promise)         # a main status: its sub-statuses follow
     if parent is None:                                   # a main status: its sub-statuses follow it
         _s().execute(text("""
             UPDATE "CommentStatuses"
@@ -314,7 +348,8 @@ def update(status, data: dict) -> dict:
         """), {"id": str(status.id)})
     _s().commit()
     invalidate_cache()
-    return with_tree(status.as_dict(), {"parent_id": parent["id"] if parent else None})
+    return with_tree(status.as_dict(), {"parent_id": parent["id"] if parent else None,
+                                        "requires_promise": requires_promise})
 
 
 def soft_delete(status_id) -> dict:

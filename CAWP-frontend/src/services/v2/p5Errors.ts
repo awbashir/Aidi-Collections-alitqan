@@ -94,6 +94,9 @@ export const P8_CALLING_ERROR_CODES = new Set([
     'case_has_open_call',
 ])
 
+/** The promise-to-pay rule (2026-10-20, migration 0079) with its own `p10.promise.err.<code>` message. */
+export const PROMISE_RULE_CODES = new Set(['promise_required', 'promise_needs_conversation', 'promise_not_linkable'])
+
 const flat = (detail: unknown): Record<string, string> => {
     const out: Record<string, string> = {}
     if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
@@ -154,6 +157,7 @@ export function describeP5Error(err: unknown, t: Translate, area?: 'dispatch'): 
     const rule = detail && typeof detail === 'object' ? (detail.rule as string | undefined) : undefined
     if (rule && RULES.has(rule)) return refusalText(rule, detail, t)
     if (area === 'dispatch' && RULES.has(err.code) && err.code !== 'forbidden') return refusalText(err.code, detail, t)
+    if (PROMISE_RULE_CODES.has(err.code)) return t(`p10.promise.err.${err.code}`)
     if (P8_CALLING_ERROR_CODES.has(err.code)) {
         const values = flat(detail)
         if (err.code === 'release_not_allowed' && values.state === 'uncertain') return t('p8.calling.err.release_uncertain')

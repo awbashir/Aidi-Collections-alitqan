@@ -167,13 +167,16 @@ def test_manual_log_idempotent_replay(cl_client, hdr, team, pgc):
 
 
 # --------------------------------------------------------------------------- promises
-def test_promise_discussed_never_creates_a_promise(cl_client, hdr, team, pgc):
+def test_promise_discussed_needs_a_promise(cl_client, hdr, team, pgc):
+    # customer decision 2026-10-20 (0079): "promise discussed" needs the amount and the due
+    # date, and creates the promise (tests/test_promise_required.py covers the rest)
+    st, body = manual(cl_client, hdr, team["c1"], team["case1"], outcome="promise_discussed")
+    assert (st, body["code"]) == (422, "promise_required")
+    assert q1(pgc, 'SELECT count(*) FROM "paymentDates" WHERE clint_id = %s', team["case1"])[0] == 0
     promise = {"agreed": True, "amount": "100.00", "due_date": tomorrow()}
     st, body = manual(cl_client, hdr, team["c1"], team["case1"], outcome="promise_discussed", promise=promise)
-    assert (st, body["code"]) == (422, "promise_discussed_is_not_a_promise")
-    st, body = manual(cl_client, hdr, team["c1"], team["case1"], outcome="promise_discussed")
-    assert st == 201 and body["data"]["wrapup"]["promise_id"] is None
-    assert q1(pgc, 'SELECT count(*) FROM "paymentDates" WHERE clint_id = %s', team["case1"])[0] == 0
+    assert st == 201 and body["data"]["wrapup"]["promise_id"] is not None, body
+    assert q1(pgc, 'SELECT count(*) FROM "paymentDates" WHERE clint_id = %s', team["case1"])[0] == 1
 
 
 def test_agreed_promise_goes_through_the_promise_service(cl_client, hdr, team, pgc):

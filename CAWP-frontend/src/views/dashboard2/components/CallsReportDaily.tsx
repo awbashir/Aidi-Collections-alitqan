@@ -29,9 +29,9 @@ const CallsReportDaily = ({ data = [], className }: CallsReportDailyProps) => {
 
     // Move the setState call inside useEffect to prevent infinite re-renders
     React.useEffect(() => {
-        setContracts(data.contracts || []);
-        setUsers(data.users || []);
-        setCalls(data.calls || []);
+        setContracts(Array.isArray(data?.contracts) ? data.contracts.filter(Boolean) : []);
+        setUsers(Array.isArray(data?.users) ? data.users.filter(Boolean) : []);
+        setCalls(Array.isArray(data?.calls) ? data.calls.filter(Boolean) : []);
     }, [data]);
 
     const { Tr, Th, Td, THead, TBody } = Table
@@ -149,7 +149,7 @@ const CallsReportDaily = ({ data = [], className }: CallsReportDailyProps) => {
                                     {index + 1}
                                 </Td>
                                 <Td className="px-4 py-4 whitespace-nowrap text-[13.5px] text-gray-700 dark:text-night-body">
-                                    {user.frist_name + ' ' + user.last_name}
+                                    {[user?.frist_name, user?.last_name].filter(Boolean).join(' ') || '—'}
                                 </Td>
                                                                 {(() => {
                                     const cells = [];

@@ -6,8 +6,10 @@
 * Fulfilment needs allocated, approved, non-reversed payment evidence from the same case.
   Capacity on both sides (payment and promise) is enforced by the database trigger
   `promise_allocations_guard`; this module maps its error codes to HTTP answers.
-* Only the legacy POST /payment_date and `create_promise` here create promises. A
-  "promise discussed" call outcome never does.
+* Only the legacy POST /payment_date and `create_promise` here create promises. Since
+  2026-10-20 (migration 0079) a note with a promise-to-pay status and the call outcome
+  "promise discussed" need one: services/promise_required.py creates it through
+  `create_promise` (source call_wrapup | note | follow_up) in the note's transaction.
 
 Never commits (the `@idempotent()` decorator commits).
 """
@@ -53,7 +55,7 @@ def _raise_db(exc: DBAPIError):
 _PROMISE_COLS = """
            s.promise_id, s.case_id, s.recorder_user_id, s.due_date, s.amount, s.allocated,
            s.state, s.cancelled_at, s.fulfilled_at,
-           d.create_at, d.revision, d.cancelled_by, d.cancel_reason,
+           d.create_at, d.revision, d.cancelled_by, d.cancel_reason, d.source, d.source_comment_id,
            concat_ws(' ', ru.frist_name, ru.last_name) AS recorder_name,
            concat_ws(' ', xu.frist_name, xu.last_name) AS canceller_name,
            c.name AS case_name, c."accountNumber" AS account_number, c."identityNumber" AS identity_number,
@@ -87,6 +89,9 @@ def serialize_promise(r, with_case: bool = True) -> dict:
         "created_at": iso(r["create_at"]),
         "revision": r["revision"],
         "fulfilled_at": iso(r["fulfilled_at"]),
+        # 0079: call_wrapup | note | follow_up when recorded with a note or a wrap-up, else null
+        "source": r["source"],
+        "source_comment_id": uid(r["source_comment_id"]),
         "cancellation": ({
             "at": iso(r["cancelled_at"]),
             "by": person(r["cancelled_by"], r["canceller_name"]),
@@ -266,10 +271,11 @@ def _promise_event(promise_id, case_id, event, actor, amount=None, reason=None,
            "req": req_id, "key": key})
 
 
-def create_promise(case_id, actor, scope, body) -> dict:
+def create_promise(case_id, actor, scope, body, *, source=None, source_comment_id=None) -> dict:
     """Same validation as the legacy POST /payment_date, with the Riyadh "today":
     case not locked (423), due date not before Riyadh today, and approved + amount must not
-    exceed the original debt (exact numeric)."""
+    exceed the original debt (exact numeric). `source` / `source_comment_id` (0079): set when
+    the promise is recorded with a note or a wrap-up (services/promise_required.py)."""
     amount = parse_amount(body.get("amount"))
     raw_due = body.get("due_date")
     try:
@@ -293,14 +299,17 @@ def create_promise(case_id, actor, scope, body) -> dict:
     # stored like the legacy route stores 'YYYY-MM-DD' (midnight UTC), so legacy readers
     # show the same date; its Riyadh civil date is `due`.
     promise_id = _s().execute(text("""
-        INSERT INTO "paymentDates" (clint_id, user_id, payment_date, amount)
+        INSERT INTO "paymentDates" (clint_id, user_id, payment_date, amount, source, source_comment_id)
         VALUES (CAST(:cid AS uuid), CAST(:uid AS uuid), CAST(:due AS date)::timestamp AT TIME ZONE 'UTC',
-                CAST(:amount AS numeric))
+                CAST(:amount AS numeric), :source, CAST(:note AS uuid))
         RETURNING id
-    """), {"cid": str(case_id), "uid": str(actor), "due": due.isoformat(), "amount": amount}).scalar()
+    """), {"cid": str(case_id), "uid": str(actor), "due": due.isoformat(), "amount": amount,
+           "source": source, "note": uid(source_comment_id)}).scalar()
     _promise_event(promise_id, case_id, "created", actor, amount)
-    audit.record("promise.create", "promise", promise_id, case_id=case_id,
-                 after={"amount": money(amount), "due_date": due.isoformat(), "recorder": str(actor)})
+    after = {"amount": money(amount), "due_date": due.isoformat(), "recorder": str(actor)}
+    if source is not None:
+        after.update(source=source, source_comment_id=uid(source_comment_id))
+    audit.record("promise.create", "promise", promise_id, case_id=case_id, after=after)
     return get_promise(promise_id)
 
 

@@ -40,6 +40,7 @@ MODULES = [
     "api.same_identity",     # case page: other accounts of the same debtor identity (0072)
     "api.previous_status_import",  # previous statuses import from the old system (0074)
     "api.team_dashboard",    # team performance dashboard: calls and status updates per user (2026-10-20)
+    "api.home_dashboard",    # home dashboard v2: KPI cards, charts, leaderboard, portfolio, calls (2026-10-20)
 ]
 
 

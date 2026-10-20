@@ -27,9 +27,9 @@ const CommentReportDaily = ({ data = [], className }: CommentReportDailyProps) =
 
     // Move the setState call inside useEffect to prevent infinite re-renders
     React.useEffect(() => {
-        setContracts(data.contracts || []);
-        setUsers(data.users || []);
-        setComments(data.comments || []);
+        setContracts(Array.isArray(data?.contracts) ? data.contracts.filter(Boolean) : []);
+        setUsers(Array.isArray(data?.users) ? data.users.filter(Boolean) : []);
+        setComments(Array.isArray(data?.comments) ? data.comments.filter(Boolean) : []);
     }, [data]);
 
     const { Tr, Th, Td, THead, TBody } = Table
@@ -145,7 +145,7 @@ const CommentReportDaily = ({ data = [], className }: CommentReportDailyProps) =
                                     {index + 1}
                                 </Td>
                                 <Td className="px-1 py-4 whitespace-nowrap text-[13.5px] text-gray-700 dark:text-night-body">
-                                    {user.frist_name + ' ' + user.last_name}
+                                    {[user?.frist_name, user?.last_name].filter(Boolean).join(' ') || '—'}
                                 </Td>
                              {(() => {
                                     const cells = [];
@@ -176,8 +176,8 @@ const CommentReportDaily = ({ data = [], className }: CommentReportDailyProps) =
                                         });
                                         
                                         // Separate active and inactive comments
-                                        const activeComments = userHourComments.filter(comment => comment.status.is_active);
-                                        const inactiveComments = userHourComments.filter(comment => !comment.status.is_active);
+                                        const activeComments = userHourComments.filter(comment => comment?.status?.is_active);
+                                        const inactiveComments = userHourComments.filter(comment => !comment?.status?.is_active);
 
                                         totalActiveComments += activeComments.length;
                                         totalInactiveComments += inactiveComments.length;
