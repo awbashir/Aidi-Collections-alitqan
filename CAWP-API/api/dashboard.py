@@ -448,7 +448,9 @@ def _allcollector_payload():
     now = datetime.datetime.now()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    users_rows = _dashboard_users()
+    # the KPI cards render each user's contract (AllCollectorsKPI.tsx): a user with no contract
+    # at all (no profile contract and no cases) stays off this card
+    users_rows = [(u, c) for u, c in _dashboard_users() if c is not None]
     active_user_ids = [u.id for u, _c in users_rows]
     tusers = [{
         "id": str(u.id),

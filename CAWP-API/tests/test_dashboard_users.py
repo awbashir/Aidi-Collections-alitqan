@@ -25,6 +25,8 @@ def test_users_without_profile_contract_are_listed_with_a_derived_contract(db):
         users = {u["id"]: u for u in body["users"]}
         assert users[collector]["contract_id"] == A.contract_a                # derived from the cases
         assert users[profiled]["contract_id"] == A.contract_a
-        assert idle in users and users[idle]["contract_id"] is None          # shown without a target
         assert gone not in users and viewer not in users                     # inactive / SuperAdmin
+    assert idle not in {u["id"] for u in kpi["body"]["users"]}               # KPI cards need a contract
+    idle_row = [u for u in report["body"]["users"] if u["id"] == idle][0]
+    assert idle_row["contract_id"] is None                                   # daily notes/calls: listed
     assert {c["user_id"] for c in kpi["body"]["clients"]} >= {collector}
