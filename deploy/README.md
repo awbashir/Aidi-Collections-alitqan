@@ -11,13 +11,13 @@ before go-live take a fresh dump and re-import (same runbook).
 
 | Item | Value |
 | --- | --- |
-| URL | `https://10.10.10.150`, self-signed certificate (`/opt/alitqan/deploy/certs/`, made on the server, SAN IP 10.10.10.150, until 2029-01-23). The `alitqan_com_sa.crt` in the frontend tree expired on 2025-10-07 and only names the website |
+| URL | `https://10.10.10.150` (port 80 redirects to it), self-signed certificate (`/opt/alitqan/deploy/certs/`, made on the server, SAN IP 10.10.10.150, until 2029-01-23). The `alitqan_com_sa.crt` in the frontend tree expired on 2025-10-07 and only names the website |
 | PBX | Issabel `10.10.0.220` (CentOS 7, Asterisk 11.25.3, **chan_sip only, no PJSIP**), production: never restart or reload it without approval |
 | CDR | MySQL user `cawp_ro@10.10.10.150`, `SELECT` on `asteriskcdrdb.*` and `call_center.*` only (created 2026-10-21, online). `cdr` has no `calldate` index (2.6M rows) |
 | Recordings | PBX user `cawp-rec` (password locked) whose only key (`/etc/alitqan/recordings_ed25519` here) is `restrict,from="10.10.10.150",command="/usr/libexec/openssh/sftp-server -R"`: read-only SFTP, no shell; the files are world-readable, so no group. `RECORDINGS_READER=sftp`. Nothing on the PBX was reloaded |
 | Live monitor + listen / whisper / join | **commissioned 2026-10-21** (customer approval; reloads only, no restart; active calls unaffected). See "Alitqan PBX changes" below |
 | Click-to-call / campaigns | **not commissioned**: the attempt evidence relies on Asterisk 12+ AMI events (`BridgeEnter`, `DialBegin`, `Linkedid`, Originate `ChannelId`), so it needs porting to Asterisk 11 first. The calling service runs with `CALLING_DISPATCH_ENABLED=0`, `CALLING_CAMPAIGNS_ENABLED=0`, `CALLING_AGI_ENABLED=0`, so `POST /v2/calls` answers 503 `transport_not_connected` |
-| Softphone | **off for every user by default** (users call from their own VoIP phones, migration 0082). Enable per user on the Extensions page; it also needs WSS/WebRTC on the PBX (`docs/issabel-commissioning.md` §4b), not set up. Listening rings the supervisor's softphone when it is on, otherwise their own phone |
+| Softphone | **off for every user by default** (users call from their own VoIP phones, migration 0082). Enabling it for a user (Extensions page) converts their extension to a browser (WebRTC) extension on the PBX, and their desk phone stops until it is switched off, which restores the extension exactly. Installed and accepted on 2026-10-21 with Chrome: [`docs/alitqan-webrtc-softphone-plan.md`](../docs/alitqan-webrtc-softphone-plan.md) §7 |
 | Roles | the merged new permission keys are `false` for every role except ADMIN: grant `calls` / `calls_make` (collectors) and `calls_supervise` (supervisors) in Roles before calling |
 | Extensions | `user_extensions` is empty: adopt the legacy `users.extension` values (Calling admin → legacy drift) |
 

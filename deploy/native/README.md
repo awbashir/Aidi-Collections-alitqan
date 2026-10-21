@@ -14,7 +14,7 @@ migrations and the runtime settings are the same as the Docker install; only the
 | Worker | `cawp-worker` | `alitqan-worker.service` (`python -m worker`) |
 | Calling service | `cawp-calling` | `alitqan-calling.service` (`python -m calling`): live monitor + call control only (dispatch, campaigns, AGI off) |
 | AMI transport | TLS 5039 | `alitqan-ami-tunnel.service`: SSH local forward `127.0.0.1:15038` → PBX `127.0.0.1:5038` (user `cawp-ami`, forward-only key, pinned host key) |
-| Proxy + SPA | `cawp-proxy` | apt `nginx` 1.24, site `alitqan.nginx.conf` → `/etc/nginx/sites-available/alitqan`; SPA in `/var/www/alitqan` |
+| Proxy + SPA | `cawp-proxy` | apt `nginx` 1.24, site `alitqan.nginx.conf` → `/etc/nginx/sites-available/alitqan` (HTTPS 443, port 80 redirects; rules in `alitqan-app.inc` → `/etc/nginx/snippets/`); SPA in `/var/www/alitqan` |
 | Python | `python:3.11-slim` | Python 3.11 from `uv` in `/opt/alitqan-runtime/python`, venv `/opt/alitqan-runtime/venv` |
 | Node (build only) | `node:22-alpine` | `/opt/alitqan-runtime/node` (official tarball, checksum verified) |
 
@@ -56,7 +56,7 @@ cp /opt/alitqan/deploy/native/alitqan-*.service /etc/systemd/system/ && systemct
 systemctl enable --now alitqan-ami-tunnel alitqan-api alitqan-worker alitqan-calling
 cd /opt/alitqan/CAWP-frontend && PATH=/opt/alitqan-runtime/node/bin:$PATH npm ci && VITE_API_URL=/api npm run build
 rsync -a --delete build/ /var/www/alitqan/
-cp /opt/alitqan/deploy/native/alitqan.nginx.conf /etc/nginx/sites-available/alitqan
+cp /opt/alitqan/deploy/native/alitqan.nginx.conf /etc/nginx/sites-available/alitqan && cp /opt/alitqan/deploy/native/alitqan-app.inc /etc/nginx/snippets/
 ln -sf /etc/nginx/sites-available/alitqan /etc/nginx/sites-enabled/alitqan && rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 ```
