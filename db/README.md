@@ -71,6 +71,8 @@ db/
 | 0063 | `migrations/0063_qc_transcripts_reviews_approvals.sql` | transcript versions, review revisions, approvals with immutable snapshots | new tables | Yes |
 | 0064 | `migrations/0064_voice_lab_sessions.sql` | `voice_lab_sessions` log (no audio, transcript, instructions or secret) | new table | Yes |
 | 0082 | `migrations/0082_softphone_access.sql` | `user_softphone_access` (per-user in-app softphone switch, no row = off), `pbx_ps_auths` also requires it, `sip_credentials.revoke_reason` accepts `softphone_disabled` | new table + view + CHECK swap, instant | Yes |
+| 0083 | `migrations/0083_sip_static_secrets.sql` | `sip_static_secrets`: the browser (WebRTC) SIP password per extension on a chan_sip PBX, AES-256-GCM (key `SIP_STATIC_SECRET_KEY` in the server env only), for `SIP_CREDENTIAL_MODE=static` | new table, instant | Yes |
+| 0084 | `migrations/0084_legacy_pbx_correlation.sql` | Asterisk 11 (`CALLING_PBX_EVENTS=legacy`): `call_dispatch_queue.ami_action_id` (the Originate ActionID, recorded by the claim before sending, set once, unique), `call_dispatch_tokens.bound_uniqueid` (the agent channel the FastAGI hook allowed), partial index on agent `call_legs.uniqueid` | nullable columns + small indexes + set-once trigger, instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

@@ -477,10 +477,18 @@ class AmiSession:
                 "events": self.stats["events"], "connected_at": self.connected_at}
 
     # ---- actions --------------------------------------------------------------------
-    def send(self, action: str, fields=(), *, timeout: float | None = None) -> Frame:
-        """Send an allowed action and wait for its response frame (any Response value)."""
-        pending, action_id = self._issue(action, fields, timeout=timeout)
+    def send(self, action: str, fields=(), *, timeout: float | None = None, action_id: str | None = None) -> Frame:
+        """Send an allowed action and wait for its response frame (any Response value).
+        `action_id`: one this session issued with reserve_action_id() (else a new one)."""
+        pending, action_id = self._issue(action, fields, timeout=timeout, action_id=action_id)
         return self._wait(pending, action_id)
+
+    def reserve_action_id(self) -> str:
+        """A fresh `<session>:<n>` ActionID, for an action whose ActionID must be recorded BEFORE it is
+        sent (Asterisk <= 11: the Originate's OriginateResponse is correlated by its ActionID only,
+        services/calling/legacy_correlation.py). Pass it to send(action_id=...) once."""
+        with self._lock:
+            return f"{self.session_id}:{next(self._seq)}"
 
     def list_channels(self, max_channels: int = 4096) -> list[Frame]:
         if not isinstance(max_channels, int) or not 1 <= max_channels <= 4096:
@@ -489,7 +497,7 @@ class AmiSession:
         pending, action_id = self._issue("CoreShowChannels", (), collector=collector)
         return self._wait(pending, action_id)
 
-    def _issue(self, action, fields, *, internal=False, timeout=None, collector=None):
+    def _issue(self, action, fields, *, internal=False, timeout=None, collector=None, action_id=None):
         if action not in ALLOWED_ACTIONS and not internal:
             raise AmiError("ami_action_invalid", "action not allowed")
         fields = list(fields)
@@ -503,7 +511,11 @@ class AmiSession:
                 raise AmiError("ami_not_ready")
             if len(self._pending) >= self.max_pending:
                 raise AmiError("ami_backpressure")
-            action_id = f"{self.session_id}:{next(self._seq)}"
+            if action_id is None:
+                action_id = f"{self.session_id}:{next(self._seq)}"
+            elif (not isinstance(action_id, str) or not action_id.startswith(f"{self.session_id}:")
+                  or not action_id[len(self.session_id) + 1:].isdigit() or action_id in self._pending):
+                raise AmiError("ami_action_invalid", "invalid action id")
             data = encode_action([("Action", action), ("ActionID", action_id), *fields])
             pending = _Pending(time.monotonic() + (timeout or self.action_timeout), collector)
             self._pending[action_id] = pending
@@ -732,6 +744,22 @@ def _is_ip(host: str) -> bool:
 
 
 # --------------------------------------------------------------------------- PBX identity
+def ami_major(banner: str | None) -> int | None:
+    """The AMI protocol major version of a greeting (`Asterisk Call Manager/1.3` -> 1), else None.
+    AMI 1.x = Asterisk <= 11 (CALLING_PBX_EVENTS=legacy); 2.x and later = Asterisk 12+ (modern)."""
+    m = re.fullmatch(r"Asterisk Call Manager/(\d+)\.\d+(?:\.\d+)?", (banner or "").strip())
+    return int(m.group(1)) if m else None
+
+
+def version_mismatch(banner: str | None, mode: str) -> bool:
+    """True when the greeting definitely disagrees with the event model `mode` (modern | legacy);
+    an unknown greeting is not a mismatch (it proves nothing either way)."""
+    major = ami_major(banner)
+    if major is None:
+        return False
+    return (major <= 1) != (mode == "legacy")
+
+
 @dataclasses.dataclass(frozen=True)
 class PbxIdentity:
     """Which Asterisk *process* this session talks to.

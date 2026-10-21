@@ -22,6 +22,11 @@ Handoff (the API never touches AMI; the calling service is the only AMI owner):
              Response Error   -> `rejected`, attempt failed `originate_rejected` (never queued)
              no/lost answer   -> `unacknowledged`, attempt `uncertain` (originate_unacknowledged)
          Nothing is ever retried or re-sent.
+         Asterisk <= 11 (CALLING_PBX_EVENTS=legacy): the Originate's ActionID is reserved on the
+         session and recorded on the queue row (ami_action_id, migration 0084) in the same commit,
+         BEFORE the send: its OriginateResponse is the only PBX event that names the agent channel
+         (services/calling/legacy_correlation.py). Fail-safe: a claim is refused
+         `pbx_version_mismatch` when the AMI greeting (1.x = Asterisk <= 11) contradicts the mode.
 
     cancel  POST /v2/calls/<id>/cancel: only while the queue row is still `queued` (the claim
          holds the row lock, so cancel and claim serialize); the attempt becomes `cancelled`
@@ -46,7 +51,8 @@ from core.api_response import VALIDATION_FAILED, ApiError
 from core.revisions import RevisionConflict, parse_revision
 from services.calling import attempts as A
 from services.calling import rules as R
-from services.calling.common import CALLS_MANAGE, advisory_lock, channel_driver, me, parse_uuid, sess
+from services.calling.common import (CALLS_MANAGE, advisory_lock, channel_driver, me, parse_uuid, pbx_events,
+                                     pbx_version_mismatch, sess)
 
 log = logging.getLogger("cawp.calling.dispatch")
 
@@ -62,6 +68,7 @@ def _env_int(name, default, lo, hi):
 def settings() -> dict:
     """Deployment settings of a click-to-call (the API side; the service reads them from the
     queue row). The maximum must not exceed the installed dialplan's max_call_seconds."""
+    pbx_events()                                          # CALLING_PBX_EVENTS (ValueError when invalid)
     return {
         "context": (os.environ.get("CALLING_CONTEXT") or "collections-human-outbound").strip(),
         "driver": channel_driver(),                       # CALLING_DRIVER (ValueError when invalid)
@@ -186,8 +193,9 @@ def _never_sent(session, attempt, qid, queue_state, code):
 
 
 class Claim:
-    def __init__(self, attempt_id, queue_id, fields, case_id):
+    def __init__(self, attempt_id, queue_id, fields, case_id, action_id=None):
         self.attempt_id, self.queue_id, self.fields, self.case_id = attempt_id, queue_id, fields, case_id
+        self.action_id = action_id                        # legacy: the recorded Originate ActionID
 
 
 def claim(session, ctx, worker_id) -> Claim | str | None:
@@ -233,20 +241,36 @@ def claim(session, ctx, worker_id) -> Claim | str | None:
         if code:
             _never_sent(session, a, q["id"], "refused", code)
             return f"refused:{code}"
+    legacy = pbx_events() == "legacy"
+    if pbx_version_mismatch(getattr(ctx.identity, "ami_version", None), "legacy" if legacy else "modern"):
+        _never_sent(session, a, q["id"], "refused", "pbx_version_mismatch")
+        return "refused:pbx_version_mismatch"
+    action_id = None
+    if legacy:
+        reserve = getattr(ctx.session, "reserve_action_id", None)
+        if reserve is None:
+            return None                               # defensive: cannot correlate, never send
+        action_id = reserve()
     token, token_id = A.issue_dispatch_token(
         a["id"], context=q["context"], destination=a["destination"], extension=a["extension"],
         max_call_seconds=q["max_call_seconds"], pbx_epoch_uuid=ctx.identity.epoch_uuid,
         ttl_seconds=q["agent_ring_seconds"] + 30)
     A.bind_channel(a["id"], ctx.epoch)
-    session.execute(text("""UPDATE call_dispatch_queue SET state = 'sending', claimed_at = now(), claimed_by = :w
-                             WHERE id = CAST(:id AS uuid)"""), {"w": worker_id[:200], "id": str(q["id"])})
+    if action_id is None:
+        session.execute(text("""UPDATE call_dispatch_queue SET state = 'sending', claimed_at = now(), claimed_by = :w
+                                 WHERE id = CAST(:id AS uuid)"""), {"w": worker_id[:200], "id": str(q["id"])})
+    else:
+        session.execute(text("""UPDATE call_dispatch_queue SET state = 'sending', claimed_at = now(), claimed_by = :w,
+                                       ami_action_id = :aid
+                                 WHERE id = CAST(:id AS uuid)"""),
+                        {"w": worker_id[:200], "aid": action_id, "id": str(q["id"])})
     _svc_audit(session, "call.dispatch.claim", a["id"], a["case_id"], {
         "queue_id": str(q["id"]), "token_id": token_id, "pbx_epoch": ctx.epoch, "worker": worker_id,
-        "rules_rechecked_at": plan.checked_at})
+        "rules_rechecked_at": plan.checked_at, **({"ami_action_id": action_id} if action_id else {})})
     fields = extension_first_fields(attempt_id=str(a["id"]), extension=a["extension"], destination=a["destination"],
                                     token=token, context=q["context"], driver=q["driver"],
                                     agent_ring_seconds=q["agent_ring_seconds"])
-    return Claim(str(a["id"]), str(q["id"]), fields, str(a["case_id"]))
+    return Claim(str(a["id"]), str(q["id"]), fields, str(a["case_id"]), action_id)
 
 
 def record_outcome(session, c: Claim, outcome: str, code: str) -> None:
@@ -334,7 +358,11 @@ class Dispatcher(threading.Thread):
         self.stats["claimed"] += 1
         started = time.monotonic()
         try:
-            frame = ctx.session.send("Originate", got.fields, timeout=self.send_timeout)
+            if got.action_id:                                # legacy: the ActionID recorded before the send
+                frame = ctx.session.send("Originate", got.fields, timeout=self.send_timeout,
+                                         action_id=got.action_id)
+            else:
+                frame = ctx.session.send("Originate", got.fields, timeout=self.send_timeout)
             outcome = "submitted" if frame.response == "Success" else "rejected"
             code = outcome
         except AmiError as e:

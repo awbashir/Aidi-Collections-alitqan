@@ -22,6 +22,13 @@ A CDR ANSWERED is NOT a conversation (it carries no bridge membership): reconcil
 only to say "the customer did not answer" (-> ended) or "the customer may have talked, but
 the bridge was not observed" (-> kept uncertain for human review).
 
+Asterisk <= 11 (CALLING_PBX_EVENTS=legacy, cdr_mysql, no linkedid column): the record of an
+originated call is the AGENT channel's (channel SIP/<ext>-..., dstchannel = the trunk leg). It is
+ANSWERED as soon as the agent answered, and its billsec counts from the agent's answer, so it can
+neither prove that the customer answered nor measure the conversation: `billsec` is reported as
+None (`billsec_source: agent_leg`) and is never used as a duration (the Bridge Link -> Unlink time
+is); an ANSWERED record with a dial still only keeps the attempt for human review.
+
 Sources (CALLING_CDR_SOURCE):
     none   (default) no lookup; reconciliation relies on evidence only
     csv    the test PBX's cdr_csv Master.csv (CALLING_CDR_CSV, mounted read-only)
@@ -71,15 +78,28 @@ def match(attempt_id: str, *, uniqueid=None, userfield=None, linkedid=None, sess
     return "uniqueid_prefix" if row is not None and row["id"] == attempt_id else None
 
 
-def summarize(source: str, rows: list[dict]) -> dict:
+def _legacy() -> bool:
+    from services.calling.common import pbx_events
+    try:
+        return pbx_events() == "legacy"
+    except ValueError:
+        return True                       # unknown event model: never trust billsec
+
+
+def summarize(source: str, rows: list[dict], legacy: bool | None = None) -> dict:
+    legacy = _legacy() if legacy is None else legacy
     dials = [r for r in rows if r.get("dstchannel")]
     answered = [r for r in dials if (r.get("disposition") or "").upper() == "ANSWERED"]
     first = answered[0] if answered else (dials[0] if dials else None)
+    extra = {"billsec_source": "agent_leg", "agent_billsec": answered[0].get("billsec") if answered else None} \
+        if legacy else {}
     return {
         "source": source, "available": True, "found": len(rows),
         "customer_dialed": bool(dials), "customer_answered": bool(answered),
         "disposition": (first or {}).get("disposition"),
-        "billsec": (answered[0].get("billsec") if answered else None),
+        # Asterisk 11: the originated agent leg's billsec (from the agent's answer): not a conversation
+        "billsec": None if legacy else (answered[0].get("billsec") if answered else None),
+        **extra,
         "matched_via": sorted({r["matched_via"] for r in rows}),
         "rows": [{"disposition": r.get("disposition"), "billsec": r.get("billsec"), "lastapp": r.get("lastapp"),
                   "dialed": bool(r.get("dstchannel")), "start": r.get("start"), "end": r.get("end"),

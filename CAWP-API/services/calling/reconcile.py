@@ -125,13 +125,17 @@ def mark_missing(session, epoch: str | None) -> list[str]:
 
 # --------------------------------------------------------------------------- 3
 def related_channels(attempt_id, legs: set, inventory) -> list[dict]:
+    """Inventory channels of the attempt: its app-issued channel, a channel linked to it, a known
+    leg, or (Asterisk <= 11: CoreShowChannel has no Linkedid/BridgeId) a channel bridged with a
+    known leg (BridgedUniqueID)."""
     agent = f"cawp-{attempt_id}"
     out = []
     for f in inventory or ():
         uid, lid = f.get("Uniqueid"), f.get("Linkedid")
-        if uid == agent or lid == agent or uid in legs:
+        bridged = f.get("BridgedUniqueID") or None
+        if uid == agent or lid == agent or uid in legs or (bridged is not None and bridged in legs):
             out.append({"uniqueid": uid, "state": f.get("ChannelStateDesc") or f.get("ChannelState"),
-                        "bridge": bool(f.get("BridgeId"))})
+                        "bridge": bool(f.get("BridgeId")) or bridged is not None})
     return out
 
 

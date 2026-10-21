@@ -19,6 +19,14 @@ Protocol (Asterisk FastAGI over TCP, line based):
     -> SET VARIABLE COLLECTIONS_GATE "ALLOW"       (last, only after the commit)
 Globals are read with GLOBAL() so a channel variable cannot stand in for them.
 
+Asterisk <= 11 (CALLING_PBX_EVENTS=legacy): the Originate ChannelId is ignored, so agi_uniqueid is
+an ordinary "<epoch>.<seq>" Uniqueid instead of `cawp-<attempt>`. It is accepted in that mode only;
+the one-shot token (bound to `cawp-<attempt>` as the app's id of the dispatch), agi_channel
+<driver>/<extension>-<hex>, context, destination and PBX epoch checks are unchanged. When the
+attempt already has an agent leg (bound from its OriginateResponse, services/calling/
+legacy_correlation.py) the AGI channel must be that leg (else `agent_channel_mismatch`); on allow
+the hook binds the channel as the agent leg (call_dispatch_tokens.bound_uniqueid, call_legs).
+
 Hardening: peer allowlist (CIDRs or host names), bounded concurrent connections, a whole-
 exchange deadline (5 s), bounded line length/count, fixed command set, fixed decision reasons.
 Any failure or doubt denies (the dialplan hangs up without dialling). A lost reply after the
@@ -48,6 +56,7 @@ UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 CONTEXT_RE = re.compile(r"^collections-human-[a-z0-9_-]{1,50}$")
+LEGACY_UID_RE = re.compile(r"^[0-9]{1,12}\.[0-9]{1,9}$")       # Asterisk <= 11 Uniqueid "<epoch>.<seq>"
 GATE_VARS = ("COLLECTIONS_GATE", "COLLECTIONS_GATE_DESTINATION", "COLLECTIONS_GATE_EXTENSION",
              "COLLECTIONS_GATE_LIMIT", "COLLECTIONS_GATE_EXPIRES")
 
@@ -202,9 +211,18 @@ class AgiRequest:
     attempt_id: str | None = None
     token: str | None = None
     epoch_uuid: str | None = None
+    legacy: bool = False
 
 
-def validate_environment(env: dict, req: AgiRequest):
+def _legacy_mode() -> bool:
+    from services.calling.common import pbx_events
+    try:
+        return pbx_events() == "legacy"
+    except ValueError:
+        raise AgiDeny("agi_internal_error") from None
+
+
+def validate_environment(env: dict, req: AgiRequest, legacy: bool | None = None):
     req.channel_id = env.get("agi_uniqueid")
     req.channel = env.get("agi_channel")
     req.driver = env.get("agi_type")
@@ -221,6 +239,11 @@ def validate_environment(env: dict, req: AgiRequest):
         raise AgiDeny("wrong_context")
     if not req.destination or not E164_RE.match(req.destination):
         raise AgiDeny("bad_destination")
+    req.legacy = _legacy_mode() if legacy is None else bool(legacy)
+    if req.legacy:
+        if not req.channel_id or not LEGACY_UID_RE.match(req.channel_id):
+            raise AgiDeny("bad_channel_id")
+        return
     if not req.channel_id or not re.fullmatch(r"cawp-[0-9a-f-]{36}", req.channel_id) \
             or not UUID_RE.match(req.channel_id[5:]):
         raise AgiDeny("bad_channel_id")
@@ -229,7 +252,8 @@ def validate_environment(env: dict, req: AgiRequest):
 _LOCK_TOKEN = text("""
     SELECT t.id, t.attempt_id, t.channel_id, t.context, t.destination, t.extension, t.max_call_seconds,
            t.pbx_epoch_uuid, t.expires_at, t.consumed_at, (t.expires_at <= now()) AS expired,
-           floor(extract(epoch FROM t.expires_at))::bigint AS expires_epoch, a.state AS attempt_state
+           floor(extract(epoch FROM t.expires_at))::bigint AS expires_epoch, a.state AS attempt_state,
+           a.pbx_epoch
       FROM call_dispatch_tokens t JOIN call_attempts a ON a.id = t.attempt_id
      WHERE t.token_sha256 = :h
        FOR UPDATE OF t
@@ -258,7 +282,7 @@ def authorize(session, req: AgiRequest) -> Decision:
         raise AgiDeny("token_missing")
     if not req.attempt_id or not UUID_RE.match(req.attempt_id):
         raise AgiDeny("attempt_missing")
-    if req.channel_id != f"cawp-{req.attempt_id}":
+    if not req.legacy and req.channel_id != f"cawp-{req.attempt_id}":
         raise AgiDeny("attempt_mismatch")
     t = session.execute(_LOCK_TOKEN, {"h": token_hash(req.token)}).mappings().first()
     if t is None:
@@ -268,7 +292,9 @@ def authorize(session, req: AgiRequest) -> Decision:
         raise AgiDeny("token_consumed", token_id=tid)
     if t["expired"]:
         raise AgiDeny("token_expired", token_id=tid)
-    if str(t["attempt_id"]) != req.attempt_id or t["channel_id"] != req.channel_id:
+    # the token names the app's id of the dispatch; on Asterisk 12+ that is also the AGI channel
+    app_channel = f"cawp-{req.attempt_id}" if req.legacy else req.channel_id
+    if str(t["attempt_id"]) != req.attempt_id or t["channel_id"] != app_channel:
         raise AgiDeny("token_mismatch", token_id=tid)
     if t["context"] != req.context or t["destination"] != req.destination:
         raise AgiDeny("token_mismatch", token_id=tid)
@@ -278,6 +304,13 @@ def authorize(session, req: AgiRequest) -> Decision:
         raise AgiDeny("epoch_mismatch", token_id=tid)
     if t["attempt_state"] in ("ended", "failed", "cancelled", "uncertain", "prepared"):
         raise AgiDeny("attempt_not_dispatchable", token_id=tid)
+    if req.legacy:
+        # Asterisk 11: the agent leg may already be bound from the OriginateResponse; then this
+        # channel must be it (and it must not belong to anything else)
+        from services.calling.legacy_correlation import agi_agent_check
+        refused = agi_agent_check(session, req.attempt_id, t["pbx_epoch"], req.channel_id)
+        if refused is not None:
+            raise AgiDeny(refused, token_id=tid)
     # P1: the case/contact safety rules can change while the agent's phone rings (a supervisor
     # locks the case, a wrap-up marks do-not-call or a wrong number): recheck them here, the
     # last point before the customer is dialled (services/calling/rules.py).
@@ -285,8 +318,14 @@ def authorize(session, req: AgiRequest) -> Decision:
     refused = agi_recheck(session, req.attempt_id)
     if refused is not None:
         raise AgiDeny(refused, token_id=tid)
-    session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now() WHERE id = CAST(:id AS uuid)"),
-                    {"id": tid})
+    if req.legacy:
+        from services.calling.legacy_correlation import bind_agent_leg
+        session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now(), bound_uniqueid = :u "
+                             "WHERE id = CAST(:id AS uuid)"), {"id": tid, "u": req.channel_id})
+        bind_agent_leg(session, t["pbx_epoch"], req.channel_id, req.attempt_id, channel=req.channel)
+    else:
+        session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now() WHERE id = CAST(:id AS uuid)"),
+                        {"id": tid})
     record_decision(session, "allow", "allowed", req, token_id=tid, lim=t["max_call_seconds"], exp=t["expires_at"])
     return Decision(True, "allowed", t["destination"], t["extension"], int(t["max_call_seconds"]),
                     int(t["expires_epoch"]))

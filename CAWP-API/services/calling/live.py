@@ -62,6 +62,8 @@ def timeline(attempt_id, agent: str, limit: int = 300) -> list[dict]:
         uid = e["uniqueid"]
         leg = "agent" if uid == agent or (not uid and p.get("DestUniqueid") == agent) else (
             "customer" if uid in customers else "other")
+        if e["event"] == "OriginateResponse" and p.get("correlated_by") == "action_id":
+            leg = "agent"                       # Asterisk 11: by the Originate's ActionID (a failure names no channel)
         kind, detail = None, {}
         ev = e["event"]
         if ev == "Newchannel":
@@ -127,7 +129,8 @@ def live_view(attempt_id) -> dict:
     from services.calling import queries
     d = queries.call_detail(attempt_id, with_evidence=False)
     state = d["state"]
-    agent = f"cawp-{attempt_id}"
+    from services.calling.legs import agent_uid
+    agent = agent_uid(sess(), attempt_id)          # cawp-<attempt>, or the bound Asterisk 11 leg
     raw = sess().execute(text("SELECT bridged_at, customer_answered_at, updated_at FROM call_attempts "
                               "WHERE id = CAST(:a AS uuid)"), {"a": str(attempt_id)}).mappings().first()
     dispatch = _dispatch(attempt_id)

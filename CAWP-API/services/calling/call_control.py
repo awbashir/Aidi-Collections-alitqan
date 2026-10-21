@@ -524,7 +524,9 @@ def find_my_call(ext: str, rows: list[dict], *, attempt_id=None, remote=None) ->
     mine = [r for r in rows if r.get("extension") == ext and r.get("bridge_id")
             and agent_re.match(r.get("channel") or "")]
     if attempt_id:
-        mine = [r for r in mine if r["uniqueid"] == f"cawp-{attempt_id}"]
+        from services.calling.legs import agent_uid
+        agent = agent_uid(sess(), attempt_id)             # cawp-<attempt>, or the bound Asterisk 11 leg
+        mine = [r for r in mine if r["uniqueid"] == agent]
     if len(mine) > 1 and remote:
         want = _digits(remote)[-9:]
         by_remote = []
@@ -547,12 +549,19 @@ def find_my_call(ext: str, rows: list[dict], *, attempt_id=None, remote=None) ->
 
 
 def _attempt_of(agent_uniqueid: str):
+    """The attempt whose agent leg this channel is: `cawp-<attempt>` (Asterisk 12+) or a bound
+    Asterisk 11 leg (services/calling/legs.py)."""
     m = re.fullmatch(r"cawp-([0-9a-f-]{36})", agent_uniqueid or "")
-    if not m:
-        return None
+    if m:
+        attempt = m.group(1)
+    else:
+        from services.calling.legs import attempt_of_agent
+        attempt = attempt_of_agent(sess(), agent_uniqueid)
+        if attempt is None:
+            return None
     return sess().execute(text("""
         SELECT id::text AS id, case_id::text AS case_id, collector_user_id::text AS collector
-          FROM call_attempts WHERE id = CAST(:a AS uuid)"""), {"a": m.group(1)}).mappings().first()
+          FROM call_attempts WHERE id = CAST(:a AS uuid)"""), {"a": attempt}).mappings().first()
 
 
 def _target(body, own_ext: str) -> tuple[str, dict]:

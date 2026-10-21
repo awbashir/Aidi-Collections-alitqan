@@ -56,6 +56,40 @@ def channel_driver() -> str:
     return value
 
 
+PBX_EVENT_MODES = ("modern", "legacy")
+
+
+def pbx_events() -> str:
+    """Which AMI event model the PBX speaks: env CALLING_PBX_EVENTS, `modern` (default) or `legacy`.
+
+    modern  Asterisk 12+: the Originate ChannelId is the agent channel's Uniqueid (`cawp-<attempt>`),
+            events carry Linkedid, DialBegin/DialEnd and BridgeEnter/BridgeLeave.
+    legacy  Asterisk <= 11 (the Alitqan Issabel 4, Asterisk 11.25, AMI 1.3, chan_sip): the ChannelId
+            is ignored (Uniqueid "<epoch>.<seq>"), no Linkedid, `Dial` SubEvent Begin/End and
+            `Bridge` Link/Unlink. The agent leg is bound by the Originate's ActionID
+            (OriginateResponse) or the FastAGI hook (services/calling/legacy_correlation.py).
+
+    Read on every call (no cache), like channel_driver(); the API, the calling service and the
+    dialplan policy (`pbx_events`) must agree. Surrounding blanks and case are ignored; unset or
+    blank = modern. Fail-safe: any other value raises ValueError (nothing is originated)."""
+    value = (os.environ.get("CALLING_PBX_EVENTS") or "").strip().lower() or "modern"
+    if value not in PBX_EVENT_MODES:
+        raise ValueError("CALLING_PBX_EVENTS must be modern or legacy")
+    return value
+
+
+def pbx_version_mismatch(banner: str | None, mode: str | None = None) -> bool:
+    """True when the AMI greeting definitely disagrees with CALLING_PBX_EVENTS (`mode`, default the
+    setting); services/calling/ami.version_mismatch."""
+    from services.calling.ami import version_mismatch
+    return version_mismatch(banner, mode or pbx_events())
+
+
+def ami_major(banner: str | None) -> int | None:
+    from services.calling.ami import ami_major as _major
+    return _major(banner)
+
+
 def can_supervise() -> bool:
     """calls_supervise or calls_manage (request-bound)."""
     from core.auth import has_permission

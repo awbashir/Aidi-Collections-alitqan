@@ -19,6 +19,14 @@ else linked to the attempt is `unknown`. P1: after each stored event the attempt
 state is re-projected from its whole evidence (services/calling/projection.py), requiring
 bridge membership of both legs - two answered legs are not a conversation.
 
+Asterisk <= 11 (CALLING_PBX_EVENTS=legacy): there is no `cawp-` channel and no Linkedid. Frames
+are normalised first (services/calling/legacy_events.py: Dial Begin/End -> DialBegin/DialEnd,
+Bridge Link/Unlink -> BridgeEnter/BridgeLeave) and attributed by services/calling/
+legacy_correlation.py: the agent leg bound by the Originate's ActionID (OriginateResponse) or by
+the FastAGI hook, customer legs from the agent's DialBegin, everything else by Uniqueid membership.
+Events of a channel not bound yet are held in memory and stored once it binds. Without the PBX
+`Timestamp` header the (strictly increasing) receipt time orders them.
+
 Durability: each event commits in its own transaction. If the database is unavailable the
 event is kept in a bounded in-memory buffer and retried on the next event/heartbeat; if the
 buffer overflows, an `EvidenceGap` marker records the lost window once the database is back.
@@ -153,7 +161,9 @@ def project_leg(session, row: dict, event_id: int, epoch: str) -> None:
     attempt, event, p = row["attempt_id"], row["event"], row["payload"]
     if attempt is None:
         return
-    agent_channel = f"cawp-{attempt}"
+    # the agent leg: the app-issued channel (Asterisk 12+), or the bound Asterisk 11 leg that the
+    # legacy correlator put on the row (services/calling/legacy_correlation.py)
+    agent_channel = row.get("agent_uid") or f"cawp-{attempt}"
     ts = row["pbx_ts"]
     targets = []                                  # (uniqueid, role, facts)
     if event == "Newchannel":
@@ -226,6 +236,11 @@ class EvidenceConsumer:
         self.stopping = False             # set by the service before a deliberate shutdown
         self._failing, self._last_fail_log = False, 0.0
         self._lock = threading.Lock()
+        # Asterisk <= 11 (CALLING_PBX_EVENTS=legacy): attribution state (its own lock: flush() also
+        # runs on the supervisor thread at session start/end)
+        from services.calling.legacy_correlation import LegacyCorrelator
+        self.correlator = LegacyCorrelator()
+        self._legacy_lock = threading.RLock()
 
     # ---- helpers --------------------------------------------------------------------
     def _run(self, fn):
@@ -285,18 +300,91 @@ class EvidenceConsumer:
         if changed:
             log.warning("PBX epoch changed: %d in-flight attempt(s) marked uncertain", len(changed))
 
+    def classify_frame(self, frame, epoch) -> list[dict]:
+        """The rows to store for one AMI frame: modern classify(), or (CALLING_PBX_EVENTS=legacy)
+        the Asterisk 11 normaliser + legacy classify with a receipt clock."""
+        from services.calling.common import pbx_events
+        if pbx_events() != "legacy":
+            row = classify(frame, epoch)
+            return [row] if row is not None else []
+        from services.calling import legacy_correlation as LC
+        from services.calling.legacy_events import normalise
+        rows = []
+        for f in normalise(frame):
+            row = LC.classify(f, epoch, self.correlator.receipt_ts())
+            if row is not None:
+                rows.append(row)
+        return rows
+
     def on_event(self, frame, ctx):
-        row = classify(frame, ctx.epoch)
-        if row is None:
+        rows = self.classify_frame(frame, ctx.epoch)
+        if not rows:
             return
-        self.stats["classified"] += 1
-        with self._lock:
-            self.buffer.append((row, ctx.epoch, ctx.session.session_id))
-            if len(self.buffer) > self.max_buffer:
-                self.buffer.popleft()
-                self.lost += 1
-                self.lost_since = self.lost_since or time.time()
+        for row in rows:
+            self.stats["classified"] += 1
+            with self._lock:
+                self.buffer.append((row, ctx.epoch, ctx.session.session_id))
+                if len(self.buffer) > self.max_buffer:
+                    self.buffer.popleft()
+                    self.lost += 1
+                    self.lost_since = self.lost_since or time.time()
         self.flush()
+
+    # ---- Asterisk <= 11 ---------------------------------------------------------------
+    def _insert_legacy(self, session, row, epoch, sid, touched: dict):
+        from services.calling.legacy_correlation import bind_agent_leg
+        eid = insert_event(session, row, source="ami", pbx_session_id=sid, epoch=epoch)
+        if row.get("bind_agent"):
+            bind_agent_leg(session, epoch, row["bind_agent"], row["attempt_id"], channel=row.get("channel"),
+                           event_id=eid)
+        if eid is not None:
+            project_leg(session, row, eid, epoch)
+            if row.get("attempt_id"):
+                touched[row["attempt_id"]] = max(eid, touched.get(row["attempt_id"]) or 0)
+        return eid
+
+    def _store_legacy(self, session, row, epoch, sid, handled: list):
+        """Attribute one legacy row (services/calling/legacy_correlation.py), store it, then every
+        held row whose channel is now bound, then expire old held rows. `handled` collects the held
+        rows that were dealt with; the caller forgets them after the commit."""
+        from services.calling.legacy_correlation import untrusted
+        c = self.correlator
+        touched: dict = {}
+        with self._legacy_lock:
+            c.refresh(session, epoch)
+            verdict, out = c.attribute(session, row, epoch)
+            eid = None
+            if verdict == "hold":
+                c.hold(epoch, row)
+                eid = -1
+            elif verdict in ("store", "untrusted"):
+                eid = self._insert_legacy(session, out, epoch, sid, touched)
+            done = set()
+            while True:
+                due = [(k, r) for k, r in c.due(epoch) if r["dedupe_key"] not in done]
+                progressed = False
+                for key, held in due:
+                    v, o = c.attribute(session, held, epoch)
+                    if v == "hold":
+                        continue
+                    if v in ("store", "untrusted"):
+                        self._insert_legacy(session, o, epoch, sid, touched)
+                    done.add(held["dedupe_key"])
+                    handled.append((key, held))
+                    progressed = True
+                if not progressed:
+                    break
+            for key, held in c.expired():
+                if held["dedupe_key"] in done:
+                    continue
+                if held["event"] == "UserEvent":
+                    self._insert_legacy(session, untrusted(held), epoch, sid, touched)
+                done.add(held["dedupe_key"])
+                handled.append((key, held))
+                c.stats["expired"] += 1
+            for attempt, last in touched.items():
+                project_attempt(session, attempt, last)
+        return eid
 
     def on_heartbeat(self, ctx):
         self.flush()
@@ -351,8 +439,12 @@ class EvidenceConsumer:
                     continue
                 row, epoch, ami_sid = item
                 sid = self.pbx_session_ids.get(ami_sid)
+                handled: list = []
 
-                def store(session, row=row, epoch=epoch, sid=sid):
+                def store(session, row=row, epoch=epoch, sid=sid, handled=handled):
+                    if row.get("legacy"):
+                        handled.clear()
+                        return self._store_legacy(session, row, epoch, sid, handled)
                     eid = insert_event(session, row, source="ami", pbx_session_id=sid, epoch=epoch)
                     if eid is not None:
                         project_leg(session, row, eid, epoch)
@@ -360,10 +452,14 @@ class EvidenceConsumer:
                             project_attempt(session, row["attempt_id"], eid)
                     return eid
                 eid = self._run(store)
+                if row.get("legacy"):                    # committed: forget what was stored or expired
+                    with self._legacy_lock:
+                        self.correlator.drop(handled)
+                        self.correlator.dirty = False
                 if self._failing:
                     log.info("evidence writes recovered")
                     self._failing = False
-                self.stats["stored" if eid else "duplicates"] += 1
+                self.stats["held" if eid == -1 else ("stored" if eid else "duplicates")] += 1
                 with self._lock:
                     if self.buffer and self.buffer[0] is item:
                         self.buffer.popleft()

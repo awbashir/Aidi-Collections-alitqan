@@ -13,7 +13,9 @@ CALLING_* environment as the service, or flags) and checks, printing PASS / WARN
   refusals       the PBX itself refuses Command, Setvar and application Originate (harmless probes
                  that would fail safely even on an over-privileged account)
   dialplan       ShowDialPlan of the restricted context: AGI via GLOBAL(COLLECTIONS_AGI_URL),
-                 the ALLOW check, TIMEOUT(absolute), the fixed trunk Dial with only i/b/U/L options
+                 the ALLOW check, TIMEOUT(absolute), the fixed trunk Dial with only i/b/U/L(/F)
+                 options; with `--trunk A,B,C` (dialplan policy `trunks`) one Dial per trunk, in order
+  version        the AMI greeting agrees with CALLING_PBX_EVENTS (AMI 1.x = Asterisk <= 11 = legacy)
   channels       CoreShowChannels (the inventory P1 reconciliation uses)
   agi            the FastAGI port is reachable from THIS host (the PBX side is pbx-verify.sh)
 
@@ -21,7 +23,11 @@ Optional, and only with --place-deny-test EXTENSION --i-am-at-the-extension: ori
 TEST extension with NO token. Expected: the phone rings; after you answer, the call is refused by
 the AGI hook and hangs up; UserEvents agent_answered -> denied; no customer leg is ever created.
 It never dials a customer number (the destination is a reserved +999 test number that the gate
-refuses anyway).
+refuses anyway). `--driver SIP` rings SIP/<extension> (chan_sip). `--pbx-events legacy` (Asterisk
+<= 11, default from CALLING_PBX_EVENTS) makes no ChannelId / Linkedid assumption: the agent channel
+is found from the OriginateResponse of the Originate's own ActionID (or the UserEvents'
+ChanUniqueid), its Dial events from the Asterisk 11 `Dial` Begin, and a missing `Timestamp` header
+is a WARN (the service then orders events by receipt).
 
 Exit code 0 when nothing FAILed. Secrets are never printed.
 """
@@ -37,7 +43,8 @@ import threading
 import time
 import uuid
 
-from services.calling.ami import (AmiConfig, AmiDecoder, AmiError, AmiSession, encode_action, read_identity)
+from services.calling.ami import (AmiConfig, AmiDecoder, AmiError, AmiSession, ami_major, encode_action,
+                                  read_identity, version_mismatch)
 
 MUST_ALLOW = ("Originate", "Getvar", "CoreStatus", "CoreShowChannels", "Ping")
 MUST_DENY = ("Command", "Setvar", "Redirect", "Reload", "ModuleLoad", "Atxfer", "Bridge", "UpdateConfig",
@@ -91,7 +98,7 @@ def _raw_probe(cfg: AmiConfig, actions):
 
 
 def run_checks(cfg: AmiConfig, *, context: str, trunk: str | None, agi_host: str | None, agi_port: int,
-               deny_extension: str | None) -> Report:
+               deny_extension: str | None, driver: str = "PJSIP", pbx_events: str = "modern") -> Report:
     rep = Report()
     events, lock = [], threading.Lock()
 
@@ -106,6 +113,15 @@ def run_checks(cfg: AmiConfig, *, context: str, trunk: str | None, agi_host: str
         return rep
     rep.add("PASS", "tls", "verified TLS" if cfg.tls else "plaintext (loopback tunnel only)")
     rep.add("PASS", "login", f"{cfg.username} on {cfg.host}:{cfg.port} ({s.banner})")
+    legacy = pbx_events == "legacy"
+    major = ami_major(s.banner)
+    if version_mismatch(s.banner, pbx_events):
+        want = "legacy (Asterisk <= 11)" if major <= 1 else "modern (Asterisk 12+)"
+        rep.add("FAIL", "version", f"AMI {major}.x needs CALLING_PBX_EVENTS={want}, not {pbx_events} "
+                                   "(the dispatcher refuses every call with pbx_version_mismatch)")
+    else:
+        rep.add("PASS" if major is not None else "WARN", "version",
+                f"AMI {major}.x, CALLING_PBX_EVENTS={pbx_events}" if major is not None else "unknown AMI greeting")
     try:
         ident = read_identity(s)
         if ident.epoch_uuid:
@@ -132,9 +148,9 @@ def run_checks(cfg: AmiConfig, *, context: str, trunk: str | None, agi_host: str
 
         refusals = _raw_probe(cfg, [
             ("v-cmd", [("Action", "Command"), ("Command", "core show uptime")]),
-            ("v-set", [("Action", "Setvar"), ("Channel", "PJSIP/cawp-verify-no-such-channel"),
+            ("v-set", [("Action", "Setvar"), ("Channel", f"{driver}/cawp-verify-no-such-channel"),
                        ("Variable", "CAWP_VERIFY"), ("Value", "1")]),
-            ("v-app", [("Action", "Originate"), ("Channel", "PJSIP/cawp-verify-no-such-endpoint"),
+            ("v-app", [("Action", "Originate"), ("Channel", f"{driver}/cawp-verify-no-such-endpoint"),
                        ("Application", "System"), ("Data", "true"), ("Async", "false"), ("Timeout", "1000")]),
         ]) or {}
         bad = [k for k, (resp, msg) in refusals.items()
@@ -159,7 +175,10 @@ def run_checks(cfg: AmiConfig, *, context: str, trunk: str | None, agi_host: str
                 rep.add("FAIL", "agi", f"FastAGI {agi_host}:{agi_port} not reachable")
 
         if deny_extension:
-            _deny_test(s, events, lock, rep, context, deny_extension)
+            if legacy:
+                _deny_test_legacy(s, events, lock, rep, context, deny_extension, driver)
+            else:
+                _deny_test(s, events, lock, rep, context, deny_extension, driver)
 
         # timestampevents: the FullyBooted greeting event never carries it, so look at real events
         time.sleep(0.5 if deny_extension else 3)
@@ -170,6 +189,9 @@ def run_checks(cfg: AmiConfig, *, context: str, trunk: str | None, agi_host: str
                                       "to check timestampevents=yes")
         elif all(f.get("Timestamp") for f in real):
             rep.add("PASS", "events", f"{len(real)} event(s), all with the PBX Timestamp (timestampevents=yes)")
+        elif legacy:
+            rep.add("WARN", "events", "events carry no Timestamp header: the service orders them by receipt; "
+                                      "timestampevents=yes in manager.conf is still recommended")
         else:
             rep.add("FAIL", "events", "events carry no Timestamp header: set timestampevents=yes in manager.conf")
     finally:
@@ -240,25 +262,28 @@ def _check_dialplan(s: AmiSession, cfg: AmiConfig, rep: Report, context: str, tr
     if not any(a == "Set" and d.startswith("TIMEOUT(absolute)=") for a, d in apps):
         problems.append("TIMEOUT(absolute) missing")
     dials = [d for a, d in apps if a == "Dial"]
-    if len(dials) != 1:
-        problems.append(f"expected exactly one Dial, found {len(dials)}")
+    trunks = [t for t in (trunk or "").split(",") if t] or [None]
+    if len(dials) != len(trunks):
+        problems.append(f"expected exactly one Dial, found {len(dials)}" if len(trunks) == 1
+                        else f"expected one Dial per trunk ({len(trunks)}), found {len(dials)}")
     else:
-        target, _ring, options = (dials[0].split(",", 2) + ["", ""])[:3]
-        if trunk and not (target.endswith("@" + trunk) or target.startswith(f"SIP/{trunk}/")):
-            problems.append(f"Dial target {target!r} is not the fixed trunk {trunk!r}")
-        stripped = options
-        while re.search(r"\([^()]*\)", stripped):
-            stripped = re.sub(r"\([^()]*\)", "", stripped)
-        if set(stripped) - set("ibUL"):
-            problems.append(f"Dial has extra options {stripped!r} (only i, b, U, L are generated)")
+        for dial, want in zip(dials, trunks):
+            target, _ring, options = (dial.split(",", 2) + ["", ""])[:3]
+            if want and not (target.endswith("@" + want) or target.startswith(f"SIP/{want}/")):
+                problems.append(f"Dial target {target!r} is not the fixed trunk {want!r}")
+            stripped = options
+            while re.search(r"\([^()]*\)", stripped):
+                stripped = re.sub(r"\([^()]*\)", "", stripped)
+            if set(stripped) - set("ibULF"):
+                problems.append(f"Dial has extra options {stripped!r} (only i, b, U, L, F are generated)")
     rep.add("FAIL" if problems else "PASS", "dialplan",
             "; ".join(problems) if problems else f"{context}: {len(apps)} priorities, gate + fixed trunk Dial")
 
 
-def _deny_test(s: AmiSession, events, lock, rep: Report, context: str, extension: str):
+def _deny_test(s: AmiSession, events, lock, rep: Report, context: str, extension: str, driver: str = "PJSIP"):
     attempt = str(uuid.uuid4())
     chan = f"cawp-{attempt}"
-    ack = s.send("Originate", [("Channel", f"PJSIP/{extension}"), ("Context", context), ("Exten", DENY_TEST_NUMBER),
+    ack = s.send("Originate", [("Channel", f"{driver}/{extension}"), ("Context", context), ("Exten", DENY_TEST_NUMBER),
                                ("Priority", "1"), ("Async", "true"), ("Timeout", "30000"), ("ChannelId", chan),
                                ("Variable", f"__COLLECTIONS_ATTEMPT={attempt}")])
     if ack.response != "Success":
@@ -282,6 +307,45 @@ def _deny_test(s: AmiSession, events, lock, rep: Report, context: str, extension
         rep.add("FAIL", "deny-test", f"unexpected flow: states={states} customer_legs={len(dialled)}")
 
 
+def _deny_test_legacy(s: AmiSession, events, lock, rep: Report, context: str, extension: str, driver: str):
+    """Asterisk <= 11: no ChannelId, no Linkedid. The agent channel is the Uniqueid of the
+    OriginateResponse carrying this Originate's ActionID (or the ChanUniqueid of its UserEvents)."""
+    from services.calling.legacy_events import normalise
+    attempt = str(uuid.uuid4())
+    action_id = s.reserve_action_id()
+    ack = s.send("Originate", [("Channel", f"{driver}/{extension}"), ("Context", context), ("Exten", DENY_TEST_NUMBER),
+                               ("Priority", "1"), ("Async", "true"), ("Timeout", "30000"),
+                               ("Variable", f"__COLLECTIONS_ATTEMPT={attempt}")], action_id=action_id)
+    if ack.response != "Success":
+        rep.add("FAIL", "deny-test", f"Originate refused: {ack.get('Message')}")
+        return
+    print(f"      ringing test extension {extension}: answer it within 30 s", flush=True)
+    end = time.monotonic() + 45
+    uid, failed, frames = None, False, []
+    while time.monotonic() < end:
+        with lock:
+            frames = [n for f in events for n in normalise(f)]
+        for f in frames:
+            if f.event == "OriginateResponse" and f.get("ActionID") == action_id:
+                if f.get("Response") == "Success":
+                    uid = uid or f.get("Uniqueid")
+                else:
+                    failed = True
+            elif f.event == "UserEvent" and f.get("AttemptId") == attempt and not uid:
+                uid = f.get("ChanUniqueid") or f.get("Uniqueid")
+        if failed or (uid and any(f.event == "Hangup" and f.get("Uniqueid") == uid for f in frames)):
+            break
+        time.sleep(0.3)
+    states = [f.get("State") for f in frames if f.event == "UserEvent" and f.get("AttemptId") == attempt]
+    dialled = [f for f in frames if f.event == "DialBegin" and uid and f.get("Uniqueid") == uid]
+    if "agent_answered" not in states:
+        rep.add("WARN", "deny-test", "the test extension did not answer; nothing was checked")
+    elif "denied" in states and not dialled and "customer_dialing" not in states:
+        rep.add("PASS", "deny-test", f"answered (agent channel {uid}), refused by the AGI hook, no customer leg")
+    else:
+        rep.add("FAIL", "deny-test", f"unexpected flow: states={states} customer_legs={len(dialled)}")
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="python -m calling.verify", description=__doc__.split("\n\n")[0])
     p.add_argument("--host", default=os.environ.get("CALLING_AMI_HOST"))
@@ -291,7 +355,12 @@ def main(argv=None) -> int:
     p.add_argument("--server-name", default=os.environ.get("CALLING_AMI_SERVER_NAME") or None)
     p.add_argument("--username", default=os.environ.get("CALLING_AMI_USERNAME"))
     p.add_argument("--context", default="collections-human-outbound")
-    p.add_argument("--trunk", default=None, help="the outbound trunk the generated dialplan must dial")
+    p.add_argument("--trunk", default=None,
+                   help="the outbound trunk the generated dialplan must dial (A,B,C: the failover `trunks`, in order)")
+    p.add_argument("--driver", choices=("PJSIP", "SIP"),
+                   default=(os.environ.get("CALLING_DRIVER") or "PJSIP").strip().upper() or "PJSIP")
+    p.add_argument("--pbx-events", choices=("modern", "legacy"),
+                   default=(os.environ.get("CALLING_PBX_EVENTS") or "modern").strip().lower() or "modern")
     p.add_argument("--agi-host", default=None, help="the calling host as the PBX reaches it (reachability only)")
     p.add_argument("--agi-port", type=int, default=4573)
     p.add_argument("--place-deny-test", metavar="EXTENSION", default=None)
@@ -315,7 +384,7 @@ def main(argv=None) -> int:
         print(f"configuration refused: {e.code}", file=sys.stderr)
         return 2
     rep = run_checks(cfg, context=a.context, trunk=a.trunk, agi_host=a.agi_host, agi_port=a.agi_port,
-                     deny_extension=a.place_deny_test)
+                     deny_extension=a.place_deny_test, driver=a.driver, pbx_events=a.pbx_events)
     if a.json:
         print(json.dumps(rep.items, indent=1))
     return 1 if rep.failed else 0

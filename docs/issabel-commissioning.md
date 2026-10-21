@@ -48,7 +48,9 @@ Decisions that follow from the answers:
 | Asterisk 13–15 with chan_pjsip | Use the PJSIP settings with the explicit options in place of `webrtc=yes` (section 4a). `func_pjsip_endpoint` must be loaded. |
 | chan_sip only | Use the chan_sip variant (section 4b) and generate with `"driver": "SIP"`. The generated dialplan cannot check `allow_transfer` with chan_sip, so section 4b's `allowtransfer=no` must be verified by hand. chan_sip is removed in Asterisk 21: plan the PJSIP move. |
 | `res_http_websocket` or `res_srtp` missing | WebRTC is impossible until the Asterisk package provides them. Stop and escalate. |
-| Asterisk < 13 | Not supported. |
+| Asterisk 11 (AMI banner `Asterisk Call Manager/1.3`), chan_sip | **Supported in legacy event mode** for click-to-call and campaigns (2026-10-21; the Alitqan Issabel 4 runs 11.25.3). Set `CALLING_DRIVER=SIP` **and** `CALLING_PBX_EVENTS=legacy` on the API and the calling service, and generate the dialplan with `"driver": "SIP"`, `"pbx_events": "legacy"` (section 6). Why: Asterisk 11 ignores the Originate `ChannelId` and its events have no `Linkedid` and use `Dial` Begin/End and `Bridge` Link/Unlink, so the agent leg is bound by the Originate's ActionID (`OriginateResponse`) or the FastAGI hook, and the events are normalised (`services/calling/legacy_events.py`, `legacy_correlation.py`). The dispatcher refuses every call with `pbx_version_mismatch` when the AMI greeting contradicts `CALLING_PBX_EVENTS` (AMI 1.x = Asterisk ≤ 11). The browser softphone (WebRTC) is not part of this (desk phones). |
+| Asterisk 12 | Not supported (neither event model was tested on it). |
+| Asterisk < 11 | Not supported. |
 
 ## 2. Test extensions
 
@@ -281,7 +283,34 @@ What the generated context does (the same text runs on the test PBX; see `pbx-te
 Rules:
 
 - **Never include `collections-human-outbound` in any other context**, and never give it to an endpoint as its `context`. Only AMI Originate enters it. `pbx-verify.sh` checks for includes.
-- The dialplan dials the trunk **directly**, not through FreePBX outbound routes. Outbound-route caller-ID and prefix rules do not apply: set the caller ID on the trunk. If the carrier needs national format (`05…`) instead of `+9665…`, stop and raise it. The generator has no number-rewrite option yet (open item). The live test with an authorized test number (section 13) proves the format.
+- The dialplan dials the trunk **directly**, not through FreePBX outbound routes. Outbound-route caller-ID and prefix rules do not apply: set the caller ID on the trunk. If the carrier needs national format (`05…`) instead of `+9665…`, use `"dial_format": "national_sa"` (below). The live test with an authorized test number (section 13) proves the format.
+
+Optional policy keys (absent = the output above, byte for byte):
+
+| Key | Values | Effect |
+|---|---|---|
+| `dial_format` | `e164` (default) \| `national_sa` | `national_sa`: the trunk is dialled with `0` + the 9 digits after `+966` (`+9665XXXXXXXX` → `05XXXXXXXX`), and any destination that is not `+966` + 9 digits is **denied** (`Hangup(21)`). The Originate `Exten`, the AGI-granted destination and the dispatch token stay E.164. |
+| `trunks` | `["Mobily18", "Mobily19", …]`, 1–16 distinct names, the first equal to `trunk` | **Sequential failover**: one `Dial` per trunk in that order. The next trunk is tried only when the previous Dial ended with `DIALSTATUS` `CHANUNAVAIL` or `CONGESTION` (gateway down or out of channels) — never after `NOANSWER`, `BUSY`, `ANSWER` or `CANCEL`. Same ring timeout, options and limits on every Dial; `TIMEOUT(absolute)` bounds the whole call. The projection accepts several customer legs only when they did not overlap and every earlier one ended unanswered with one of those two statuses; anything else is `multiple_customer_legs` (uncertain). With PJSIP, `allow_transfer` is checked on every trunk. |
+| `pbx_events` | `modern` (default) \| `legacy` | `legacy` (Asterisk ≤ 11): every `CollectionsCall` UserEvent body also carries `ChanUniqueid: ${UNIQUEID}` (the agent channel, or the customer channel in the pre-dial, answer and hangup handlers). Must match `CALLING_PBX_EVENTS`. |
+
+The Alitqan Issabel (Asterisk 11.25, chan_sip, GSM gateways `Mobily18`…`Mobily26` as chan_sip trunks in the catch-all route `Direct_outside`, agents dialling `05XXXXXXXX`):
+
+```json
+{
+  "context": "collections-human-outbound",
+  "driver": "SIP",
+  "trunk": "Mobily18",
+  "trunks": ["Mobily18", "Mobily19", "Mobily20", "Mobily21", "Mobily22", "Mobily23", "Mobily24", "Mobily25", "Mobily26"],
+  "dial_format": "national_sa",
+  "pbx_events": "legacy",
+  "max_call_seconds": 600,
+  "ring_seconds": 30,
+  "record": true,
+  "calling_windows": [{"days": [0, 1, 2, 3, 4], "start": "09:00", "end": "20:00"}]
+}
+```
+
+Take the trunk list and its order from `Direct_outside` (Issabel → Outbound Routes) at commissioning time; the dialplan dials those trunks directly with the customer leg string `SIP/<trunk>/05XXXXXXXX`. Every construct the generator emits exists in Asterisk 11 (`CHANNEL(hangup_handler_push)` and the Dial `b()` pre-dial handler are Asterisk 11 features; `U(context)` is a Gosub to `context,s,1`; `GotoIfTime` takes the timezone). Verify with `python -m calling.verify --driver SIP --pbx-events legacy --trunk Mobily18,Mobily19,…` (one Dial per trunk, in order).
 - The **calling windows** in the policy must match the app's policy (`PUT /v2/calling/windows`). The app enforces windows and holidays at dispatch; the PBX check is the second line of defence. Holidays are app-only, because `GotoIfTime` has no year. Regenerate and reload whenever the approved hours change.
 
 ## 7. Globals for the AGI hook
@@ -313,6 +342,8 @@ Issabel writes CDRs to MySQL `asteriskcdrdb.cdr` (cdr_mysql or cdr_adaptive_odbc
 - `dst` = the E.164 number and `dcontext` = `collections-human-outbound`.
 
 **`userfield` MUST be logged (required, P1).** On Issabel `asteriskcdrdb.cdr.uniqueid` is `varchar(32)`, so `cawp-<attempt id>` (41 characters) is stored **truncated** (`cawp-` plus the first 27 characters of the id). The `userfield` tag `cawp:<attempt id>` is therefore the only reliable link from a CDR row to its call attempt: the reconciliation CDR lookup (`services/calling/cdr_lookup.py`) and the P4 attribution (`services/calling_cdr.py`) match `userfield` first, and accept a truncated `uniqueid` only when it names exactly one attempt. Every lookup is bounded by a date window around the attempt (`calldate` from 1 h before the attempt to 12 h after), so an index on `calldate` (Issabel has one) keeps it cheap.
+
+**Asterisk 11 (legacy mode).** `asteriskcdrdb.cdr` has **no `linkedid` column** and `uniqueid` is the agent channel's `"<epoch>.<seq>"` (Asterisk 11 ignores the Originate ChannelId), so `userfield = cawp:<attempt id>` is the **only** link from a CDR row to its attempt (`cdr_mysql` with `userfield=1`). The record of an originated call is the AGENT channel's (`channel` `SIP/<ext>-…`, `dstchannel` the trunk leg): it is `ANSWERED` as soon as the agent answered and its `billsec` counts from the agent's answer. It therefore never proves that the customer answered, and its `billsec` is never used as the conversation duration: the reconciliation lookup reports `billsec: null` (`billsec_source: agent_leg`, the raw value as `agent_billsec`); the duration comes from the Bridge Link → Unlink of the agent and customer legs. An `ANSWERED` record with a dial only keeps an uncertain attempt for human review (`conversation_unproven`).
 
 Check with `cdr show status`. After the test call, run:
 `SELECT calldate, uniqueid, userfield, recordingfile, disposition, billsec FROM asteriskcdrdb.cdr WHERE calldate > now() - INTERVAL 1 HOUR AND userfield LIKE 'cawp:%' ORDER BY calldate DESC LIMIT 5;`
@@ -381,7 +412,12 @@ sudo ./pbx-verify.sh --ami-user cawp-calling --extension 7001 --calling-host <ca
 python -m calling.verify --host <pbx> --ca-file <ca.pem> --trunk <trunk> --agi-host <calling host>
 # deny path: rings test extension 7001; answer it; the AGI hook must refuse; no customer leg
 python -m calling.verify --host <pbx> --ca-file <ca.pem> --place-deny-test 7001 --i-am-at-the-extension
+# Asterisk 11 / chan_sip (Alitqan): the same, legacy event model, one Dial per failover trunk
+python -m calling.verify --host <pbx> --driver SIP --pbx-events legacy --trunk Mobily18,Mobily19,... \
+       --place-deny-test <test ext> --i-am-at-the-extension
 ```
+
+In legacy mode `calling.verify` also checks that the AMI greeting is 1.x, finds the agent channel from the Originate's own ActionID (no ChannelId/Linkedid), and reports a missing `Timestamp` header as WARN. Gates 3, 4, 5, 10, 13 and 16 below must be run **on the Asterisk 11 PBX itself** before `CALLING_PBX_COMMISSIONED=1`: the legacy correlation (OriginateResponse binding, `Dial` Begin customer legs, `Bridge` Link as the conversation, `ChanUniqueid` in UserEvents, the order of `OriginateResponse` vs. the FastAGI call, trunk failover on CHANUNAVAIL/CONGESTION, the national number on the GSM gateways) is proven by unit tests with frames of the captured key sets only. On Asterisk 11 the recording file and the CDR `uniqueid` are the agent channel's `"<epoch>.<seq>"`, not `cawp-<attempt>` (gates 12 and 13: match by `userfield`).
 
 Expected: every line PASS (WARN lines explained in the sheet). On the test PBX, `pbx-verify.sh` gives 33 PASS with two expected WARNs (container disk space, and CSV instead of MySQL CDR), and `calling.verify` passes every check including the deny test.
 
@@ -438,6 +474,8 @@ Reservations and attempts in the database stay as they are. They are never delet
 | Recordings | volume `cawp_pbx_test_recordings`; the simulated customers send no audio, so the files hold only the WAV header | real audio under `/var/spool/asterisk/monitor` |
 | Codecs | ulaw/alaw | ulaw/alaw, or opus only with `codec_opus` |
 | Dialplan | generated from `pbx-test/policy.json` (checked equal by the test suite) | generated from the production policy (trunk, windows, limits) |
+| AMI event model (Alitqan) | Asterisk 20: `ChannelId` honoured (`cawp-<attempt>` is the agent Uniqueid), `Linkedid`, DialBegin/DialEnd, BridgeEnter/BridgeLeave, `Timestamp` | Asterisk 11.25 (AMI 1.3), `CALLING_PBX_EVENTS=legacy`: `ChannelId` ignored (Uniqueid `"<epoch>.<seq>"`), no `Linkedid`, `Dial` Begin/End (End has no DestUniqueID), `Bridge` Link/Unlink, no `Timestamp` unless `timestampevents=yes` (recommended; without it the service orders events by receipt). Agent leg bound by the Originate ActionID's `OriginateResponse` or by the FastAGI hook (`agent_channel_mismatch` when they disagree); customer legs from the agent's `Dial` Begin; UserEvents trusted only when their `ChanUniqueid` is a leg of the claimed attempt (a dialplan writer could forge it: keep dialplan write access to the operator). Covered by `tests/test_calling_legacy_pbx.py` with frames of the captured key sets, **not yet by a live call** (section 13). |
+| Outbound (Alitqan) | loopback trunk, E.164 | GSM gateways `Mobily18`…`Mobily26` (chan_sip) in failover order, national `05XXXXXXXX`: policy `trunks` + `dial_format: national_sa` |
 
 ## 16. Commissioning sheet (fill in)
 
