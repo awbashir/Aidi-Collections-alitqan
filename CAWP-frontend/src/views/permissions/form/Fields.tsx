@@ -20,6 +20,15 @@ import {
   phase1PermissionLabel,
 } from "@/constants/permissions.phase1";
 
+const CALLING_PERMISSION_KEYS = [
+  "calls",
+  "calls_make",
+  "calls_manage",
+  "calls_supervise",
+  "campaigns",
+  "campaigns_manage",
+];
+
 type FormFields = {
   id: string;
   name: string;
@@ -34,6 +43,18 @@ const Fields = (props: Fields) => {
   const { t, i18n } = useTranslation();
   const { values, touched, errors, contracts, reachability } = props;
 
+  /* The calling and campaign keys get their own top-level group, first in the tree
+     (customer feedback 2026-10-21: under Workflow permissions › Daily operations nobody
+     found them). Display only: the registry keeps their group. */
+  const callingNode = {
+    value: "calling_",
+    label: t("p5.perm.calling"),
+    children: CALLING_PERMISSION_KEYS.map((key) => ({
+      value: key,
+      label: phase1PermissionLabel(key, i18n.language),
+    })),
+  };
+
   /* Phase 1 keys (CAWP-API/core/permissions.py), grouped like the sidebar,
      labelled in the current language. */
   const phase1Node = {
@@ -44,7 +65,9 @@ const Fields = (props: Fields) => {
     children: PHASE1_PERMISSION_GROUPS.map((group) => ({
       value: `phase1_${group}_`,
       label: t(`p1.perm.group.${group}`),
-      children: PHASE1_PERMISSIONS.filter((p) => p.group === group).map(
+      children: PHASE1_PERMISSIONS.filter(
+        (p) => p.group === group && !CALLING_PERMISSION_KEYS.includes(p.key)
+      ).map(
         (p) => ({
           value: p.key,
           label: phase1PermissionLabel(p.key, i18n.language),
@@ -73,6 +96,7 @@ const Fields = (props: Fields) => {
       value: "all",
       label: "ـ",
       children: [
+        callingNode,
         {
           value: "dashbord_",
           label: "لوحة التحكم",
@@ -453,6 +477,7 @@ const Fields = (props: Fields) => {
       );
       setExpanded([
         "all",
+        "calling_",
         "phase1_",
         ...PHASE1_PERMISSION_GROUPS.map((g) => `phase1_${g}_`),
       ]);

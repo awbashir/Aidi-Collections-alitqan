@@ -3083,7 +3083,8 @@
       "minutes": "{{n}} min"
     },
     "perm": {
-      "section": "Workflow permissions (Phases 1–5)"
+      "section": "Workflow permissions (Phases 1–5)",
+      "calling": "Calling & campaigns"
     },
     "day": {
       "0": "Sun",
