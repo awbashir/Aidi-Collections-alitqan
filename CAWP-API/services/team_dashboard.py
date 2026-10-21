@@ -7,7 +7,7 @@ scope()):
 
 * a user whose role is `SuperAdmin` sees every user, every extension and every case;
 * a supervisor (an active `supervisors` row) sees the users of their team (active
-  `supervisor_users` rows) and themselves, and only the notes those users wrote on cases in the
+  `supervisor_users` rows, and since 2026-10-21 the users of their contracts) and themselves, and only the notes those users wrote on cases in the
   supervisor's own case scope (money.scope_sql: the cases of the team, or of the supervisor's
   contracts);
 * anyone else with access sees only themselves (their own notes on their own cases).
@@ -50,7 +50,7 @@ from sqlalchemy import text
 from core import riyadh
 from core.api_response import VALIDATION_FAILED, ApiError
 from services.calling import monitor
-from services.calling.common import USER_NAME_SQL, me, sess
+from services.calling.common import USER_NAME_SQL, iso, me, sess
 
 MAX_DAYS = monitor.MAX_DAYS
 GROUPS = ("status", "sub_status")
@@ -76,6 +76,14 @@ def scope(user_id=None) -> dict:
     team = {r[0] for r in sess().execute(text("""
         SELECT su.user_id::text FROM supervisors s
           JOIN supervisor_users su ON su.supervisor_id = s.id AND su.is_active
+         WHERE s.user_id = CAST(:u AS uuid) AND s.is_active
+        UNION
+        -- 2026-10-21: and the users of the supervisor's contracts (users.contract_id), as the case
+        -- scope already counts supervised contracts (services/clients_scope.py); the old system's
+        -- supervisors are linked to contracts, hardly to users
+        SELECT tu.id::text FROM supervisors s
+          JOIN supervisor_contracts sc ON sc.supervisor_id = s.id AND sc.is_active
+          JOIN users tu ON tu.contract_id = sc.contract_id AND tu.is_active
          WHERE s.user_id = CAST(:u AS uuid) AND s.is_active"""), {"u": uid})}
     team.add(uid)
     return {"kind": calls["kind"], "me": uid, "users": team, "calls": calls}
@@ -371,6 +379,131 @@ def dashboard(args, user_id=None, rows=None) -> dict:
 
 
 # --------------------------------------------------------------------------- download
+# --------------------------------------------------------------------------- one user's client updates
+UPDATES_PAGE_SIZE = 50
+UPDATES_MAX_PAGE_SIZE = 200
+CALL_BEFORE = _dt.timedelta(hours=3)          # the call an update reports is at most 3 h before it
+CALL_AFTER = _dt.timedelta(minutes=10)        # (or a few minutes after: the note saved during the call)
+
+
+def _page(args, name, default, hi) -> int:
+    raw = args.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        n = int(str(raw))
+    except ValueError:
+        raise ApiError(422, VALIDATION_FAILED, f"{name} must be a whole number", {name: "invalid"}) from None
+    if n < 1 or n > hi:
+        raise ApiError(422, VALIDATION_FAILED, f"{name} must be 1..{hi}", {name: "out_of_range"})
+    return n
+
+
+def user_updates(args, user_id=None, rows=None) -> dict:
+    """GET /v2/dashboards/team/user-updates?user_id=<one>&from&to&contract_id&page&page_size
+    (customer request 2026-10-21): the clients one user updated in the period, newest first, one
+    row per update (note) with the status it set and the call it reports: that user's call to one of
+    the client's numbers (the note's contacted number first, else the client's contacts) at most
+    3 h before the update (or 10 min after), the latest such call. No such call = `call: null`
+    (unknown, never guessed); PBX records unavailable = `calls.available: false`."""
+    sc = scope(user_id)
+    ids = _list_arg(args, "user_id")
+    if len(ids) != 1:
+        raise ApiError(422, VALIDATION_FAILED, "exactly one user_id is required", {"user_id": "required"})
+    flt = _filters(args, sc)
+    per = _period(args)
+    target = flt["users"][0]
+    page = _page(args, "page", 1, 1_000_000)
+    size = _page(args, "page_size", UPDATES_PAGE_SIZE, UPDATES_MAX_PAGE_SIZE)
+    where, params = _note_where(sc, flt)
+    marker = _marker()
+    base = f"""
+        FROM "Comments" m
+        JOIN clints c ON c.id = m.clint_id
+       WHERE m.is_deleted = false AND m.user_id = CAST(:target AS uuid)
+         AND m.create_at >= :lo AND m.create_at < :hi
+         AND left(m.comment, :mlen) <> :marker
+         AND {where}"""
+    qp = {"target": target, "lo": per["lo"], "hi": per["hi"], "mlen": len(marker), "marker": marker, **params}
+    agg = sess().execute(text(f"SELECT count(*), count(DISTINCT m.clint_id) {base}"), qp).one()
+    notes = sess().execute(text(f"""
+        SELECT m.id::text AS id, m.create_at, m.clint_id::text AS case_id, c.name AS client_name,
+               c."accountNumber" AS account_number, c."identityNumber" AS identity_number,
+               m.comment_status_id::text AS status_id, m.comment_sub_status_id::text AS sub_status_id,
+               m."contactNumber" AS contact_number, left(m.comment, 300) AS comment
+        {base}
+        ORDER BY m.create_at DESC, m.id DESC LIMIT :lim OFFSET :off"""),
+        {**qp, "lim": size, "off": (page - 1) * size}).mappings().all()
+    names = _statuses([n["status_id"] for n in notes] + [n["sub_status_id"] for n in notes])
+
+    # the user's calls of the period (their current extensions), one item per call
+    owners = sc["calls"]["owners"]
+    exts = {e for e, o in owners.items() if o["id"] == target}
+    calls_meta = {"available": True, "error": None, "truncated": False, "extensions": sorted(exts)}
+    items = []
+    if exts and notes:
+        csc = {**sc["calls"], "extensions": exts}
+        try:
+            cdr = monitor._rows_for(csc, per["cdr_lo"] - CALL_BEFORE, per["cdr_hi"] + CALL_AFTER, rows)
+            calls_meta["truncated"] = len(cdr) > monitor.MAX_CDR_ROWS
+            items = [c for c in monitor._merge(cdr, exts) if c["direction"] != "internal" and c["number"]]
+        except ApiError as e:
+            if e.status != 503:
+                raise
+            calls_meta.update(available=False, error=e.code)
+    # every number of the page's clients (and the notes' contacted numbers), normalised by the DB
+    keys_of_case: dict[str, set] = {}
+    if items:
+        idents = sorted({n["identity_number"] for n in notes if n["identity_number"]})
+        crow = sess().execute(text("""
+            SELECT cc."identityNumber", cawp_norm_mobile(cc.contact) FROM "ClintContacts" cc
+             WHERE cc.is_deleted = false AND cc."identityNumber" = ANY(CAST(:ids AS text[]))
+               AND cawp_norm_mobile(cc.contact) IS NOT NULL"""), {"ids": idents}).all() if idents else []
+        by_ident: dict[str, set] = {}
+        for ident, key in crow:
+            by_ident.setdefault(ident, set()).add(key)
+        nums = sorted({c["number"] for c in items} | {n["contact_number"] for n in notes if n["contact_number"]})
+        norm = dict(sess().execute(text("""SELECT m.n, cawp_norm_mobile(m.n) FROM unnest(CAST(:nums AS text[])) AS m(n)"""),
+                                   {"nums": nums}).all()) if nums else {}
+        for n in notes:
+            keys_of_case[n["id"]] = set(by_ident.get(n["identity_number"], set()))
+            own = norm.get(n["contact_number"]) if n["contact_number"] else None
+            if own:
+                keys_of_case[n["id"]].add(own)
+        for c in items:
+            c["key"] = norm.get(c["number"])
+            c["at_local"] = c["at"] if c["at"].tzinfo is None else c["at"].astimezone(riyadh.RIYADH).replace(tzinfo=None)
+
+    out = []
+    for n in notes:
+        at_local = riyadh.to_riyadh(n["create_at"]).replace(tzinfo=None)       # the PBX writes Riyadh wall clock
+        wanted = keys_of_case.get(n["id"]) or set()
+        best = None
+        for c in items:
+            if c.get("key") in wanted and at_local - CALL_BEFORE <= c["at_local"] <= at_local + CALL_AFTER:
+                if best is None or c["at_local"] > best["at_local"]:
+                    best = c
+        st, sub = names.get(n["status_id"]) or {}, names.get(n["sub_status_id"]) or {}
+        out.append({
+            "note_id": n["id"], "at": iso(n["create_at"]),
+            "client": {"case_id": n["case_id"], "name": n["client_name"], "account_number": n["account_number"]},
+            "status": {"id": n["status_id"], "name": st.get("name"), "color": st.get("color")} if n["status_id"] else None,
+            "sub_status": {"id": n["sub_status_id"], "name": sub.get("name"), "color": sub.get("color")}
+                          if n["sub_status_id"] else None,
+            "comment": n["comment"],
+            "call": None if best is None else {
+                "at": best["at"].replace(tzinfo=riyadh.RIYADH).isoformat() if best["at"].tzinfo is None else best["at"].isoformat(),
+                "direction": best["direction"], "answered": bool(best["answered"]), "result": best["result"] or None,
+                "talk_seconds": int(best["talk_seconds"] or 0), "ring_seconds": int(best["ring_seconds"] or 0),
+                "extension": best["extension"], "recorded": bool(best["recorded"])},
+        })
+    who = _user_rows([target]).get(target) or {}
+    return {"scope": sc["kind"], "user": {"id": target, "name": who.get("name"), "extensions": sorted(exts)},
+            "from": per["from"].isoformat(), "to": per["to"].isoformat(), "contract_id": flt["contract"],
+            "calls": calls_meta, "updates": int(agg[0]), "clients": int(agg[1]),
+            "items": out, "total": int(agg[0]), "page": page, "page_size": size}
+
+
 SCOPE_AR = {"all": "كل المستخدمين", "team": "الفريق", "own": "أنا فقط"}
 
 

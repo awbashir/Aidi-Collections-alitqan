@@ -17,6 +17,15 @@
           series: [{bucket, total, by_status: {key: n}}]}
       The call fields are null when the PBX call records are unavailable (calls.available false).
   GET /v2/dashboards/team/export   XLSX of the same query; writes an audit event       same keys
+  GET /v2/dashboards/team/user-updates   one user's client updates (2026-10-21)       same keys
+      ?user_id=<one>&from&to&contract_id&page=1&page_size=50 (max 200), newest first
+      -> {scope, user: {id, name, extensions}, from, to, contract_id, calls: {available, error,
+          truncated, extensions}, updates, clients, total, page, page_size,
+          items: [{note_id, at, client: {case_id, name, account_number}, status, sub_status, comment,
+                   call: {at, direction, answered, result, talk_seconds, ring_seconds, extension,
+                          recorded} | null}]}
+      call = that user's call to one of the client's numbers at most 3 h before the update (or
+      10 min after); null when there is none (unknown, never guessed)
 
 Scope is applied on the server: SuperAdmin every user, a supervisor their team (and only notes
 on cases in their scope), anyone else themselves.
@@ -46,6 +55,13 @@ URL_PREFIX = None
 @permission_required(CALLS_SUPERVISE, CALLS_MANAGE)
 def team_dashboard():
     return ok(svc.dashboard(request.args))
+
+
+@bp.get("/v2/dashboards/team/user-updates")
+@jwt_required()
+@permission_required(CALLS_SUPERVISE, CALLS_MANAGE)
+def team_user_updates():
+    return ok(svc.user_updates(request.args))
 
 
 @bp.get("/v2/dashboards/team/export")

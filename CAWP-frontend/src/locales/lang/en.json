@@ -6201,6 +6201,10 @@
       }
     },
     "teamdash": {
+      "updatesTitle": "Client updates: {{name}}",
+      "updatesSubtitle": "{{updates}} updates on {{clients}} clients, newest first",
+      "updatesHint": "Click a user in the table to see the clients they updated.",
+      "upd": {"time": "Time", "client": "Client", "status": "Updated status", "callStatus": "Call status", "duration": "Call duration", "note": "Note", "noCall": "No call found", "noCallHint": "No call by this user to this client's numbers in the 3 hours before the update", "callsUnavailable": "The PBX call records are unavailable: call status and duration are unknown.", "empty": "No client updates in this period", "prev": "Previous", "next": "Next", "page": "Page {{page}} of {{pages}}", "inbound": "incoming"},
       "nav": "Team performance",
       "title": "Team performance dashboard",
       "subtitle": "Calls and client status updates per user",

@@ -5,7 +5,8 @@ Scope, decided here for every request (never by the page); the page's user filte
 
 * a user whose role is `SuperAdmin` sees every extension and calls not yet at an agent (IVR);
 * a supervisor (an active `supervisors` row) sees the active extensions of their team
-  (`supervisor_users`) and their own;
+  (`supervisor_users`, and since 2026-10-21 the users of their contracts: `supervisor_contracts`
+  × `users.contract_id`) and their own;
 * anyone else with access sees only their own active extension.
 
 Live calls come from the calling service's channel snapshot (`pbx_live_channels`, refreshed
@@ -108,6 +109,14 @@ def scope(user_id=None) -> dict:
     team = {r[0] for r in sess().execute(text("""
         SELECT su.user_id::text FROM supervisors s
           JOIN supervisor_users su ON su.supervisor_id = s.id AND su.is_active
+         WHERE s.user_id = CAST(:u AS uuid) AND s.is_active
+        UNION
+        -- 2026-10-21: and the users of the supervisor's contracts (users.contract_id), as the case
+        -- scope already counts supervised contracts (services/clients_scope.py); the old system's
+        -- supervisors are linked to contracts, hardly to users
+        SELECT tu.id::text FROM supervisors s
+          JOIN supervisor_contracts sc ON sc.supervisor_id = s.id AND sc.is_active
+          JOIN users tu ON tu.contract_id = sc.contract_id AND tu.is_active
          WHERE s.user_id = CAST(:u AS uuid) AND s.is_active"""), {"u": uid})}
     kind = "team" if team else "own"
     team.add(uid)

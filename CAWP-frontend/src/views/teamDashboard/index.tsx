@@ -33,6 +33,7 @@ import type { Option, Translate } from '@/services/v2'
 import { teamDashboardApi } from '@/services/v2/teamDashboardApi'
 import type { TeamDashboard, TeamGroup, TeamStatus, TeamUserRow } from '@/services/v2/teamDashboardApi'
 import { useV2Query } from '@/utils/v2/hooks'
+import UserUpdates from './UserUpdates'
 import { formatCount, formatMoney, riyadhToday } from '@/utils/v2/format'
 
 const { THead, TBody, Tr, Th, Td } = Table
@@ -483,6 +484,13 @@ const TeamDashboardPage = () => {
                         </Table>
                     </TableFrame>
                     <p className="text-[12px] text-gray-600">{t('p10.teamdash.note')}</p>
+                    {users.length === 1 ? (
+                        <UserUpdates userId={users[0]} from={data?.from || from} to={data?.to || to} contractId={contract || undefined} />
+                    ) : (
+                        <p className="text-[12.5px] text-gray-600" data-testid="p10-teamdash-updates-hint">
+                            {t('p10.teamdash.updatesHint')}
+                        </p>
+                    )}
                 </>
             )}
         </div>

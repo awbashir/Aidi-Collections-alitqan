@@ -896,3 +896,21 @@ def test_contract_filter_narrows_to_that_contracts_users_within_scope(mon_app, p
         assert live["contract"] == c1 and {x["extension"] for x in live["agents"]} >= {ea, ec}
         assert eb not in {x["extension"] for x in live["agents"]}
         db.session.remove()
+
+
+def test_a_supervisor_linked_only_to_a_contract_sees_that_contracts_users(mon_app, pgc):
+    from test_calling_helpers import run
+    c1, _ = new_contract(pgc, "Sup contract only A")
+    c2, _ = new_contract(pgc, "Sup contract only B")
+    a, b = new_user(pgc), new_user(pgc)
+    run(pgc, "UPDATE users SET contract_id = %s WHERE id = %s", c1, a)
+    run(pgc, "UPDATE users SET contract_id = %s WHERE id = %s", c2, b)
+    ea, eb = (f"5{uuid.uuid4().int % 900 + 100}" for _ in range(2))
+    own(pgc, a, ea)
+    own(pgc, b, eb)
+    sup = new_supervisor(pgc, contracts=[c1])                      # no supervisor_users rows at all
+    from extensions import db
+    with mon_app.app_context():
+        sc = monitor.scope(sup)
+        db.session.remove()
+    assert sc["kind"] == "team" and ea in sc["extensions"] and eb not in sc["extensions"]
