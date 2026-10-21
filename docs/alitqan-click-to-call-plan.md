@@ -50,8 +50,10 @@ after the first wrap-up; pause, then "next" refused `409 campaign_not_running`; 
 attempts, both reservations released.
 
 **Result: every gate run passed** (8 and 10b skipped by decision). The dispatcher and campaigns are
-ON. Left: archive the test cases TEST-CALL-0001/0002 and the test contract, delete the live-test
-helpers `/root/c2c_*.py` and `/root/.fahad_token` on the app server.
+ON. Cleaned up after the test: TEST-CALL-0001/0002 archived (reason منتهي, audited), the test
+contract deactivated, the live-test helpers and token deleted, the temporary test database
+(`/tmp/alq-test`) stopped and removed. The stopped test campaign and the test attempts stay as
+history (never deleted).
 
 ## 1. How a call works (extension-first)
 
