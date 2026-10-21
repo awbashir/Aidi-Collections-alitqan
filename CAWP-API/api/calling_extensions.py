@@ -13,6 +13,9 @@ services/calling/extension_provisioning.py has the rules; assign / release stay 
   POST /v2/calling/pbx-extensions/<ext>/retry      retry a pending / failed request {reason?}                   calls_manage
   POST /v2/calling/pbx-extensions/<ext>/rename     {name, reason}                                               calls_manage
   POST /v2/calling/pbx-extensions/<ext>/delete     {reason}: unassigned only (or cancel a pending request)      calls_manage
+  POST /v2/calling/pbx-extensions/<ext>/sip-password  {reason}: a new SIP password for an app-created
+                                                   desk-phone extension, shown ONCE (chan_sip PBX; NOT
+                                                   idempotent on purpose, Cache-Control: no-store)       calls_manage
   PUT  /v2/calling/users/<user_id>/softphone       {enabled, reason}: the user's in-app softphone (0082; off by
                                                    default; off revokes the user's SIP credentials)             calls_manage
 
@@ -30,7 +33,7 @@ from core.api_response import created, json_body, ok, register_api_errors
 from core.idempotency import idempotent
 from services.calling import extension_provisioning as prov
 from services.calling import softphone_access
-from services.calling.common import CALLS_MANAGE, permission_required
+from services.calling.common import CALLS_MANAGE, permission_required, sess
 
 bp = Blueprint("calling_extensions", __name__)
 register_api_errors(bp)
@@ -103,6 +106,23 @@ def rename(extension):
 @idempotent()
 def delete(extension):
     return ok(prov.delete(extension, json_body()), "extension deleted")
+
+
+@bp.post("/v2/calling/pbx-extensions/<extension>/sip-password")
+@jwt_required()
+@permission_required(CALLS_MANAGE)
+def new_sip_password(extension):
+    # Not @idempotent: the idempotency store keeps the answer, and the answer is a password.
+    try:
+        data = prov.new_sip_password(extension, json_body())
+        sess().commit()
+    except Exception:
+        sess().rollback()
+        raise
+    body, status = ok(data, "new SIP password set; shown once")
+    body.headers["Cache-Control"] = "no-store, max-age=0"
+    body.headers["Pragma"] = "no-cache"
+    return body, status
 
 
 @bp.put("/v2/calling/users/<uuid:user_id>/softphone")

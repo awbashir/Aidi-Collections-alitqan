@@ -16,6 +16,8 @@ export type SipCredential = {
     display_name: string
     wss_url: string
     ice_servers: RTCIceServer[]
+    /** SIP_RTCP_MUX_POLICY: 'negotiate' for a PBX without rtcp-mux (Asterisk 11); absent = 'require' */
+    rtcp_mux_policy?: 'require' | 'negotiate'
     issued_at: string
     expires_at: string
     ttl_seconds: number

@@ -14,6 +14,9 @@
  * - Settings: auto-create for new users (on by default) and the allocation range.
  * - In-app softphone per owner (0082): off by default (the users call from their own VoIP
  *   phones); enable / disable with a reason.
+ * - Desk-phone SIP password (chan_sip PBX): right after a create, and on demand for app-created
+ *   extensions, the PBX sets a new random password that is shown ONCE here (component state only,
+ *   never stored by the app) for the admin to type into the phone.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -35,7 +38,8 @@ import type { HashSchema } from '@/utils/hooks/useHashState'
 import { callingAdminApi, describeP5Error, isV2Error, newIdempotencyKey } from '@/services/v2'
 import type { Option, Translate } from '@/services/v2'
 import { extProvisionApi } from '@/services/v2/extProvisionApi'
-import type { ExtSettings, ExtStatus, ExtView, ManagedExtension, ProvisionRequest, UserWithoutExtension } from '@/services/v2/extProvisionApi'
+import type { ExtSettings, ExtStatus, ExtView, ManagedExtension, ProvisionRequest, SipPassword, UserWithoutExtension } from '@/services/v2/extProvisionApi'
+import Dialog from '@/components/ui/Dialog'
 import { useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { Card, Fact, Notice } from '../parts'
@@ -231,7 +235,7 @@ const UserPicker = ({ isOpen, value, onChange, preset }: { isOpen: boolean; valu
 
 /* ------------------------------------------------------------------ dialogs */
 
-const CreateDialog = ({ isOpen, preset, settings, onClose, onDone }: { isOpen: boolean; preset: UserWithoutExtension | null; settings: ExtSettings | undefined; onClose: () => void; onDone: () => void }) => {
+const CreateDialog = ({ isOpen, preset, settings, onClose, onDone }: { isOpen: boolean; preset: UserWithoutExtension | null; settings: ExtSettings | undefined; onClose: () => void; onDone: (created?: ProvisionRequest) => void }) => {
     const { t } = useTranslation()
     const [ext, setExt] = useState('')
     const [name, setName] = useState('')
@@ -261,7 +265,7 @@ const CreateDialog = ({ isOpen, preset, settings, onClose, onDone }: { isOpen: b
                     key
                 )
                 announce(t, res)
-                onDone()
+                onDone(res)
             }}
         >
             <DialogField
@@ -278,6 +282,84 @@ const CreateDialog = ({ isOpen, preset, settings, onClose, onDone }: { isOpen: b
                 <Input textArea value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} data-testid="p10-ext-create-reason" />
             </DialogField>
         </ActionDialog>
+    )
+}
+
+/** Step 1: ask the PBX for a new SIP password (reason). The answer goes to `onResult` only. */
+const SipPasswordDialog = ({ target, onClose, onResult }: { target: { extension: string; afterCreate: boolean } | null; onClose: () => void; onResult: (p: SipPassword) => void }) => {
+    const { t } = useTranslation()
+    const [reason, setReason] = useState('')
+    useEffect(() => {
+        if (target) setReason(target.afterCreate ? String(t('p10.extprov.sipPwDefaultReason')) : '')
+    }, [target, t])
+    return (
+        <ActionDialog
+            isOpen={!!target}
+            title={t('p10.extprov.sipPwTitle', { ext: target?.extension || '' })}
+            confirmLabel={t('p10.extprov.sipPwGenerate')}
+            tone={target?.afterCreate ? 'primary' : 'danger'}
+            canSubmit={reason.trim().length > 0}
+            testId="p10-ext-sippw"
+            describeError={describeExtError}
+            onClose={onClose}
+            onSubmit={async (key) => {
+                if (!target) return
+                onResult(await extProvisionApi.newSipPassword(target.extension, { reason: reason.trim() }, key))
+            }}
+        >
+            <Note className="mb-3">{target?.afterCreate ? t('p10.extprov.sipPwHintNew') : t('p10.extprov.sipPwHintReset')}</Note>
+            <DialogField label={t('p1.fields.reason')} required hint={t('p1.hint.reasonRequired')}>
+                <Input textArea value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} data-testid="p10-ext-sippw-reason" />
+            </DialogField>
+        </ActionDialog>
+    )
+}
+
+const CopyRow = ({ label, value, testId }: { label: string; value: string; testId: string }) => {
+    const { t } = useTranslation()
+    const [copied, setCopied] = useState(false)
+    return (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2 dark:border-night-border">
+            <div className="min-w-0">
+                <div className="text-[12px] text-gray-600">{label}</div>
+                <Ltr className="break-all font-mono text-[15px] font-extrabold text-navy-600 dark:text-gray-100" data-testid={testId}>
+                    {value}
+                </Ltr>
+            </div>
+            <Button
+                size="xs"
+                onClick={() => {
+                    void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => setCopied(false))
+                }}
+            >
+                {copied ? t('p10.extprov.copied') : t('p10.extprov.copy')}
+            </Button>
+        </div>
+    )
+}
+
+/** Step 2: the password, once. Closing forgets it (it is nowhere else). */
+const SipPasswordShown = ({ value, onClose }: { value: SipPassword | null; onClose: () => void }) => {
+    const { t } = useTranslation()
+    return (
+        <Dialog isOpen={!!value} width={520} onClose={onClose} onRequestClose={onClose} shouldCloseOnOverlayClick={false}>
+            {value && (
+                <div data-testid="p10-ext-sippw-shown">
+                    <h5 className="mb-3 pe-8 text-[17px] font-extrabold text-navy-600 dark:text-gray-100">{t('p10.extprov.sipPwShownTitle', { ext: value.extension })}</h5>
+                    <Notice tone="warning" className="mb-4">
+                        {t('p10.extprov.sipPwOnce')}
+                    </Notice>
+                    <CopyRow label={t('p10.extprov.sipPwUser')} value={value.sip_username} testId="p10-ext-sippw-user" />
+                    <CopyRow label={t('p10.extprov.sipPwPassword')} value={value.sip_password} testId="p10-ext-sippw-password" />
+                    {value.sip_server && <CopyRow label={t('p10.extprov.sipPwServer')} value={`${value.sip_server}:${value.port} (${value.transport.toUpperCase()})`} testId="p10-ext-sippw-server" />}
+                    <div className="mt-4 flex justify-end">
+                        <Button size="sm" variant="solid" onClick={onClose} data-testid="p10-ext-sippw-done">
+                            {t('p10.extprov.sipPwDone')}
+                        </Button>
+                    </div>
+                </div>
+            )}
+        </Dialog>
     )
 }
 
@@ -525,6 +607,8 @@ const ExtensionsPage = () => {
     const [releasing, setReleasing] = useState<ManagedExtension | null>(null)
     const [deleting, setDeleting] = useState<ManagedExtension | null>(null)
     const [switching, setSwitching] = useState<ManagedExtension | null>(null)
+    const [pwFor, setPwFor] = useState<{ extension: string; afterCreate: boolean } | null>(null)
+    const [pwShown, setPwShown] = useState<SipPassword | null>(null)
     const switchOn = !switching?.owner?.softphone_enabled
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [retrying, setRetrying] = useState<string | null>(null)
@@ -723,6 +807,11 @@ const ExtensionsPage = () => {
                                                             {t('p10.extprov.release')}
                                                         </Button>
                                                     )}
+                                                    {x.pbx?.managed && x.pbx?.tech === 'sip' && (
+                                                        <Button size="xs" onClick={() => setPwFor({ extension: x.extension, afterCreate: false })} data-testid="p10-ext-sippw-open">
+                                                            {t('p10.extprov.sipPwButton')}
+                                                        </Button>
+                                                    )}
                                                     {x.on_pbx && (
                                                         <Button size="xs" onClick={() => setRenaming(x)} data-testid="p10-ext-rename-open">
                                                             {t('p10.extprov.rename')}
@@ -755,7 +844,19 @@ const ExtensionsPage = () => {
 
             <UsersWithout reloadKey={reloadKey} canCreate={canCreate} onCreate={(u) => setCreating({ preset: u })} onAssign={(u) => setAssigning({ ext: null, user: u })} />
 
-            <CreateDialog isOpen={!!creating} preset={creating?.preset || null} settings={settings} onClose={() => setCreating(null)} onDone={reload} />
+            <CreateDialog
+                isOpen={!!creating}
+                preset={creating?.preset || null}
+                settings={settings}
+                onClose={() => setCreating(null)}
+                onDone={(res) => {
+                    reload()
+                    // a desk phone needs its SIP password: the PBX sets one and it is shown once
+                    if (res?.state === 'active' && data?.pbx_tech === 'sip') setPwFor({ extension: res.extension, afterCreate: true })
+                }}
+            />
+            <SipPasswordDialog target={pwFor} onClose={() => setPwFor(null)} onResult={setPwShown} />
+            <SipPasswordShown value={pwShown} onClose={() => setPwShown(null)} />
             <AssignDialog isOpen={!!assigning} ext={assigning?.ext || null} user={assigning?.user || null} unassigned={unassigned} onClose={() => setAssigning(null)} onDone={reload} />
             <RenameDialog x={renaming} onClose={() => setRenaming(null)} onDone={reload} />
             <SettingsDialog settings={settings} isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} onDone={reload} />

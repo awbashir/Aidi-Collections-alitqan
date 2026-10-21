@@ -10,7 +10,9 @@ stdlib urllib, no proxy, no redirects (the token never follows one), a bounded a
     PBX_PROVISION_TIMEOUT  seconds per call (default 60: a create runs retrieve_conf + core reload)
 
 Routes (JSON): GET v1/extensions, GET v1/extensions/<ext>, POST v1/extensions {extension, name},
-POST v1/extensions/<ext>/rename {name}, DELETE v1/extensions/<ext>.
+POST v1/extensions/<ext>/rename {name}, DELETE v1/extensions/<ext>, POST v1/extensions/<ext>/secret
+(chan_sip PBX only, Alitqan 2026-10-21: a new random SIP password for an app-created desk-phone
+extension, in the answer once; never logged here: no answer body is ever logged).
 
 * `ProvisionUnavailable`: the PBX could not be asked (not configured, unreachable, timeout, a 5xx
   without an answer). The change may or may not have happened only for a timeout on a write; the
@@ -136,3 +138,25 @@ def rename(extension: str, name: str) -> dict:
 
 def delete(extension: str) -> dict:
     return _call("DELETE", f"v1/extensions/{_ext(extension)}")
+
+
+def new_secret(extension: str) -> dict:
+    """{extension, sip_username, sip_secret}: the PBX sets a new random SIP password (app-created
+    extensions only) and returns it once."""
+    return _call("POST", f"v1/extensions/{_ext(extension)}/secret", {})
+
+
+def webrtc(extension: str, enabled: bool) -> dict:
+    """chan_sip PBX (0083): convert an extension to a WebRTC (browser) extension, or restore the
+    desk-phone settings it had before (its original password included). `on` answers the new
+    WebRTC password once (`sip_secret`); `off` answers none."""
+    return _call("POST", f"v1/extensions/{_ext(extension)}/webrtc", {"enabled": bool(enabled)})
+
+
+def sip_server() -> str | None:
+    """The address desk phones register to: PBX_SIP_SERVER, else the provisioning URL's host."""
+    explicit = (os.getenv("PBX_SIP_SERVER") or "").strip()
+    if explicit:
+        return explicit
+    host = urllib.parse.urlsplit(_base()).hostname if _base() else None
+    return host or None

@@ -9,9 +9,14 @@
  *   POST   /v1/extensions                 {"extension": "141", "name": "..."}   create
  *   POST   /v1/extensions/<ext>/rename    {"name": "..."}                       rename
  *   DELETE /v1/extensions/<ext>                                                  delete
+ *   POST   /v1/extensions/<ext>/secret    {}  new SIP password, once (chan_sip script only)
+ *   POST   /v1/extensions/<ext>/webrtc    {"enabled": true|false}  in-app softphone on/off (chan_sip script only)
  *
  * Answers the script's JSON with the HTTP status it names. Install: /var/www/cawp-provision/index.php
  * (root:root 0644).
+ *
+ * index-php54.php is the same file for PHP 5.4 (Issabel 4 / CentOS 7 mod_php, e.g. Alitqan):
+ * no scalar type hints, no null-coalescing operator. Keep the two in step.
  */
 const SCRIPT = '/usr/local/sbin/cawp-ext-provision';
 
@@ -79,6 +84,11 @@ if ($path === '/v1/extensions') {
     if ($method === 'DELETE') {
         run(['delete', $m[1]]);
     }
+} elseif (preg_match('#^/v1/extensions/([0-9]{2,6})/secret$#', $path, $m) && $method === 'POST') {
+    run(['secret', $m[1]]);
+} elseif (preg_match('#^/v1/extensions/([0-9]{2,6})/webrtc$#', $path, $m) && $method === 'POST') {
+    $b = body();
+    run(['webrtc', $m[1], !empty($b['enabled']) ? 'on' : 'off']);
 } elseif (preg_match('#^/v1/extensions/([0-9]{2,6})/rename$#', $path, $m) && $method === 'POST') {
     $b = body();
     run(['rename', $m[1], (string)($b['name'] ?? '')]);

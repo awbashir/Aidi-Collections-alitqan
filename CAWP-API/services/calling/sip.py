@@ -16,6 +16,10 @@ Design (review/phase5-softphone.md §2):
   longer than needed) and is rate limited per user.
 * 0082: only for a user whose softphone a calling administrator switched on
   (services/calling/softphone_access.py); off by default, the users dial from their desk phones.
+* 0083, SIP_CREDENTIAL_MODE=static (chan_sip PBX): the PBX cannot read these credentials, so the
+  answer carries the extension's own WebRTC password (services/calling/sip_static.py) under the
+  same checks (owner, switch, active user, rate limit, audit, no-store); `expires_at` is then only
+  the refresh hint, and nothing is written to sip_credentials.
 
 Nothing here talks to the PBX. Nothing here logs the password or the HA1.
 """
@@ -26,6 +30,7 @@ import hashlib
 import hmac
 import secrets
 import time
+from datetime import timedelta
 
 from sqlalchemy import text
 
@@ -33,7 +38,7 @@ from core import audit
 from core.api_response import ApiError
 from services.calling import extensions as ext_svc
 from services.calling import settings as settings_svc
-from services.calling import softphone_access
+from services.calling import sip_static, softphone_access
 from services.calling.common import advisory_lock, iso, sess, user_row
 from services.calling.sip_config import SipSettings, load
 from services.calling.sip_tag import ATTEMPT_HEADER
@@ -100,13 +105,27 @@ def status(user_id) -> dict:
                    "issued_at": iso(cur["issued_at"]), "expires_at": iso(cur["expires_at"]),
                    "active": bool(cur["unexpired"]) and extension is not None
                    and extension["extension"] == cur["extension"]}
+    static = settings is not None and settings.credential_mode == "static"
+    if static:                                      # 0083: the extension's own WebRTC password
+        stored = sip_static.row(extension["extension"]) if extension else None
+        current = None if stored is None else {
+            "credential_id": f"static:{stored['extension']}", "extension": stored["extension"],
+            "issued_at": iso(stored["created_at"]), "expires_at": None,
+            "active": str(stored["user_id"]) == str(user_id)}
+        if current is not None and not current["active"]:
+            current = None                              # set for a previous owner: not usable
     if not configured:
         why = reason
     elif not enabled:
         why = softphone_access.DISABLED
+    elif not extension:
+        why = NO_EXTENSION
+    elif static and current is None:
+        why = "softphone_not_provisioned"
     else:
-        why = None if extension else NO_EXTENSION
+        why = None
     return {"configured": configured, "enabled": enabled, "reason": why,
+            "mode": settings.credential_mode if settings else None,
             "extension": extension["extension"] if extension else None,
             "wss_url": settings.wss_url if settings else None,
             "ttl_seconds": settings.ttl_seconds if settings else None,
@@ -131,6 +150,8 @@ def issue(user_id) -> dict:
         raise ApiError(403, "actor_inactive", "your account is not active", {"rule": "actor_inactive"})
     extension = owner["extension"]
     advisory_lock("sip-credentials-extension", extension)
+    if settings.credential_mode == "static":
+        return _issue_static(settings, user_id, user, owner)
 
     recent = sess().execute(text("""
         SELECT count(*) FROM sip_credentials
@@ -184,7 +205,57 @@ def issue(user_id) -> dict:
         "register_expires": settings.register_expires,
         "auto_answer": {"header": ATTEMPT_HEADER, "enabled": bool(prefs["auto_answer_attempts"])},
         "dial_policy": _dial_policy(settings),
+        "rtcp_mux_policy": settings.rtcp_mux_policy,
         "storage": "memory_only",
+    }
+
+
+def _issue_static(settings: SipSettings, user_id: str, user, owner) -> dict:
+    """chan_sip PBX (0083): the extension's own WebRTC password, decrypted for its active owner."""
+    extension = owner["extension"]
+    recent = sess().execute(text("""
+        SELECT count(*) FROM audit_events
+         WHERE action = 'calling.sip_credentials.issue' AND actor_user_id = CAST(:u AS uuid)
+           AND occurred_at > now() - interval '10 minutes'"""), {"u": user_id}).scalar_one()
+    if recent >= settings.issue_limit:
+        raise ApiError(429, TOO_MANY, "too many softphone credentials were issued; wait a few minutes",
+                       {"limit": settings.issue_limit, "window_seconds": 600})
+    stored = sip_static.row(extension)
+    # the password belongs to the owner it was set for: after an ownership change the old owner may
+    # still know it, so the new owner gets none until the switch rotates it on the PBX
+    if stored is not None and str(stored["user_id"]) != user_id:
+        stored = None
+    password = sip_static.password(extension) if stored is not None else None
+    if password is None:
+        raise ApiError(409, "softphone_not_provisioned",
+                       "your extension is not set up for the browser yet; ask a calling administrator to "
+                       "switch your softphone off and on again", {"rule": "softphone_not_provisioned"})
+    issued_at = sess().execute(text("SELECT now()")).scalar_one()
+    expires_at = issued_at + timedelta(seconds=settings.ttl_seconds)
+    audit.record("calling.sip_credentials.issue", "sip_credential", extension,
+                 after={"extension": extension, "mode": "static", "realm": settings.realm,
+                        "ttl_seconds": settings.ttl_seconds})
+    prefs = settings_svc.get_preferences(user_id)
+    return {
+        "credential_id": f"static:{extension}",
+        "extension": extension,
+        "sip_uri": f"sip:{extension}@{settings.domain}",
+        "authorization_user": extension,
+        "realm": settings.realm,
+        "password": password,
+        "display_name": user["name"] or extension,
+        "wss_url": settings.wss_url,
+        "ice_servers": turn_credentials(settings, user_id),
+        "issued_at": iso(issued_at),
+        "expires_at": iso(expires_at),
+        "ttl_seconds": settings.ttl_seconds,
+        "refresh_after_seconds": max(30, int(settings.ttl_seconds * 0.7)),
+        "register_expires": settings.register_expires,
+        "auto_answer": {"header": ATTEMPT_HEADER, "enabled": bool(prefs["auto_answer_attempts"])},
+        "dial_policy": _dial_policy(settings),
+        "rtcp_mux_policy": settings.rtcp_mux_policy,
+        "storage": "memory_only",
+        "mode": "static",
     }
 
 

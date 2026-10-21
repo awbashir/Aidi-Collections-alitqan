@@ -410,7 +410,9 @@ def overview(args) -> dict:
     items.sort(key=lambda i: (len(i["extension"]), i["extension"]))
     return {"items": items, "counts": counts, "pbx_status": pbx_status,
             "asterisk": (raw or {}).get("asterisk") if raw else None,
-            "pbx_range": (raw or {}).get("range") if raw else None, "settings": st}
+            "pbx_range": (raw or {}).get("range") if raw else None,
+            # "sip" from the chan_sip script (desk phones: the page then offers a SIP password)
+            "pbx_tech": (raw or {}).get("tech") if raw else None, "settings": st}
 
 
 def users_without_extension(args) -> dict:
@@ -542,6 +544,37 @@ def rename(extension, body) -> dict:
                             "WHERE id = CAST(:id AS uuid)"), {"n": name, "id": str(rec_id)})
     audit.record("calling.pbx_extension.rename", "extension", extension, after={"name": name}, reason=reason)
     return {"extension": extension, "renamed": bool(res.get("renamed")), "pbx": res.get("item")}
+
+
+def new_sip_password(extension, body) -> dict:
+    """A new random SIP password for an app-created desk-phone extension (chan_sip PBX, Alitqan
+    2026-10-21), returned ONCE for the admin to type into the phone. The route is deliberately not
+    @idempotent (the idempotency store keeps the answer) and answers Cache-Control: no-store; the
+    audit event has the extension and the reason, never the password. A repeated call sets another
+    password (harmless). The phone stops registering until it gets the new one."""
+    extension = extension_arg(extension)
+    reason = required_text(body, "reason", max_len=1000)
+    unknown = set(body) - {"reason"}
+    if unknown:
+        raise ApiError(422, VALIDATION_FAILED, f"unknown fields: {', '.join(sorted(unknown))}",
+                       {k: "unknown" for k in unknown})
+    advisory_lock("calling_extension", f"ext:{extension}")
+    try:
+        res = pbx.new_secret(extension)
+    except pbx.ProvisionUnavailable as e:
+        raise ApiError(503, "pbx_unavailable", "the PBX provisioning API could not be reached",
+                       {"reason": e.reason}) from None
+    except pbx.ProvisionRefused as e:
+        raise _refusal(e, extension) from None
+    password = res.get("sip_secret")
+    if not isinstance(password, str) or not password:
+        raise ApiError(502, "pbx_bad_answer", "the PBX did not return a password", {"extension": extension})
+    owner = ext_svc.active_for_extension(extension)
+    audit.record("calling.pbx_extension.sip_password", "extension", extension, reason=reason,
+                 after={"owner_id": s(owner["user_id"]) if owner else None})
+    return {"extension": extension, "sip_username": res.get("sip_username") or extension,
+            "sip_password": password, "sip_server": pbx.sip_server(), "transport": "udp", "port": 5060,
+            "storage": "shown_once"}
 
 
 def delete(extension, body) -> dict:

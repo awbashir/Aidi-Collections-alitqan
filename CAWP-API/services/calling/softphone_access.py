@@ -7,10 +7,17 @@ every user until a calling administrator switches it on for that user (no row = 
 * `is_enabled` gates the SIP credential issue (services/calling/sip.py); the PBX realtime auth
   view `pbx_ps_auths` joins the same table, so an older credential never registers either.
 * Switching it off revokes the user's current SIP credentials in the same transaction.
+* SIP_CREDENTIAL_MODE=static (chan_sip PBX, 0083): switching on also converts the user's extension
+  to a WebRTC extension on the PBX (its desk phone stops working meanwhile) and keeps the new
+  WebRTC password encrypted (sip_static); switching off restores the desk-phone settings the
+  extension had (its original password included) and deletes the stored password. The PBX is
+  asked BEFORE anything is written here; a refusal or an unreachable PBX changes nothing.
 * Every switch is audited with its reason. Nothing here talks to the PBX. Never commits (the
   @idempotent route does).
 """
 from __future__ import annotations
+
+import os
 
 from sqlalchemy import text
 
@@ -66,6 +73,7 @@ def set_enabled(user_id, body) -> dict:
         raise ApiError(404, NOT_FOUND, "user not found")
     advisory_lock("sip-credentials-user", user_id)
     before = get(user_id)
+    pbx_change = _pbx_switch(user_id, enabled) if static_mode() else None
     sess().execute(text("""
         INSERT INTO user_softphone_access (user_id, enabled, reason, updated_by)
         VALUES (CAST(:u AS uuid), :on, :r, CAST(:by AS uuid))
@@ -78,5 +86,58 @@ def set_enabled(user_id, body) -> dict:
         from services.calling import sip as sip_svc      # sip imports this module
         revoked = sip_svc.revoke_mine(user_id, reason=DISABLED)["revoked"]
     audit.record("calling.softphone_access.set", "user_softphone_access", user_id, reason=reason,
-                 before={"enabled": before["enabled"]}, after={"enabled": enabled, "credentials_revoked": revoked})
-    return {**get(user_id), "credentials_revoked": revoked}
+                 before={"enabled": before["enabled"]},
+                 after={"enabled": enabled, "credentials_revoked": revoked, "pbx": pbx_change})
+    return {**get(user_id), "credentials_revoked": revoked, "pbx": pbx_change}
+
+
+def static_mode() -> bool:
+    return (os.getenv("SIP_CREDENTIAL_MODE") or "").strip().lower() == "static"
+
+
+def _pbx_switch(user_id: str, enabled: bool) -> dict | None:
+    """chan_sip PBX: convert / restore the user's extension (see the module docstring). Returns
+    {extension, webrtc} for the response and the audit (never the password), or None when nothing
+    had to change on the PBX."""
+    from services.calling import extension_provisioning as prov
+    from services.calling import extensions as ext_svc
+    from services.calling import pbx_provision as pbx
+    from services.calling import sip_static
+    owner = ext_svc.active_for_user(user_id)
+    if enabled:
+        if owner is None:
+            raise ApiError(409, "no_extension", "the user has no extension: assign one before enabling the softphone",
+                           {"rule": "no_extension"})
+        ext = owner["extension"]
+        stored = sip_static.row(ext)
+        if stored is not None and str(stored["user_id"]) == str(user_id):
+            return None                                  # already a WebRTC extension of this user
+        sip_static._key()                                # 503 now if the key is missing, before the PBX changes
+        try:
+            res = pbx.webrtc(ext, True)
+        except pbx.ProvisionUnavailable as e:
+            raise ApiError(503, "pbx_unavailable", "the PBX provisioning API could not be reached",
+                           {"reason": e.reason}) from None
+        except pbx.ProvisionRefused as e:
+            raise prov._refusal(e, ext) from None
+        secret = res.get("sip_secret")
+        if not isinstance(secret, str) or not secret:
+            raise ApiError(502, "pbx_bad_answer", "the PBX did not return the WebRTC password", {"extension": ext})
+        sip_static.store(ext, user_id, secret)
+        return {"extension": ext, "webrtc": True}
+    rows = sess().execute(text("SELECT extension FROM sip_static_secrets WHERE user_id = CAST(:u AS uuid)"),
+                          {"u": user_id}).scalars().all()
+    exts = set(rows) | ({owner["extension"]} if owner is not None and sip_static.row(owner["extension"]) else set())
+    if not exts:
+        return None
+    for ext in sorted(exts):
+        try:
+            pbx.webrtc(ext, False)
+        except pbx.ProvisionUnavailable as e:
+            raise ApiError(503, "pbx_unavailable", "the PBX provisioning API could not be reached",
+                           {"reason": e.reason}) from None
+        except pbx.ProvisionRefused as e:
+            if e.code != "not_webrtc":                   # already a desk phone: nothing to restore
+                raise prov._refusal(e, ext) from None
+        sip_static.delete(ext)
+    return {"extension": ",".join(sorted(exts)), "webrtc": False}

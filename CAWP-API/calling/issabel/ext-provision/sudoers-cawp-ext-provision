@@ -2,4 +2,4 @@
 # The provisioning vhost (php-fpm runs as asterisk) may run ONLY the CAWP extension script as root;
 # the script validates every argument (operation, extension range, name) itself.
 Defaults!/usr/local/sbin/cawp-ext-provision !requiretty
-asterisk ALL=(root) NOPASSWD: /usr/local/sbin/cawp-ext-provision list, /usr/local/sbin/cawp-ext-provision status *, /usr/local/sbin/cawp-ext-provision create *, /usr/local/sbin/cawp-ext-provision rename *, /usr/local/sbin/cawp-ext-provision delete *
+asterisk ALL=(root) NOPASSWD: /usr/local/sbin/cawp-ext-provision list, /usr/local/sbin/cawp-ext-provision status *, /usr/local/sbin/cawp-ext-provision create *, /usr/local/sbin/cawp-ext-provision rename *, /usr/local/sbin/cawp-ext-provision delete *, /usr/local/sbin/cawp-ext-provision secret *, /usr/local/sbin/cawp-ext-provision webrtc *

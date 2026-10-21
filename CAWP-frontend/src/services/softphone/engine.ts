@@ -39,6 +39,8 @@ type CredentialMeta = {
     displayName: string
     wssUrl: string
     iceServers: RTCIceServer[]
+    /** 'negotiate' on a PBX without rtcp-mux (Asterisk 11, SIP_RTCP_MUX_POLICY); else Chrome's 'require' */
+    rtcpMuxPolicy: RTCRtcpMuxPolicy
     expiresAt: number
     refreshAt: number
     registerExpires: number
@@ -266,6 +268,8 @@ export class SoftphoneEngine {
             const st = await softphoneApi.credentialStatus()
             if (!st.configured) return this.setStatus('not_configured', st.reason || 'softphone_not_configured')
             if (st.reason === 'no_extension') return this.setStatus('no_extension', 'no_extension')
+            // chan_sip PBX (0083): the extension is not converted for the browser yet
+            if (st.reason === 'softphone_not_provisioned') return this.setStatus('not_configured', 'softphone_not_provisioned')
         } catch {
             /* status unavailable: fall through to the credential request, which reports the real error */
         }
@@ -316,7 +320,10 @@ export class SoftphoneEngine {
             this.teardownUa()
             return this.setStatus('no_extension', code)
         }
-        if (code === 'softphone_not_configured') return this.setStatus('not_configured', code)
+        if (code === 'softphone_not_configured' || code === 'softphone_not_provisioned') {
+            this.teardownUa()
+            return this.setStatus('not_configured', code)
+        }
         if (status === 403) {
             this.teardownUa()
             return this.setStatus('stopped', code)
@@ -343,6 +350,8 @@ export class SoftphoneEngine {
                 displayName: cred.display_name,
                 wssUrl: cred.wss_url,
                 iceServers: cred.ice_servers || [],
+                // 'negotiate' left the WebRTC spec types but Chrome still honours it (needed for Asterisk 11)
+                rtcpMuxPolicy: cred.rtcp_mux_policy === 'negotiate' ? ('negotiate' as unknown as RTCRtcpMuxPolicy) : 'require',
                 expiresAt: Date.parse(cred.expires_at),
                 refreshAt: Date.now() + cred.refresh_after_seconds * 1000,
                 registerExpires: cred.register_expires,
@@ -473,11 +482,14 @@ export class SoftphoneEngine {
 
     // ------------------------------------------------------------------ calls
     private pcConfig(): RTCConfiguration {
+        // A PBX without rtcp-mux (Asterisk 11) also has no BUNDLE: 'max-bundle' makes Chrome reject its
+        // answer ("Bad Media Description"), so that case uses the browser default 'balanced'.
+        const legacy = this.meta?.rtcpMuxPolicy === ('negotiate' as unknown as RTCRtcpMuxPolicy)
         return {
             iceServers: this.meta?.iceServers || [],
             iceTransportPolicy: 'all',
-            bundlePolicy: 'max-bundle',
-            rtcpMuxPolicy: 'require',
+            bundlePolicy: legacy ? 'balanced' : 'max-bundle',
+            rtcpMuxPolicy: this.meta?.rtcpMuxPolicy || 'require',
         }
     }
 
