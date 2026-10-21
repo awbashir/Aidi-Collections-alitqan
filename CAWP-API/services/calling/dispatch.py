@@ -98,7 +98,8 @@ def authorize(actor, case_id, contact_id, *, transport, mode: str = "click_to_ca
     caller turns it into its API error) or ApiError 409 calling_reserved on a reservation race."""
     for k in sorted((f"user:{actor}", f"case:{case_id}")):      # serialize concurrent clicks
         advisory_lock("calling_dispatch", k)
-    plan = R.evaluate(actor_id=actor, case_id=case_id, contact_id=contact_id)
+    plan = R.evaluate(actor_id=actor, case_id=case_id, contact_id=contact_id,
+                      campaign_id=campaign_id if mode == "campaign" else None)
     status = transport()
     if status is None:
         raise R.RuleRefused("transport_not_connected")
@@ -217,7 +218,8 @@ def claim(session, ctx, worker_id) -> Claim | str | None:
         return None                                   # defensive: never send on another epoch
     try:
         plan = R.evaluate(actor_id=a["collector_user_id"], case_id=a["case_id"], contact_id=a["contact_id"],
-                          own_attempt=a["id"], extension=a["extension"])
+                          own_attempt=a["id"], extension=a["extension"],
+                          campaign_id=a.get("campaign_id") if a.get("mode") == "campaign" else None)
     except R.RuleRefused as refused:
         _never_sent(session, a, q["id"], "refused", refused.code)
         return f"refused:{refused.code}"

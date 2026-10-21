@@ -392,7 +392,7 @@ def discard(draft_id, body: dict, expected: int) -> dict:
 
 
 _NOTE_FIELDS = {"text", "comment_status_id", "comment_sub_status_id", "contact_method_id", "comment_reachability_id",
-                "expected_revision", "confirmed"}
+                "expected_revision", "confirmed", "apply_to_all_accounts"}
 _NEVER = {"callback_at", "next_contact_date", "promise", "payment", "call", "send", "follow_up", "outcome"}
 
 
@@ -453,20 +453,20 @@ def save_as_note(draft_id, body: dict, expected: int) -> dict:
     case_id = str(r["case_id"])
     contract_id = I.case_row(case_id).get("contract_id")
     v = _note_fields(body, contract_id)
-    # 0079: a promise-to-pay status needs a promise (amount + due date), and a draft never
-    # creates one: the collector saves such a note from the note form or the call result.
-    from services import promise_required
-    if promise_required.status_requires_promise(v["status_id"], v["sub_status_id"], _s()):
-        raise ApiError(422, "promise_required",
-                       "this note status records a promise to pay, which needs the promise amount and due date: "
-                       "copy the text and save the note from the case's note form or call result",
-                       {"comment_status_id": "requires_promise"})
+    # 0079: a draft never creates a promise. Since 2026-10-21 a promise-to-pay status no longer
+    # needs one, so such a note is saved like any other (without a promise).
+    # 0081: the same note on every active account of the same debtor (services/note_siblings.py)
+    from services import note_siblings
+    apply_all = note_siblings.parse(body)
+    if apply_all:
+        note_siblings.serialize(case_id, _s())                     # before the case lock (no deadlock)
     state = _s().execute(text("SELECT is_locked, is_archive FROM clints WHERE id = CAST(:id AS uuid) FOR NO KEY UPDATE"),
                          {"id": case_id}).mappings().first()
     if state["is_locked"]:
         raise ApiError(409, "case_locked", "the case is locked; notes cannot be recorded", {"case_id": case_id})
     if state["is_archive"]:
         raise ApiError(409, "case_archived", "the case is archived; notes cannot be recorded", {"case_id": case_id})
+    planned = note_siblings.plan(case_id, v["status_id"], _s()) if apply_all else None
 
     actor, note_id = me(), str(uuid.uuid4())
     _s().execute(text("""
@@ -482,6 +482,7 @@ def save_as_note(draft_id, body: dict, expected: int) -> dict:
                         "contactMethod_id": v["method_id"], "comment_reachability_id": v["reach_id"],
                         "next_contact_date": None, "ai_draft_id": str(draft_id)},
                  reason="saved from an AI draft")
+    siblings = note_siblings.write(planned, note_id, case_id, actor, source="ai_draft", session=_s())
     edited = note_text != r["text"]
     _s().execute(text("""
         UPDATE ai_drafts
@@ -499,4 +500,5 @@ def save_as_note(draft_id, body: dict, expected: int) -> dict:
     return {"draft": as_dict(after, level="meta"),
             "note": {"id": note_id, "case_id": case_id, "comment_status_id": v["status_id"],
                      "contact_method_id": v["method_id"], "comment_reachability_id": v["reach_id"],
-                     "next_contact_date": None}}
+                     "next_contact_date": None},
+            **(siblings or {})}

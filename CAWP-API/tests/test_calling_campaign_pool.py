@@ -125,13 +125,13 @@ def test_pool_matches_the_clients_list_for_the_same_filter(cp_app, pgc, cp):
 
 
 # --------------------------------------------------------------------------- note status + sub-status (2026-10-19)
-def note_status(pgc, name, *, contract=None, parent=None, deleted=False):
+def note_status(pgc, name, *, contract=None, parent=None, deleted=False, stops=False, blocks=False):
     import uuid
     sid = str(uuid.uuid4())
     run(pgc, """INSERT INTO "CommentStatuses" (id, name, contract_id, "CommentReachability_id", is_active, parent_id,
-                                               deleted_at)
-                VALUES (%s, %s, %s, %s, true, %s, CASE WHEN %s THEN now() END)""",
-        sid, name + " " + sid[:6], contract, CL.reach, parent, deleted)
+                                               deleted_at, stops_campaigns, blocks_dialed_number)
+                VALUES (%s, %s, %s, %s, true, %s, CASE WHEN %s THEN now() END, %s, %s)""",
+        sid, name + " " + sid[:6], contract, CL.reach, parent, deleted, stops, blocks)
     return sid
 
 
@@ -312,6 +312,8 @@ def test_every_exclusion_is_reported_and_never_offered(cp_app, client, auth, wor
         run(pgc, """INSERT INTO call_attempts (mode, state, case_id, collector_user_id, created_by, created_at)
                     VALUES ('manual', 'ended', %s, %s, %s, now() - make_interval(mins => %s))""", case, w.c1, w.c1, mins)
     c["recheck_later"] = case_for(pgc, w.c1, w.portfolio)[0]
+    c["status_stops_campaigns"] = case_for(pgc, w.c1, w.portfolio)[0]
+    note(pgc, c["status_stops_campaigns"], w.c1, note_status(pgc, "cp paid", stops=True))
     # the SuperAdmin owns the campaign so the outsider's case is in the pool (but no member may call it)
     cid = new_campaign(client, auth, w, owner=CP.super, members=[w.c1, w.c2], start=False,
                        settings={"max_attempts_per_day": 2, "cooldown_minutes": 60})
@@ -362,3 +364,158 @@ def test_contact_choice_default_then_documented_fallbacks(cp_app, pgc, world):
     add_contact(pgc, other, "12345", default=True)                           # never guessed
     valid = add_contact(pgc, other, number(2))
     assert choose(other)[0]["id"] == valid
+
+
+# --------------------------------------------------------------------------- 2026-10-21 (0080)
+def test_unassigned_only_pool_option(cp_app, client, auth, world, pgc):
+    """«عملاء غير مخصصين لمحصل فقط»: only cases with no collector, combinable with the latest
+    note status, never with a collector filter. Campaign grant (2026-10-21): an unassigned case of
+    the pool is offered to every member, plain collectors included."""
+    from core.api_response import ApiError
+    from services.calling import campaign_pool as P
+    w = world
+    a = "00000000-0000-4000-8000-00000000aa01"
+    assert P.validate_pool({"unassigned_only": True}) == {"contract_ids": [], "portfolio_ids": [], "filter": {},
+                                                          "unassigned_only": True}       # a criterion of its own
+    assert "unassigned_only" not in P.validate_pool({"contract_ids": [a], "unassigned_only": False})
+    for bad, code in (({"contract_ids": [a], "unassigned_only": "yes"}, "invalid"),
+                      ({"unassigned_only": True, "filter": {"customeFilterUserValue[]": [a]}},
+                       "conflicts_with_collector_filter")):
+        with pytest.raises(ApiError) as e:
+            P.validate_pool(bad)
+        assert e.value.status == 422 and e.value.error == {"pool.unassigned_only": code}, e.value.error
+    no_answer = note_status(pgc, "cp no answer")
+    other = note_status(pgc, "cp other")
+    free_no_answer = make_case(pgc, None, w.portfolio)
+    add_contact(pgc, free_no_answer, number(4), default=True)
+    note(pgc, free_no_answer, w.c1, no_answer)
+    free_other = make_case(pgc, None, w.portfolio)
+    add_contact(pgc, free_other, number(4), default=True)
+    note(pgc, free_other, w.c1, other)
+    owned, _ = case_for(pgc, w.c1, w.portfolio)
+    note(pgc, owned, w.c1, no_answer)
+    agent = new_supervisor_like(pgc, w)
+    pool = {"contract_ids": [w.contract], "unassigned_only": True,
+            "filter": {"customeFilterCommentStatusValue[]": [no_answer]}}
+    cid = new_campaign(client, auth, w, owner=CP.super, members=[w.c1, agent], pool=pool, start=False)
+    camp = load(cp_app, cid)
+    assert camp["pool"]["unassigned_only"] is True
+    items = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(CP.super)).get_json()["data"]["items"]
+    assert [(i["case"]["id"], i["reason"]) for i in items] == [(free_no_answer, "eligible")]
+    # the campaign grant: a plain collector member is offered the unassigned case too
+    assert [str(r["case_id"]) for r in in_app(cp_app, lambda s: P.candidates(camp, w.c1))] == [free_no_answer]
+    assert [str(r["case_id"]) for r in in_app(cp_app, lambda s: P.candidates(camp, agent))] == [free_no_answer]
+    only_c1 = in_app(cp_app, lambda s: P.summary(camp, [w.c1]))
+    assert not only_c1["excluded"].get("no_member_in_scope")
+
+
+def new_supervisor_like(pgc, w):
+    """A caller whose scope is the whole contract (a supervisors row with the contract), with an
+    extension: the members who can reach unassigned cases."""
+    from test_calling_c2c_helpers import new_supervisor, own_extension
+    u = new_supervisor(pgc, role=CP.collector_role, contracts=[w.contract], name="CP Contract agent")
+    own_extension(pgc, u)
+    return u
+
+
+def test_latest_note_with_a_stopping_status_leaves_every_campaign(cp_app, client, auth, world, pgc):
+    """stops_campaigns on the LATEST note's main status or sub-status (each row its own flag; a
+    flagged main status covers its sub-statuses, a sub-status can be flagged alone)."""
+    from services.calling import campaign_pool as P
+    w = world
+    stop_main = note_status(pgc, "cp paid", stops=True)
+    plain_sub = note_status(pgc, "cp paid sub", parent=stop_main)
+    plain_main = note_status(pgc, "cp court")
+    stop_sub = note_status(pgc, "cp court full", parent=plain_main, stops=True)
+    other_sub = note_status(pgc, "cp court part", parent=plain_main)
+    c = {k: case_for(pgc, w.c1, w.portfolio)[0] for k in ("main", "sub", "main_plain_sub", "older", "other_sub",
+                                                          "none")}
+    note(pgc, c["main"], w.c1, stop_main, hours_ago=1)
+    note(pgc, c["sub"], w.c1, plain_main, stop_sub, hours_ago=1)
+    note(pgc, c["main_plain_sub"], w.c1, stop_main, plain_sub, hours_ago=1)
+    note(pgc, c["older"], w.c1, stop_main, hours_ago=5)                  # an older note never counts
+    note(pgc, c["older"], w.c1, plain_main, hours_ago=1)
+    note(pgc, c["other_sub"], w.c1, plain_main, other_sub, hours_ago=1)
+    cid = new_campaign(client, auth, w, members=[w.c1], start=False)
+    camp = load(cp_app, cid)
+    summary = in_app(cp_app, lambda s: P.summary(camp, [w.c1]))
+    assert summary["excluded"] == {"status_stops_campaigns": 3} and summary["eligible_now"] == 3
+    assert summary["remaining_today"] == 3                                # a hard exclusion
+    got = {str(r["case_id"]) for r in in_app(cp_app, lambda s: P.candidates(camp, w.c1))}
+    assert got == {c["older"], c["other_sub"], c["none"]}
+    items = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(w.supervisor),
+                       query_string={"reason": "status_stops_campaigns"}).get_json()["data"]
+    assert {i["case"]["id"] for i in items["items"]} == {c["main"], c["sub"], c["main_plain_sub"]}
+
+
+def test_paid_off_cases_are_excluded_and_unapproved_money_is_not(cp_app, client, auth, world, pgc):
+    """The money rule (services/money.py): approved, non-deleted, non-reversed payments >= the
+    debt. Pending, deleted and reversed payments never make a case paid."""
+    from services.calling import campaign_pool as P
+    w = world
+
+    def pay(case, amount, *, approved=True, deleted=False):
+        return q1(pgc, """INSERT INTO "Payments" (clint_id, user_id, collection_type_id, collection_method_id, amount,
+                                                   payment_date, approval_status, is_deleted) VALUES (%s, %s,
+                         '00000000-0000-4000-8000-000000000704', '00000000-0000-4000-8000-000000000705', %s, now(),
+                         %s, %s) RETURNING id""", case, w.c1, amount, approved, deleted)[0]
+    paid = case_for(pgc, w.c1, w.portfolio, amount=100)[0]
+    pay(paid, 60)
+    pay(paid, 40)
+    over = case_for(pgc, w.c1, w.portfolio, amount=100)[0]
+    pay(over, 150)
+    pending = case_for(pgc, w.c1, w.portfolio, amount=100)[0]
+    pay(pending, 100, approved=False)
+    deleted = case_for(pgc, w.c1, w.portfolio, amount=100)[0]
+    pay(deleted, 100, deleted=True)
+    reversed_ = case_for(pgc, w.c1, w.portfolio, amount=100)[0]
+    rp = pay(reversed_, 100)
+    run(pgc, """INSERT INTO payment_reversals (payment_id, case_id, amount, reason, reversed_by)
+                VALUES (%s, %s, 100, 'test reversal', %s)""", rp, reversed_, w.supervisor)
+    partly = case_for(pgc, w.c1, w.portfolio, amount=100)[0]
+    pay(partly, 99.99)
+    cid = new_campaign(client, auth, w, members=[w.c1], start=False)
+    camp = load(cp_app, cid)
+    items = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(w.supervisor)).get_json()["data"]["items"]
+    reasons = {i["case"]["id"]: i["reason"] for i in items}
+    assert reasons == {paid: "case_paid", over: "case_paid", pending: "eligible", deleted: "eligible",
+                       reversed_: "eligible", partly: "eligible"}
+    got = {str(r["case_id"]) for r in in_app(cp_app, lambda s: P.candidates(camp, w.c1))}
+    assert got == {pending, deleted, reversed_, partly}
+
+
+def test_callable_numbers_rotation_order_and_blocked_spellings(cp_app, pgc, world):
+    """One entry per number (duplicate rows and spellings fold), a number blocked under any
+    spelling is skipped, e-mails and invalid values never count; default first, then the last
+    bridged on the case, then the newest."""
+    from services.calling import campaign_pool as P
+    w = world
+    case = make_case(pgc, w.c1, w.portfolio)
+    idn = q1(pgc, 'SELECT "identityNumber" FROM clints WHERE id = %s', case)[0]
+    default_n, old_n, new_n, bad_n = number(1), number(2), number(3), number(4)
+    default = add_contact(pgc, case, default_n, default=True)
+    add_contact(pgc, case, "0" + default_n[3:])                              # the same number, national form
+    old = add_contact(pgc, case, old_n)
+    new = add_contact(pgc, case, new_n)
+    run(pgc, 'UPDATE "ClintContacts" SET create_at = now() - interval \'2 days\' WHERE id = %s', old)
+    run(pgc, 'UPDATE "ClintContacts" SET create_at = now() - interval \'1 day\' WHERE id = %s', new)
+    add_contact(pgc, case, bad_n, blocked=True)
+    add_contact(pgc, case, "0" + bad_n[3:])                                   # wrong under another spelling
+    add_contact(pgc, case, "debtor@example.invalid")
+    add_contact(pgc, case, "12345")
+
+    def numbers():
+        return [n["id"] for n in in_app(cp_app, lambda s: P.callable_numbers(idn, case))]
+    assert numbers() == [default, new, old]
+    run(pgc, """INSERT INTO call_attempts (mode, state, case_id, collector_user_id, created_by, destination, bridged_at,
+                                           created_at)
+                VALUES ('click_to_call', 'ended', %s, %s, %s, %s, now() - interval '3 hours',
+                        now() - interval '3 hours')""",
+        case, w.c1, w.c1, "+" + old_n)
+    assert numbers() == [default, old, new]                                   # the last success comes next
+    nxt, tried = P.rotation([{"destination": d} for d in ("a", "b", "c")], ["a", "c"])
+    assert nxt == {"destination": "b"} and tried == {"a", "c"}
+    nxt, tried = P.rotation([{"destination": d} for d in ("a", "b", "c")], ["a", "c", "b", "a"])
+    assert nxt == {"destination": "b"} and tried == {"a"}                     # round 2
+    nxt, _ = P.rotation([{"destination": d} for d in ("a", "b", "c")], ["a", "b", "c"])
+    assert nxt == {"destination": "a"}                                        # a full round: start again

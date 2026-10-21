@@ -13,9 +13,15 @@
  * dropdowns (`customeFilterCommentStatusValue[]` / `customeFilterCommentSubStatusValue[]`,
  * ANDed like the clients list). Offered: the live general statuses plus those of the contracts
  * the pool reaches within my scope (`GET /v2/campaigns/pool-scope`); the API checks the same.
+ *
+ * Unassigned clients only (customer 2026-10-21): `pool.unassigned_only` = cases with no collector,
+ * combinable with the status filters (e.g. last status «لم يتم الرد»), not with a collector
+ * filter. It grants nothing: such a case only goes to a member whose own scope contains it. A
+ * promise recorded on such a call assigns the case to the agent who made it.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import Checkbox from '@/components/ui/Checkbox'
 import Input from '@/components/ui/Input'
 import Select from '@/components/ui/Select'
 import ActionDialog, { DialogField } from '@/components/v2/ActionDialog'
@@ -64,6 +70,8 @@ type Draft = {
     statuses: string[]
     subStatuses: string[]
     grid: { field: string; op: string; value: string }
+    /** only cases with no collector (2026-10-21) */
+    unassigned: boolean
     settings: CampaignSettings
     members: string[]
 }
@@ -85,6 +93,7 @@ const draftFrom = (c: Campaign | null, filter?: Record<string, unknown>): Draft 
         statuses,
         subStatuses,
         grid,
+        unassigned: c?.pool.unassigned_only === true,
         settings: { ...DEFAULT_SETTINGS, ...(c?.settings || {}) },
         members: [],
     }
@@ -101,8 +110,10 @@ const poolOf = (d: Draft): CampaignPool => {
         filter.filterFieldType = type
         filter.filterValue = d.grid.value.trim()
     }
-    return { contract_ids: d.contracts, portfolio_ids: d.portfolios, filter }
+    return { contract_ids: d.contracts, portfolio_ids: d.portfolios, filter, ...(d.unassigned ? { unassigned_only: true } : {}) }
 }
+
+const USER_KEY = 'customeFilterUserValue[]'
 
 /** A refused note status reads as a sentence of its own; everything else as usual. */
 const describe = (e: unknown, t: Translate) => {
@@ -209,9 +220,13 @@ const CampaignForm = ({
         return Number.isInteger(v) && v >= LIMITS[k][0] && v <= LIMITS[k][1]
     })
     const pool = poolOf(d)
-    const hasCriterion = pool.contract_ids.length > 0 || pool.portfolio_ids.length > 0 || Object.keys(pool.filter).length > 0
+    const hasCriterion =
+        pool.contract_ids.length > 0 || pool.portfolio_ids.length > 0 || Object.keys(pool.filter).length > 0 || pool.unassigned_only === true
+    /* unassigned cases have no collector: the API refuses the two together */
+    const unassignedConflict = d.unassigned && Array.isArray(d.filter[USER_KEY]) && (d.filter[USER_KEY] as unknown[]).length > 0
     const gridIncomplete = !!(d.grid.field || d.grid.op || d.grid.value) && !(d.grid.field && d.grid.op && d.grid.value.trim())
-    const canSubmit = d.name.trim().length > 0 && d.name.trim().length <= 200 && hasCriterion && settingsOk && !gridIncomplete
+    const canSubmit =
+        d.name.trim().length > 0 && d.name.trim().length <= 200 && hasCriterion && settingsOk && !gridIncomplete && !unassignedConflict
 
     const setSetting = <K extends keyof CampaignSettings>(k: K, v: CampaignSettings[K]) => setD((x) => ({ ...x, settings: { ...x.settings, [k]: v } }))
     const numberField = (k: keyof typeof LIMITS, label: string, hint: string) => (
@@ -322,6 +337,17 @@ const CampaignForm = ({
                         />
                     </div>
                 </DialogField>
+            </div>
+            <div className="mb-3" data-testid="p11-campaign-unassigned">
+                <Checkbox checked={d.unassigned} onChange={(checked: boolean) => setD({ ...d, unassigned: checked })}>
+                    <span className="text-[13.5px] font-bold text-navy-600 dark:text-gray-100">{t('p11.camprules.unassigned.label')}</span>
+                </Checkbox>
+                <div className="mt-1 text-[12px] text-gray-600">{t('p11.camprules.unassigned.hint')}</div>
+                {unassignedConflict && (
+                    <Notice tone="warning" className="mt-2">
+                        {t('p11.camprules.unassigned.conflict')}
+                    </Notice>
+                )}
             </div>
             {Object.keys(d.filter).length > 0 && (
                 <div className="mb-3" data-testid="p5-cf-filter">

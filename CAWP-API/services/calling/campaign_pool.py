@@ -35,6 +35,32 @@ Dispatch order for a member (deterministic):
 
 The SQL pre-filter here only avoids offering cases that would be refused; the dispatch rules
 (services/calling/rules.evaluate) are always the authority and run on the chosen case.
+
+Customer feedback 2026-10-21 (migration 0080, services/calling/campaign_rules.py):
+* `unassigned_only: true` (top-level pool key, «عملاء غير مخصصين لمحصل فقط»): only cases with
+  no collector (clints.user_id IS NULL), combinable with every filter (e.g. the latest note
+  status «لم يتم الرد») except a collector filter (customeFilterUserValue[]: 422). It is a
+  criterion of its own. Campaign grant (customer approval 2026-10-21): in such a campaign an
+  UNASSIGNED case of the pool (always inside the creator's scope) is offered to every active
+  member even when the member's own scope doesn't contain it (plain collectors); dispatch
+  re-checks it (rules.evaluate(campaign_id=) -> campaign_rules.unassigned_dispatch_ok) and the
+  member may open that case only while the call holds its reservation or up to 30 minutes after
+  the wrap-up (campaign_rules.campaign_grant). Assigned cases still need the member's own
+  scope. Saved only when true.
+* `status_stops_campaigns` (hard): the case's LATEST note has a main status or sub-status with
+  "CommentStatuses".stops_campaigns («تم السداد», «مخالصة», ...). Paid-off cases were already
+  `case_paid` (the exact balance rule of services/money.py: approved, non-deleted,
+  non-reversed payments >= the debt).
+* Number rotation (`choose_contact` with a campaign): each attempt dials the next callable
+  number of the debtor not yet dialled in the current round of THIS campaign on this case
+  (order: default first, then by last bridged call to that number, then newest), so every
+  number is tried before any is retried. A round ends once every currently callable number was
+  dialled since the previous round ended. Callable = the contact rules (not deleted, not
+  blocked - also when another stored spelling of the same number is blocked - active, not
+  archived) and a plausible E.164 number (mobile and phone numbers; e-mails never parse);
+  attempts that provably never reached the customer (released no_customer_contact /
+  cancel_unsent) do not count as tried. `max_attempts_per_day` and the cooldown stay PER CASE
+  (any number): with 3 numbers and 3 attempts a day, each number is dialled once a day.
 """
 from __future__ import annotations
 
@@ -45,10 +71,12 @@ import uuid
 from sqlalchemy import text
 
 from core.api_response import VALIDATION_FAILED, ApiError
+from services.calling.campaign_rules import STOPPED_SQL
 from services.calling.common import e164_from_contact, sess
 
 CALLBACK_GRACE_MINUTES = 15          # = rules.CALLBACK_GRACE
 MAX_LIST = 500
+UNASSIGNED_KEY = "unassigned_only"     # 2026-10-21: only cases with no collector
 
 UUID_LIST_KEYS = {
     "customeFilterContractValue[]": "contracts",
@@ -90,12 +118,12 @@ CONTACT_ELIGIBLE = ("NOT {k}.is_deleted AND NOT {k}.is_blocked AND {k}.is_active
 
 # pool classification, in reporting order (the first matching reason wins)
 REASONS = ("case_archived", "case_locked", "do_not_call", "calling_review_pending", "in_call",
-           "no_member_in_scope", "case_paid", "no_callable_contact", "callback_scheduled",
-           "max_attempts_today", "cooldown", "recheck_later", "eligible")
+           "no_member_in_scope", "case_paid", "status_stops_campaigns", "no_callable_contact",
+           "callback_scheduled", "max_attempts_today", "cooldown", "recheck_later", "eligible")
 # exclusions that do not go away by themselves today (the rest may: a callback becomes due,
 # the cooldown passes, a call ends, a recheck time passes)
 HARD_REASONS = ("case_archived", "case_locked", "do_not_call", "calling_review_pending", "no_member_in_scope",
-                "case_paid", "no_callable_contact", "max_attempts_today")
+                "case_paid", "status_stops_campaigns", "no_callable_contact", "max_attempts_today")
 
 
 def _err(field, message, code="invalid"):
@@ -132,7 +160,7 @@ def validate_pool(pool) -> dict:
     silently widen the pool)."""
     if not isinstance(pool, dict):
         raise _err("pool", "pool must be an object with contract_ids, portfolio_ids and/or filter")
-    unknown = set(pool) - {"contract_ids", "portfolio_ids", "filter"}
+    unknown = set(pool) - {"contract_ids", "portfolio_ids", "filter", UNASSIGNED_KEY}
     if unknown:
         raise _err("pool", f"unknown pool keys: {', '.join(sorted(unknown))}", "unknown")
     out = {"contract_ids": _uuid_list(pool.get("contract_ids") or [], "pool.contract_ids"),
@@ -169,7 +197,15 @@ def validate_pool(pool) -> dict:
             raise _err(f"pool.filter.{k}", f"unknown clients-list filter parameter {k!r}", "unknown")
     _validate_grid(out["filter"])
     f = out["filter"]
-    if not (out["contract_ids"] or out["portfolio_ids"] or f):
+    unassigned = pool.get(UNASSIGNED_KEY)
+    if unassigned not in (None, False, True):
+        raise _err(f"pool.{UNASSIGNED_KEY}", f"pool.{UNASSIGNED_KEY} must be true or false")
+    if unassigned:
+        if f.get("customeFilterUserValue[]"):
+            raise _err(f"pool.{UNASSIGNED_KEY}", "unassigned cases have no collector: remove the collector filter",
+                       "conflicts_with_collector_filter")
+        out[UNASSIGNED_KEY] = True
+    if not (out["contract_ids"] or out["portfolio_ids"] or f or out.get(UNASSIGNED_KEY)):
         raise _err("pool", "the pool needs at least one criterion (contracts, portfolios or a filter)", "required")
     return out
 
@@ -334,6 +370,8 @@ def definition_sql(pool: dict, prefix: str = "pd") -> tuple[str, str, dict]:
         where.append(f"p.contract_id = ANY({ids('f_contracts', f['customeFilterContractValue[]'])})")
     if f.get("customeFilterUserValue[]"):
         where.append(f"c.user_id = ANY({ids('f_users', f['customeFilterUserValue[]'])})")
+    if pool.get(UNASSIGNED_KEY):
+        where.append("c.user_id IS NULL")
     statuses = [v for v in (f.get("customeFilterCommentStatusValue[]") or f.get("customeFilterStatusesValue") or [])
                 if v and v != "0"]
     subs = f.get("customeFilterCommentSubStatusValue[]") or []
@@ -453,7 +491,7 @@ def _pool_cte(campaign: dict, member_scope: tuple[str, dict] | None, extra_selec
         params.update(member_scope[1])
     return (f"""
         SELECT c.id, c."identityNumber" AS idn, c.is_archive, c.is_locked, c.last_comment_at, c.amount,
-               c.name, c."accountNumber" AS account_number, c.user_id{extra_select}
+               c.name, c."accountNumber" AS account_number, c.user_id, c.last_comment_id{extra_select}
           FROM clints c
           JOIN portfolios p ON p.id = c.portfolios_id
           JOIN contracts k ON k.id = p.contract_id
@@ -502,6 +540,7 @@ _MAXED = "(coalesce(att.today, 0) >= :max_per_day)"
 _COOLING = "(att.last_at IS NOT NULL AND att.last_at > :now - make_interval(mins => :cooldown))"
 _RECHECK = "(ps.recheck_after IS NOT NULL AND ps.recheck_after > :now)"
 _PAID = "(round(CAST(pool.amount AS numeric), 2) - bal.approved <= 0)"
+_STOPPED = "(" + STOPPED_SQL.format(c="pool") + ")"         # 0080: the latest note stops campaigns
 
 _LAST_CONTACT = "greatest(pool.last_comment_at, ps.last_tried_at)"
 _PRIORITY = "(fu.due_at IS NOT NULL)"          # the callback is callable now (future ones are excluded)
@@ -525,7 +564,10 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
     candidates are found or the pool is exhausted. Measured on the full local copy: 330 ms for a
     collector with 64k cases in one contract (one window), versus 1.2 s in one pass."""
     clock = clock or _clock()
-    cte, params = _pool_cte(campaign, scope_clause(member_id, "mb"))
+    member_sql, member_params = scope_clause(member_id, "mb")
+    if (campaign.get("pool") or {}).get(UNASSIGNED_KEY):          # the campaign grant (docstring)
+        member_sql = f"({member_sql} OR c.user_id IS NULL)"
+    cte, params = _pool_cte(campaign, (member_sql, member_params))
     params.update(_fact_params(campaign, clock))
     params["skip"] = [str(x) for x in exclude]
     params["win"] = int(window)
@@ -554,7 +596,7 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
                        WHERE a.case_id = pool.id AND a.direction = 'outbound' AND a.created_at >= :since
                          AND (r.release_source IS NULL OR r.release_source NOT IN ('no_customer_contact', 'cancel_unsent'))
                   ) att ON true {_BALANCE}
-                 WHERE NOT {_DNC} AND NOT {_REVIEW} AND NOT {_RESERVED} AND NOT {_PAID}
+                 WHERE NOT {_DNC} AND NOT {_REVIEW} AND NOT {_RESERVED} AND NOT {_PAID} AND NOT {_STOPPED}
                    AND NOT {_MAXED} AND NOT {_COOLING} AND {_CONTACT}
                    AND NOT (pool.id = ANY(CAST(:skip AS uuid[])))
                  ORDER BY pool.callback_due DESC, pool.last_contact ASC NULLS FIRST, pool.id
@@ -570,24 +612,95 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
     return out
 
 
-def choose_contact(identity_number) -> tuple[dict | None, str | None]:
+def callable_numbers(identity_number, case_id=None) -> list[dict]:
+    """The debtor's callable numbers in rotation order, one entry per destination:
+    {"id" (the row to dial: the default row, else the newest), "destination", "is_default"}.
+
+    Callable: a row that is not deleted, not blocked, active and not archived, whose value is a
+    plausible E.164 number (never guessed), and whose number is not blocked under ANOTHER
+    stored spelling either (a wrong number stays wrong however it was imported). Order: the
+    default number first, then the number last bridged on this case (most recent first), then
+    the newest, then the destination (deterministic)."""
+    rows = sess().execute(text("""
+        SELECT k.id, k.contact, k.is_default, k.create_at, k.is_blocked,
+               (NOT k.is_blocked AND k.is_active AND NOT k.is_archive) AS eligible
+          FROM "ClintContacts" k
+         WHERE k."identityNumber" = :idn AND NOT k.is_deleted
+         ORDER BY k.is_default DESC, k.create_at DESC, k.id"""), {"idn": identity_number}).mappings().all()
+    blocked = {d for d in (e164_from_contact(r["contact"]) for r in rows if r["is_blocked"]) if d}
+    by_dest: dict[str, dict] = {}
+    for r in rows:                                    # default first, then newest: the first row wins
+        dest = e164_from_contact(r["contact"])
+        if dest is None or dest in blocked or not r["eligible"]:
+            continue
+        g = by_dest.get(dest)
+        if g is None:
+            by_dest[dest] = {"id": str(r["id"]), "destination": dest, "is_default": bool(r["is_default"]),
+                             "newest": r["create_at"]}
+        else:
+            g["is_default"] = g["is_default"] or bool(r["is_default"])
+            g["newest"] = max((x for x in (g["newest"], r["create_at"]) if x is not None), default=None)
+    success = {}
+    if case_id is not None and by_dest:
+        success = dict(sess().execute(text("""
+            SELECT a.destination, max(a.bridged_at) FROM call_attempts a
+             WHERE a.case_id = CAST(:c AS uuid) AND a.bridged_at IS NOT NULL
+               AND a.destination = ANY(CAST(:d AS text[]))
+             GROUP BY a.destination"""), {"c": str(case_id), "d": sorted(by_dest)}).all())
+    def ts(v):
+        return v.timestamp() if v is not None else float("-inf")
+    out = sorted(by_dest.values(), key=lambda g: (
+        not g["is_default"], -ts(success.get(g["destination"])), -ts(g["newest"]), g["destination"]))
+    for g in out:
+        g.pop("newest", None)
+    return out
+
+
+def dialled_in_campaign(campaign_id, case_id) -> list[str]:
+    """Destinations THIS campaign dialled on the case, oldest first. A call that provably never
+    reached the customer (released no_customer_contact / cancel_unsent) was not a try."""
+    return [r[0] for r in sess().execute(text("""
+        SELECT a.destination FROM campaign_attempts ca
+          JOIN call_attempts a ON a.id = ca.attempt_id
+          LEFT JOIN call_reservations r ON r.attempt_id = a.id
+         WHERE ca.campaign_id = CAST(:camp AS uuid) AND ca.case_id = CAST(:c AS uuid) AND a.destination IS NOT NULL
+           AND (r.release_source IS NULL OR r.release_source NOT IN ('no_customer_contact', 'cancel_unsent'))
+         ORDER BY ca.created_at, ca.attempt_id"""), {"camp": str(campaign_id), "c": str(case_id)}).all()]
+
+
+def rotation(numbers: list[dict], history: list[str]) -> tuple[dict | None, set]:
+    """(the next number to dial, the destinations already dialled in the current round).
+    Walks the campaign's history: a round ends as soon as every CURRENTLY callable number was
+    dialled since the previous round ended."""
+    callable_ = {n["destination"] for n in numbers}
+    tried: set = set()
+    for dest in history:
+        tried.add(dest)
+        if callable_ <= tried:
+            tried = set()
+    nxt = next((n for n in numbers if n["destination"] not in tried), None)
+    return nxt, tried & callable_
+
+
+def choose_contact(identity_number, *, campaign_id=None, case_id=None) -> tuple[dict | None, str | None]:
     """The debtor's contact to call -> (contact row with `destination`, 'default' | 'fallback').
 
-    1. the DEFAULT contact, when it is callable (active, not archived, not deleted, not blocked,
-       a plausible E.164 number);
-    2. otherwise (no default, or the default is not callable) the most recently added callable
-       contact of the debtor, then by id (deterministic);
-    3. none -> the case is excluded (`no_callable_contact`).
-    Nothing is guessed: a number that is not plausibly E.164 is never used."""
-    rows = sess().execute(text(f"""
-        SELECT k.id, k.contact, k.is_default, k.create_at FROM "ClintContacts" k
-         WHERE k."identityNumber" = :idn AND {CONTACT_ELIGIBLE.format(k='k')}
-         ORDER BY k.is_default DESC, k.create_at DESC, k.id"""), {"idn": identity_number}).mappings().all()
-    for r in rows:
-        dest = e164_from_contact(r["contact"])
-        if dest is not None:
-            return {"id": str(r["id"]), "destination": dest}, ("default" if r["is_default"] else "fallback")
-    return None, None
+    Without a campaign: the first callable number (callable_numbers order: the DEFAULT when it
+    is callable, else the most recently bridged, else the newest). With a campaign (2026-10-21):
+    the next number of the rotation (module docstring); the contact also carries `rotation` =
+    {"position", "of", "round_tried"} for the audit and the views. None -> the case is excluded
+    (`no_callable_contact`). Nothing is guessed: a number that is not plausibly E.164 is never
+    used."""
+    numbers = callable_numbers(identity_number, case_id)
+    if not numbers:
+        return None, None
+    if campaign_id is None or case_id is None:
+        pick, tried = numbers[0], set()
+    else:
+        pick, tried = rotation(numbers, dialled_in_campaign(campaign_id, case_id))
+    contact = {"id": pick["id"], "destination": pick["destination"],
+               "rotation": {"position": numbers.index(pick) + 1, "of": len(numbers), "round_tried": len(tried)}}
+    return contact, ("default" if pick["is_default"] else "fallback")
 
 
 _CLASSIFY = f"""CASE
@@ -598,6 +711,7 @@ _CLASSIFY = f"""CASE
     WHEN {_RESERVED} THEN 'in_call'
     WHEN NOT pool.in_member_scope THEN 'no_member_in_scope'
     WHEN {_PAID} THEN 'case_paid'
+    WHEN {_STOPPED} THEN 'status_stops_campaigns'
     WHEN NOT {_CONTACT} THEN 'no_callable_contact'
     WHEN {_FUTURE_CALLBACK} THEN 'callback_scheduled'
     WHEN {_MAXED} THEN 'max_attempts_today'
@@ -610,7 +724,10 @@ _CLASSIFY = f"""CASE
 
 def _classified(campaign: dict, member_ids, clock) -> tuple[str, dict]:
     ms_sql, ms_params = union_scope_clause(member_ids)
-    cte, params = _pool_cte(campaign, None, f", {ms_sql} AS in_member_scope")
+    if member_ids and (campaign.get("pool") or {}).get(UNASSIGNED_KEY):   # the campaign grant
+        ms_sql = f"({ms_sql} OR c.user_id IS NULL)"
+    # coalesce: an unassigned case (user_id NULL) makes a user-based scope test NULL, not false
+    cte, params = _pool_cte(campaign, None, f", coalesce({ms_sql}, false) AS in_member_scope")
     params.update(ms_params)
     params.update(_fact_params(campaign, clock))
     return (f"""
@@ -635,8 +752,13 @@ def summary(campaign: dict, member_ids, clock=None) -> dict:
             "evaluated_at": clock["now"].isoformat()}
 
 
-def listing(campaign: dict, member_ids, *, reason=None, page=1, size=50, offset=0, clock=None) -> dict:
-    """The pool in dispatch order with each case's current reason (supervisor preview)."""
+def listing(campaign: dict, member_ids, *, reason=None, page=1, size=50, offset=0, clock=None,
+            show_numbers=False) -> dict:
+    """The pool in dispatch order with each case's current reason (supervisor preview).
+    2026-10-21: each row also has `last_dialed` (this campaign's last call on the case: the
+    contact, its number when `show_numbers` (the clints_details rule of the call log), when,
+    and the rotation position) and `assigned_by_campaign` (the case was assigned to the caller
+    by a promise in this campaign: who, when, why) - null when none."""
     clock = clock or _clock()
     sql, params = _classified(campaign, member_ids, clock)
     where = ""
@@ -660,7 +782,44 @@ def listing(campaign: dict, member_ids, *, reason=None, page=1, size=50, offset=
               "attempts_today": int(r["attempts_today"]), "last_tried_at":
                   r["last_tried_at"].isoformat() if r["last_tried_at"] else None,
               "last_excluded_reason": r["last_excluded_reason"]} for r in rows]
+    _add_campaign_facts(campaign, items, show_numbers)
     return {"items": items, "total": int(total), "page": page, "page_size": size}
+
+
+def _add_campaign_facts(campaign: dict, items: list[dict], show_numbers: bool) -> None:
+    from services.calling.common import USER_NAME_SQL, user_ref
+    ids = [i["case"]["id"] for i in items]
+    for i in items:
+        i["last_dialed"] = i["assigned_by_campaign"] = None
+    if not ids:
+        return
+    params = {"camp": str(campaign["id"]), "ids": ids}
+    dialed = sess().execute(text("""
+        SELECT DISTINCT ON (ca.case_id) ca.case_id::text AS case_id, ca.contact_id::text AS contact_id,
+               ca.contact_choice, ca.created_at, a.destination, a.state, k.contact AS contact_value,
+               ca.contact_position, ca.contact_count
+          FROM campaign_attempts ca
+          JOIN call_attempts a ON a.id = ca.attempt_id
+          LEFT JOIN "ClintContacts" k ON k.id = ca.contact_id
+         WHERE ca.campaign_id = CAST(:camp AS uuid) AND ca.case_id = ANY(CAST(:ids AS uuid[]))
+         ORDER BY ca.case_id, ca.created_at DESC, ca.attempt_id DESC"""), params).mappings().all()
+    assigned = sess().execute(text(f"""
+        SELECT DISTINCT ON (x.case_id) x.case_id::text AS case_id, x.user_id, x.created_at, x.cause,
+               x.promise_id::text AS promise_id, {USER_NAME_SQL.format(a='u')} AS name
+          FROM campaign_case_assignments x LEFT JOIN users u ON u.id = x.user_id
+         WHERE x.campaign_id = CAST(:camp AS uuid) AND x.case_id = ANY(CAST(:ids AS uuid[]))
+         ORDER BY x.case_id, x.created_at DESC"""), params).mappings().all()
+    by_case = {i["case"]["id"]: i for i in items}
+    for r in dialed:
+        by_case[r["case_id"]]["last_dialed"] = {
+            "contact_id": r["contact_id"], "choice": r["contact_choice"], "at": r["created_at"].isoformat(),
+            "call_state": r["state"],
+            "number": (r["contact_value"] or r["destination"]) if show_numbers else None,
+            "position": r["contact_position"], "of": r["contact_count"]}
+    for r in assigned:
+        by_case[r["case_id"]]["assigned_by_campaign"] = {
+            "user": user_ref(r["user_id"], r["name"]), "at": r["created_at"].isoformat(), "cause": r["cause"],
+            "promise_id": r["promise_id"]}
 
 
 def reason_code_ok(code: str) -> bool:

@@ -412,6 +412,9 @@ def get_comments_by_clint(id):
                 .order_by(Comments.create_at.desc(), Comments.id)
                 .all())
         subs = _note_sub_statuses(id)
+        # 0081: a note applied from / to the debtor's other accounts (services/note_siblings.py)
+        from services import note_siblings
+        applied_from, applied_to = note_siblings.timeline_marks(id)
         payload = []
         for row in rows:
             d = take(row, Comments, "c")
@@ -425,6 +428,11 @@ def get_comments_by_clint(id):
             if sub is not None:                      # 0068: only on notes with a sub-status
                 d["comment_sub_status_id"] = sub["id"]
                 d["sub_status"] = sub
+            nid = str(d["id"])
+            if nid in applied_from:                  # 0081: only on a copy of another account's note
+                d["applied_from"] = applied_from[nid]
+            if nid in applied_to:                    # 0081: only on a note applied to other accounts
+                d["applied_to"] = applied_to[nid]
             payload.append(d)
     except Exception as e:
         db.session.rollback()

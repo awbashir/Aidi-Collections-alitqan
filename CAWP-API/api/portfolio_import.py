@@ -147,7 +147,7 @@ def report(import_id):
 @jwt_required()
 def previous_records(case_id):
     _require(*PREVIOUS_RECORDS_KEYS)
-    money.require_case(case_id, money.caller_scope(_me()))
+    money.require_case(case_id, money.caller_scope(_me()), grant=True)
     data = svc.previous_records(case_id, has_permission)
     db.session.rollback()
     return ok(data)

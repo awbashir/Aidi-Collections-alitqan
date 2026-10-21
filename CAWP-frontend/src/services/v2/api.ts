@@ -70,12 +70,22 @@ export const worklistApi = {
             }
             next?: { due_at: string; next_action: string }
             no_further_action_reason?: string
-            /** 0079: required with a promise-to-pay note status (a new promise, or an open one linked) */
+            /** 0079: offered with a promise-to-pay note status (a new promise, or an open one linked); optional */
             promise?: { amount: string; due_date: string } | { promise_id: string }
+            /** 0081: the outcome note on every active account of the same debtor too */
+            apply_to_all_accounts?: boolean
         },
         key: string
     ) =>
-        v2Post<{ completed: FollowUp; next: FollowUp | null; outcome_comment_id: string; promise?: PromiseRow }>(
+        v2Post<{
+            completed: FollowUp
+            next: FollowUp | null
+            outcome_comment_id: string
+            promise?: PromiseRow
+            /** 0081: with apply_to_all_accounts */
+            applied_to?: Array<{ case_id: string; account_number: string | null; comment_id: string }>
+            skipped_accounts?: Array<{ case_id: string; account_number: string | null; reason: string }>
+        }>(
             `/v2/follow-ups/${enc(id)}/complete`,
             body,
             key

@@ -152,7 +152,7 @@ def _state(identity_number: str, groups: list[dict]) -> dict:
 
 
 def debtor_contacts(identity_number: str) -> dict:
-    identity_in_scope(identity_number)
+    identity_in_scope(identity_number, grant=True)
     return _state(identity_number, _groups(identity_number))
 
 

@@ -1,10 +1,12 @@
 /**
- * A promise-to-pay note needs a promise (customer decision 2026-10-20, migration 0079): a note
- * status flagged `requires_promise` («وعد بالسداد», a sub-status carries its main status's
- * flag) and the call outcome `promise_discussed` need the promise AMOUNT and DUE DATE, or a
- * link to an open promise of the case. The API creates the promise with the note / wrap-up in
- * one transaction and stays the judge (amount above the balance, a past date...); these
- * checks only mirror it. No components here (RequiredPromiseFields.tsx).
+ * The promise of a promise-to-pay note (migration 0079): a note status flagged
+ * `requires_promise` («وعد بالسداد», a sub-status carries its main status's flag) and the call
+ * outcome `promise_discussed` OFFER the promise AMOUNT and DUE DATE, or a link to an open
+ * promise of the case. Customer feedback 2026-10-21: OPTIONAL (2026-10-20 had made it
+ * required): an empty draft sends no promise and the note is saved without one; a half-filled
+ * one must be completed. No due time: a promise is a civil date. The API creates the promise
+ * with the note / wrap-up in one transaction and stays the judge (amount above the balance, a
+ * past date...); these checks only mirror it. No components here (RequiredPromiseFields.tsx).
  */
 import { describeV2Error, isV2Error } from '@/services/v2'
 import { PROMISE_RULE_CODES } from '@/services/v2/p5Errors'
@@ -34,13 +36,19 @@ const cents = (v: string): bigint | null => {
     return m ? BigInt(m[1]) * BigInt(100) + BigInt((m[2] || '').padEnd(2, '0') || '0') : null
 }
 
-/** i18n keys (under `p10.promise.`) of what is still wrong; empty = ready to send. */
+/** Nothing entered (no amount, no date; or "link" with no promise chosen): no promise is sent. */
+export const promiseDraftEmpty = (d: RequiredPromiseDraft) =>
+    d.mode === 'link' ? !d.promiseId : !d.amount.trim() && !d.due
+
+/** i18n keys (under `p10.promise.`) of what is still wrong; empty = ready to send (an empty
+ *  draft is ready: the promise is optional). */
 export function requiredPromiseErrors(
     d: RequiredPromiseDraft,
     today: string,
     outstanding?: string | null
 ): { amount?: string; due?: string; link?: string } {
-    if (d.mode === 'link') return d.promiseId ? {} : { link: 'linkRequired' }
+    if (promiseDraftEmpty(d)) return {}
+    if (d.mode === 'link') return {}
     const out: { amount?: string; due?: string } = {}
     const a = d.amount.trim()
     if (!a) out.amount = 'amountRequired'
@@ -56,13 +64,21 @@ export function requiredPromiseErrors(
 export const requiredPromiseValid = (d: RequiredPromiseDraft, today: string, outstanding?: string | null) =>
     Object.keys(requiredPromiseErrors(d, today, outstanding)).length === 0
 
-/** The `promise` object of a wrap-up / follow-up completion. */
-export const requiredPromiseBody = (d: RequiredPromiseDraft): { amount: string; due_date: string } | { promise_id: string } =>
-    d.mode === 'link' && d.promiseId ? { promise_id: d.promiseId } : { amount: d.amount.trim(), due_date: d.due }
+/** The `promise` object of a wrap-up / follow-up completion; undefined = no promise. */
+export const requiredPromiseBody = (
+    d: RequiredPromiseDraft
+): { amount: string; due_date: string } | { promise_id: string } | undefined =>
+    promiseDraftEmpty(d)
+        ? undefined
+        : d.mode === 'link' && d.promiseId
+        ? { promise_id: d.promiseId }
+        : { amount: d.amount.trim(), due_date: d.due }
 
-/** The legacy note form's fields (POST /comments). */
+/** The legacy note form's fields (POST /comments); {} = no promise. */
 export const requiredPromiseLegacyFields = (d: RequiredPromiseDraft) =>
-    d.mode === 'link' && d.promiseId
+    promiseDraftEmpty(d)
+        ? {}
+        : d.mode === 'link' && d.promiseId
         ? { promise_id: d.promiseId }
         : { promise_amount: d.amount.trim(), promise_date: d.due }
 
@@ -75,6 +91,7 @@ export function announcePromiseChanged(caseId: string | null | undefined) {
 
 /** The promise rule's codes have their own `p10.promise.err.<code>` message (services/v2/p5Errors.ts). */
 export function describePromiseCode(err: unknown, t: Translate): string | null {
+    if (isV2Error(err) && err.code === 'too_many_accounts') return String(t('p11.notes.err.too_many_accounts')) // 0081
     return isV2Error(err) && PROMISE_RULE_CODES.has(err.code) ? String(t(`p10.promise.err.${err.code}`)) : null
 }
 

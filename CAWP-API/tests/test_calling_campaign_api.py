@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import psycopg2
 import pytest
+from test_admin_support import admin_db, db  # noqa: F401
 
 from test_calling_campaign_helpers import (CP, act, auth, bridge, case_for, cl, client, connect, cp, cp_app,  # noqa: F401
                                            create_campaign, dispatched, end_call, fences, heartbeat, key, new_campaign,
@@ -318,3 +319,142 @@ def test_database_guards(cp_app, client, auth, world, pgc):
     assert act(client, auth, w.supervisor, cid, "stop")[0] == 200
     _raises(pgc, "UPDATE campaigns SET name = 'renamed' WHERE id = %s", cid, code="CL003")
     _raises(pgc, "TRUNCATE campaigns CASCADE", code="CL001")
+
+
+# --------------------------------------------------------------------------- 2026-10-21 (0080)
+def test_create_an_unassigned_only_campaign(client, auth, world, pgc):
+    w = world
+    st, body = create_campaign(client, auth, w.supervisor, pool={"contract_ids": [w.contract], "unassigned_only": True,
+                                                                 "filter": {"customeFilterUserValue[]": [w.c1]}})
+    assert st == 422 and body["error"] == {"pool.unassigned_only": "conflicts_with_collector_filter"}
+    st, body = create_campaign(client, auth, w.supervisor, pool={"unassigned_only": True})
+    assert st == 201 and body["data"]["pool"] == {"contract_ids": [], "portfolio_ids": [], "filter": {},
+                                                  "unassigned_only": True}, body
+    cid = body["data"]["id"]
+    w.fences.add(cid)
+    r = client.patch(f"/v2/campaigns/{cid}", headers=auth(w.supervisor, key()),
+                     json={"expected_revision": revision(pgc, cid), "pool": {"contract_ids": [w.contract]}})
+    assert r.status_code == 200 and "unassigned_only" not in r.get_json()["data"]["pool"], r.get_json()
+
+
+def _admin_status(conn, name, *, stops=False, blocks=False, parent=None):
+    import uuid
+    sid = str(uuid.uuid4())
+    run(conn, 'INSERT INTO "CommentStatuses" (id, name, stops_campaigns, blocks_dialed_number, parent_id) '
+              "VALUES (%s, %s, %s, %s, %s)", sid, name, stops, blocks, parent)
+    return sid
+
+
+SETTINGS = {"settings_comments_status": True, "settings_comments_status_add": True,
+            "settings_comments_status_edit": True}
+
+
+def test_status_campaign_flags_round_trip(db):
+    """POST/PUT/GET /comment_status carry stops_campaigns and blocks_dialed_number. Each row keeps
+    its own flags (a sub-status is not overwritten by its main status); the effective flag of a
+    note is main OR sub-status."""
+    import uuid
+
+    from test_admin_support import make_user, run_app
+    from test_admin_support import q1 as aq1
+    admin = make_user(db, SETTINGS)
+    tag = uuid.uuid4().hex[:6]
+
+    def calls(*steps):
+        return [r for r in run_app([{"op": "mint", "user": admin, "as": "T"}] +
+                                   [{"op": "call", "token": "T", **x} for x in steps]) if r["op"] == "call"]
+    first = calls({"method": "POST", "path": "/comment_status", "json": {"name": "T stop " + tag,
+                                                                       "stops_campaigns": True}})[0]
+    assert first["status"] == 200, first
+    main = first["body"]
+    assert main["stops_campaigns"] is True and main["blocks_dialed_number"] is False
+    mid = main["id"]
+    res = calls(
+        {"method": "POST", "path": "/comment_status",                                           # 0 sub, own flag
+         "json": {"name": "T stop sub " + tag, "parent_id": mid, "blocks_dialed_number": True}},
+        {"method": "GET", "path": f"/comment_status/{mid}"},                                    # 1
+        {"method": "PUT", "path": f"/comment_status/{mid}", "json": {"stops_campaigns": False,  # 2
+                                                                     "blocks_dialed_number": True}},
+        {"method": "GET", "path": "/comment_status"},                                           # 3
+        {"method": "PUT", "path": f"/comment_status/{mid}", "json": {"name": "T stop renamed " + tag}},   # 4
+    )
+    assert [r["status"] for r in res] == [200] * 5, res
+    sub = res[0]["body"]
+    assert (sub["stops_campaigns"], sub["blocks_dialed_number"], sub["parent_id"]) == (False, True, mid)
+    assert res[1]["body"]["stops_campaigns"] is True
+    assert (res[2]["body"]["stops_campaigns"], res[2]["body"]["blocks_dialed_number"]) == (False, True)
+    rows = {r["id"]: r for r in res[3]["body"]["comment_statuses"]}
+    assert all("stops_campaigns" in r and "blocks_dialed_number" in r for r in rows.values())
+    assert (rows[sub["id"]]["stops_campaigns"], rows[sub["id"]]["blocks_dialed_number"]) == (False, True)
+    assert (res[4]["body"]["stops_campaigns"], res[4]["body"]["blocks_dialed_number"]) == (False, True)   # unchanged
+    assert aq1(db, 'SELECT stops_campaigns, blocks_dialed_number FROM "CommentStatuses" WHERE id = %s',
+               (sub["id"],)) == (False, True)
+
+
+def test_status_flags_are_main_or_sub_status(cp_app, pgc):
+    from test_calling_campaign_helpers import in_app
+
+    from services.calling import campaign_rules as CR
+    main = _admin_status(pgc, "cpa stop main", stops=True)
+    sub = _admin_status(pgc, "cpa plain sub", parent=main)
+    plain = _admin_status(pgc, "cpa plain main")
+    blocks_sub = _admin_status(pgc, "cpa blocks sub", parent=plain, blocks=True)
+    flags = lambda m, s=None: in_app(cp_app, lambda _s: CR.status_flags(m, s))  # noqa: E731
+    assert flags(main, sub) == {"stops_campaigns": True, "blocks_dialed_number": False}
+    assert flags(plain) == {"stops_campaigns": False, "blocks_dialed_number": False}
+    assert flags(plain, blocks_sub) == {"stops_campaigns": False, "blocks_dialed_number": True}
+    assert flags(None) == flags("not-a-uuid") == {"stops_campaigns": False, "blocks_dialed_number": False}
+
+
+def test_legacy_note_with_a_blocking_status_blocks_its_number(db):
+    """POST /comments: a blocks_dialed_number status blocks the note's contactNumber (any stored
+    spelling) when it is one of the client's numbers; nothing otherwise."""
+    import random
+    import uuid
+
+    from test_admin_support import legacy_calls, make_user
+    from test_admin_support import make_case as admin_case
+    from test_admin_support import q1 as aq1
+    collector = make_user(db, {"clints": True})
+    case = admin_case(db, 1000, owner=collector)
+    idn = aq1(db, 'SELECT "identityNumber" FROM clints WHERE id = %s', (case,))[0]
+    n1, n2 = ("9665" + f"{random.randint(0, 99999999):08d}" for _ in range(2))
+    ids = {}
+    for n, default in ((n1, True), (n2, False)):
+        ids[n] = str(uuid.uuid4())
+        run(db, 'INSERT INTO "ClintContacts" (id, contact_type_id, "identityNumber", contact_status, contact, '
+                "is_default) VALUES (%s, '00000000-0000-4000-8000-000000000706', %s, 'new', %s, %s)",
+            ids[n], idn, n, default)
+    blocks = _admin_status(db, "T legacy wrong " + uuid.uuid4().hex[:6], blocks=True)
+    plain = _admin_status(db, "T legacy plain " + uuid.uuid4().hex[:6])
+
+    def body(status, number):
+        return {"method": "POST", "path": "/comments", "json": {
+            "clint_id": case, "user_id": collector, "contactMethod_id": "00000000-0000-4000-8000-000000000701",
+            "comment": "T note", "comment_status_id": status, "contactNumber": number}}
+    res = legacy_calls(collector, [body(plain, n2), body(blocks, "0555000000"), body(blocks, "0" + n1[3:])])
+    assert [r["status"] for r in res] == [200, 200, 200], res
+    assert aq1(db, 'SELECT is_blocked, is_default FROM "ClintContacts" WHERE id = %s', (ids[n1],)) == (True, False)
+    assert aq1(db, 'SELECT is_blocked FROM "ClintContacts" WHERE id = %s', (ids[n2],)) == (False,)
+    assert aq1(db, 'SELECT count(*) FROM "Comments" WHERE clint_id = %s', (case,))[0] == 3
+
+
+def test_migration_seeds_the_campaign_flags(db):
+    """0080 flags live statuses by trimmed name (any level); re-running its UPDATEs on new rows
+    behaves the same."""
+    from pathlib import Path
+
+    from test_admin_support import q1 as aq1
+    paid = _admin_status(db, " تم السداد ")
+    paid_sub = _admin_status(db, "تم السداد", parent=_admin_status(db, "T court"))
+    wrong = _admin_status(db, "رقم التواصل غير صحيح")
+    other = _admin_status(db, "تم السداد جزئياً")
+    sql = (Path(__file__).resolve().parents[2] / "db" / "migrations" / "0080_campaign_rules.sql").read_text("utf-8")
+    start = sql.index('UPDATE "CommentStatuses"')
+    end = sql.index("COMMENT ON COLUMN")
+    with db.cursor() as cur:
+        cur.execute(sql[start:end])
+    flags = lambda sid: aq1(db, 'SELECT stops_campaigns, blocks_dialed_number FROM "CommentStatuses" WHERE id = %s',  # noqa: E731
+                            (sid,))
+    assert flags(paid) == (True, False) and flags(paid_sub) == (True, False)
+    assert flags(wrong) == (False, True) and flags(other) == (False, False)

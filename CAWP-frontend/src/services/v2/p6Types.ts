@@ -252,6 +252,8 @@ export type SaveAsNoteBody = {
     contact_method_id: string
     comment_reachability_id?: string
     confirmed: true
+    /** 0081: the note on every active account of the same debtor too */
+    apply_to_all_accounts?: boolean
 }
 
 export type SavedNote = {
@@ -264,6 +266,9 @@ export type SavedNote = {
         comment_reachability_id: string | null
         next_contact_date: null
     }
+    /** 0081: with apply_to_all_accounts */
+    applied_to?: Array<{ case_id: string; account_number: string | null; comment_id: string }>
+    skipped_accounts?: Array<{ case_id: string; account_number: string | null; reason: string }>
 }
 
 /* ------------------------------------------------------------------ quality */

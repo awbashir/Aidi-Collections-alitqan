@@ -1,9 +1,11 @@
 /**
- * "وعد السداد" — the required promise of a promise-to-pay note (migration 0079): amount and
+ * "وعد السداد (اختياري)" — the promise a promise-to-pay note offers (migration 0079): amount and
  * due date (a Riyadh date, not before today), with the case's outstanding balance as a hint.
+ * Customer feedback 2026-10-21: OPTIONAL — left empty, the note is saved without a promise;
+ * half-filled, the missing field is asked for. No due time (a promise is a civil date).
  * When the case already has an open (or overdue) promise and the user may read promises, the
- * form offers "link the existing promise" instead of a new one. Shared by the wrap-up / call
- * result, the manual call log, the legacy note form and the follow-up completion.
+ * form offers "link the existing promise" instead of a new one (also optional). Shared by the
+ * wrap-up / call result, the manual call log, the legacy note form and the follow-up completion.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,7 +17,7 @@ import type { Balance, Option, PromiseRow } from '@/services/v2'
 import { formatMoney, riyadhToday } from '@/utils/v2/format'
 import { usePermissions } from '@/utils/v2/hooks'
 import { Segmented } from '@/views/phase1/followUps/parts'
-import { requiredPromiseErrors } from './requiredPromise'
+import { promiseDraftEmpty, requiredPromiseErrors } from './requiredPromise'
 import type { RequiredPromiseDraft } from './requiredPromise'
 
 /** The case's outstanding balance and open promises (each read may fail: then no hint / no link). */
@@ -57,7 +59,7 @@ export const RequiredPromiseFields = ({
     caseId: string | null | undefined
     value: RequiredPromiseDraft
     onChange: (v: RequiredPromiseDraft) => void
-    /** Why it is required: the note status, or the outcome "promise discussed". */
+    /** Why it is offered: the note status, or the outcome "promise discussed". */
     reason: 'status' | 'outcome'
     active?: boolean
     /** Show every missing field (after a save attempt); otherwise only what was typed wrong. */
@@ -71,6 +73,9 @@ export const RequiredPromiseFields = ({
     useEffect(() => onOutstanding?.(outstanding), [outstanding, onOutstanding])
     const today = riyadhToday()
     const errors = requiredPromiseErrors(value, today, outstanding)
+    /* optional: nothing is asked for until one of the two fields is filled in (an empty draft
+       has no errors, so `showErrors` only matters once the promise was started) */
+    const started = !promiseDraftEmpty(value)
     const shown = (field: 'amount' | 'due' | 'link', typed: boolean) => (showErrors || typed ? errors[field] : undefined)
     const linkOptions = useMemo<Option[]>(
         () =>
@@ -98,16 +103,18 @@ export const RequiredPromiseFields = ({
             data-testid={testId}
             data-mode={value.mode}
         >
-            <div className="text-[13.5px] font-extrabold text-navy-600 dark:text-gray-100">{t('p10.promise.title')}</div>
+            <div className="text-[13.5px] font-extrabold text-navy-600 dark:text-gray-100">
+                {t('p11.notes.promise.title')}
+            </div>
             <div className="mb-3 mt-0.5 text-[12px] text-gray-600">
-                {t(reason === 'outcome' ? 'p10.promise.whyOutcome' : 'p10.promise.whyStatus')}
+                {t(reason === 'outcome' ? 'p11.notes.promise.whyOutcome' : 'p11.notes.promise.whyStatus')}
             </div>
             {open.length > 0 && (
                 <div className="mb-3">
                     <Segmented<'new' | 'link'>
                         value={value.mode}
                         onChange={(mode) => onChange({ ...value, mode, promiseId: mode === 'link' ? value.promiseId ?? open[0]?.id : undefined })}
-                        label={String(t('p10.promise.title'))}
+                        label={String(t('p11.notes.promise.title'))}
                         testId={`${testId}-mode`}
                         options={[
                             { value: 'new', label: t('p10.promise.modeNew') },
@@ -117,11 +124,12 @@ export const RequiredPromiseFields = ({
                 </div>
             )}
             {value.mode === 'link' ? (
-                <DialogField label={t('p10.promise.linkLabel')} required hint={t('p10.promise.linkHint')}>
+                <DialogField label={t('p10.promise.linkLabel')} hint={t('p10.promise.linkHint')}>
                     <div data-testid={`${testId}-link`}>
                         <Select
                             size="sm"
                             menuPosition="fixed"
+                            isClearable
                             options={linkOptions}
                             value={linkOptions.find((o) => o.value === value.promiseId) || null}
                             onChange={(o) => onChange({ ...value, promiseId: (o as Option | null)?.value || undefined })}
@@ -133,7 +141,7 @@ export const RequiredPromiseFields = ({
                 <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
                     <DialogField
                         label={t('p10.promise.amount')}
-                        required
+                        required={started}
                         hint={outstanding !== null ? t('p10.promise.balanceHint', { outstanding: formatMoney(outstanding) }) : undefined}
                     >
                         <Input
@@ -141,23 +149,23 @@ export const RequiredPromiseFields = ({
                             dir="ltr"
                             inputMode="decimal"
                             value={value.amount}
-                            invalid={!!shown('amount', value.amount.trim() !== '')}
+                            invalid={!!shown('amount', started)}
                             onChange={(e) => onChange({ ...value, amount: e.target.value })}
                             data-testid={`${testId}-amount`}
                         />
-                        {err(shown('amount', value.amount.trim() !== ''))}
+                        {err(shown('amount', started))}
                     </DialogField>
-                    <DialogField label={t('p10.promise.due')} required hint={t('p10.promise.dueHint')}>
+                    <DialogField label={t('p10.promise.due')} required={started} hint={t('p10.promise.dueHint')}>
                         <Input
                             type="date"
                             size="sm"
                             min={today}
                             value={value.due}
-                            invalid={!!shown('due', !!value.due)}
+                            invalid={!!shown('due', started)}
                             onChange={(e) => onChange({ ...value, due: e.target.value })}
                             data-testid={`${testId}-due`}
                         />
-                        {err(shown('due', !!value.due))}
+                        {err(shown('due', started))}
                     </DialogField>
                 </div>
             )}

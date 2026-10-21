@@ -2,9 +2,11 @@
  * "Log a call" (`POST /v2/calls/manual`, key `calls`): a call made outside the PBX flow
  * (desk phone, mobile) with its wrap-up in one transaction: start time, duration (blank =
  * unknown, never 0), direction, outcome, note, optional callback, optional explicitly
- * agreed promise (REQUIRED with "promise discussed" or a promise-to-pay note status, 0079),
- * optional transcript text. The manual log records what the collector
- * reports; PBX evidence rules apply only to PBX calls.
+ * agreed promise (offered with "promise discussed" or a promise-to-pay note status, 0079;
+ * optional since 2026-10-21), optional transcript text. The manual log records what the
+ * collector reports; PBX evidence rules apply only to PBX calls.
+ * 0081: "apply to all the client's accounts" (default on) writes the note (with a status) to
+ * the debtor's other active accounts too; the promise and the callback stay on this case.
  *
  * A locked or archived case refuses a manual log (the legacy note rule, 409).
  */
@@ -24,6 +26,7 @@ import { announceWrapped } from '../live/callDock'
 import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields, RequiredPromiseSection } from './fields'
 import { useRequiredPromise } from './requiredPromiseForm'
 import { announcePromiseChanged } from '@/views/phase1/money/requiredPromise'
+import { ApplyToAllAccounts, announceAppliedTo, useApplyToAll } from '@/views/phase1/history/ApplyToAllAccounts'
 import {
     callbackValid,
     wrapupNoteBody,
@@ -81,6 +84,7 @@ const LogCallDialog = ({
     const [dncReason, setDncReason] = useState('')
     const [transcript, setTranscript] = useState('')
     const required = useRequiredPromise(outcome)
+    const applyAll = useApplyToAll(caseInfo.id, isOpen)
 
     useEffect(() => {
         if (!isOpen || !caseInfo.identityNumber) return undefined
@@ -120,6 +124,7 @@ const LogCallDialog = ({
         setDncReason('')
         setTranscript('')
         required.reset()
+        applyAll.reset()
     }
 
     const durationKnown = minutes.trim() !== '' || seconds.trim() !== ''
@@ -141,6 +146,7 @@ const LogCallDialog = ({
     const submit = async (key: string) => {
         if (!outcome) return
         const promiseBody = required.required ? required.body() : promiseValue(promise, outcome)
+        const applyFlag = note.status ? applyAll.flag() : undefined
         const res = await callsApi.logManual(
             {
                 case_id: caseInfo.id,
@@ -155,12 +161,14 @@ const LogCallDialog = ({
                 ...(outcome === 'wrong_number' && wrongReason.trim() ? { wrong_number_reason: wrongReason.trim() } : {}),
                 ...(outcome === 'do_not_call' && dncReason.trim() ? { do_not_call_reason: dncReason.trim() } : {}),
                 ...(transcript.trim() ? { transcript: transcript.trim() } : {}),
+                ...(applyFlag !== undefined ? { apply_to_all_accounts: applyFlag } : {}),
             },
             key
         )
         ToastNotification(String(t('p5.log.saved')), String(t('p5.log.title')), 'success')
         announceWrapped({ attemptId: res.id, caseId: caseInfo.id, needsReview: false })
         if (promiseBody) announcePromiseChanged(caseInfo.id)
+        announceAppliedTo(t, res.wrapup?.applied_to)
         reset()
         onDone?.(res)
     }
@@ -246,6 +254,7 @@ const LogCallDialog = ({
                 optional
                 onRequiresPromise={required.setStatusNeedsPromise}
             />
+            {note.status && <ApplyToAllAccounts state={applyAll} testId="p11-log-apply-all" />}
             <RequiredPromiseSection caseId={caseInfo.id} state={required} active={isOpen} testId="p10-log-promise" />
             <div className="text-eyebrow mb-2">{t('p5.wrapup.callbackSection')}</div>
             <CallbackFields value={callback} onChange={setCallback} testId="p5-log-callback" />

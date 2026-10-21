@@ -5770,7 +5770,7 @@
       "vsPrevious": "Change vs the previous period"
     },
     "promise": {
-      "title": "Promise to pay (required)",
+      "title": "Promise to pay (optional)",
       "whyStatus": "This note status records a promise to pay: enter the amount and the date the client promised. The promise is created with the note.",
       "whyOutcome": "\"Promise discussed\" records a promise to pay: enter the amount and the date the client promised. The promise is created with the call result.",
       "modeNew": "New promise",
@@ -5796,8 +5796,8 @@
       "noteSaved": "Note saved and the promise to pay recorded.",
       "aiRefused": "This status records a promise to pay, which needs the amount and the date. An AI draft can't create a promise: copy the text and save the note from the client's note form or the call result.",
       "settingsLabel": "Promise to pay",
-      "settingsCheckbox": "Requires a promise to pay (amount and date)",
-      "settingsHint": "A note with this status can only be saved with the promised amount and payment date; the promise is created with the note. Bulk notes and imports don't ask for it.",
+      "settingsCheckbox": "Suggests a promise to pay (amount and date)",
+      "settingsHint": "Notes with this status show the promise fields (amount and payment date). They are optional: when filled, the promise is created with the note. Bulk notes and imports don't ask for it.",
       "settingsInherited": "Taken from the main status \"{{name}}\".",
       "err": {
         "promise_required": "This status (or \"promise discussed\") needs the promised amount and payment date.",
@@ -6242,6 +6242,152 @@
       "extensionOnly": "Extension {{ext}}",
       "noSub": "no sub-status",
       "otherStatuses": "Other statuses"
+    }
+  },
+  "p11": {
+    "campreport": {
+      "tab": "Report",
+      "open": "View campaign report",
+      "titleFinal": "Campaign report (final)",
+      "titleSoFar": "Campaign report (so far)",
+      "generated": "Generated",
+      "paymentDays": "Count payments up to",
+      "daysN": "+{{n}} days",
+      "refresh": "Refresh",
+      "download": "Download Excel",
+      "soFarNote": "The campaign has not finished yet: these figures are so far and change as calls continue.",
+      "summary": "Summary",
+      "contracts": "Contracts",
+      "portfolios": "Portfolios",
+      "filters": "Filters",
+      "createdBy": "Created by",
+      "started": "Started",
+      "stopped": "Stopped / finished",
+      "asOf": "As of",
+      "duration": "Duration",
+      "firstCall": "First call",
+      "lastCall": "Last call",
+      "agentsList": "Agents who took part",
+      "excludedWhy": "Excluded clients (recorded reason)",
+      "noExclusions": "No exclusions recorded",
+      "promiseDue": "Promise due dates",
+      "promisesCancelled": "{{n}} cancelled (not counted)",
+      "pendingPayments": "Payments awaiting approval",
+      "pendingPaymentsHint": "{{n}} payments, not counted as collected",
+      "assigned": "Clients assigned to collectors by the campaign",
+      "collectedNote": "«Collected after contact» counts approved payments only (never pending, rejected or reversed ones) from the clients this campaign called, dated from the client's first campaign call up to {{days}} days after the campaign ended (until {{until}}). It shows what came in after the contact; it does not prove the call caused it.",
+      "kpi": {
+        "clients": "Clients",
+        "poolNow": "{{n}} in the pool now",
+        "called": "Called",
+        "pending": "{{n}} not called yet",
+        "reached": "Reached",
+        "notReached": "{{n}} not reached",
+        "excluded": "Excluded",
+        "attempts": "Call attempts",
+        "notSent": "{{n}} not sent",
+        "answerRate": "Answer rate",
+        "conversations": "{{n}} conversations",
+        "talk": "Total talk time",
+        "talkUnknown": "{{n}} calls with unknown duration",
+        "avgTalk": "Average talk time",
+        "promises": "Promises",
+        "collected": "Collected after contact",
+        "collectedCases": "from {{n}} clients (approved only)",
+        "pendingWrapup": "Awaiting wrap-up",
+        "agents": "Agents"
+      },
+      "chart": {
+        "outcomes": "Call outcomes",
+        "wrapped": "Wrapped up",
+        "hours": "Attempts and conversations by hour",
+        "agents": "Per agent"
+      },
+      "attempts": "Attempts",
+      "reached": "Reached",
+      "sent": "Calls",
+      "promisesN": "Promises",
+      "noWrapups": "No wrapped-up calls yet",
+      "noCalls": "No calls yet",
+      "noStatuses": "No note statuses recorded yet",
+      "statuses": "Note statuses recorded",
+      "agents": "Per agent",
+      "promisesByDue": "Promises by due date",
+      "removed": "Removed from the roster",
+      "col": {
+        "status": "Status (main › sub)",
+        "count": "Count",
+        "share": "Share",
+        "agent": "Agent",
+        "attempts": "Calls / attempts",
+        "reached": "Reached",
+        "rate": "Answer rate",
+        "talk": "Talk time",
+        "avgTalk": "Average talk",
+        "promises": "Promises",
+        "statuses": "Statuses recorded",
+        "dueDate": "Due date",
+        "amount": "Amount"
+      },
+      "definitions": "Reached = the PBX bridged the agent and the client (a customer line answering alone is not a conversation). Answer rate = reached / calls sent. A call still in progress has an unknown talk time, never zero. Clients = the pool as evaluated now plus every client the campaign called or excluded. Times are Asia/Riyadh."
+    },
+    "camprules": {
+      "unassigned": {
+        "label": "Unassigned clients only",
+        "hint": "Only clients with no collector. Combine it with a status (for example the last status \"No answer\"). A client is still only called by a member whose own access includes them. When the call ends with a promise to pay, the client is assigned to the agent who made the call.",
+        "conflict": "Unassigned clients have no collector: remove the collector filter or untick this option.",
+        "on": "Yes, only clients with no collector"
+      },
+      "reason": {
+        "status_stops_campaigns": "Status stops campaigns"
+      },
+      "dialed": {
+        "label": "Number dialed",
+        "place": "{{position}} of {{of}}",
+        "hidden": "hidden",
+        "default": "default number"
+      },
+      "col": {
+        "lastDialed": "Last number dialed"
+      },
+      "assigned": "Assigned to {{name}} after a promise",
+      "settings": {
+        "label": "Campaigns",
+        "stops_campaigns": "Stop calling the client in campaigns",
+        "stops_campaignsHint": "When the client's latest note has this status, every campaign skips the client (for example paid, settled or deceased). A main status covers its sub-statuses.",
+        "blocks_dialed_number": "Block the number that was called",
+        "blocks_dialed_numberHint": "Recording this status on a call blocks the number that was called, like \"Wrong number\". A note from the notes form blocks its contact number when it is one of the client's numbers. A main status covers its sub-statuses.",
+        "inherited": "Taken from the main status \"{{name}}\"."
+      },
+      "assignedToday": "Assigned after a promise today: {{count}}"
+    },
+    "notes": {
+      "applyAll": {
+        "label": "Apply to all the client's accounts ({{count}})",
+        "hintOn": "The same note is also saved on: {{accounts}}. The promise and the follow-up stay on this account only.",
+        "hintOff": "The note is saved on this account only. Other active accounts of the client: {{accounts}}.",
+        "tooMany": "This client has {{count}} other active accounts, more than the {{limit}} a note can be applied to: the note is saved on this account only.",
+        "title": "Applied to the client's accounts",
+        "applied": "The note was also applied to the accounts: {{accounts}}.",
+        "skipped": "Not applied (the status belongs to another contract): {{accounts}}."
+      },
+      "timeline": {
+        "appliedFrom": "Applied from account {{account}}",
+        "appliedTo": "Also applied to: {{accounts}}"
+      },
+      "promise": {
+        "title": "Promise to pay (optional)",
+        "whyStatus": "This status suggests a promise to pay. If the client promised, enter the amount and the date and the promise is created with the note; leave both empty to save the note without a promise.",
+        "whyOutcome": "The result \"promise discussed\" suggests a promise to pay. If the client promised, enter the amount and the date and the promise is created with the call result; leave both empty to save without a promise.",
+        "fixFields": "Complete the promise amount and payment date, or leave both empty."
+      },
+      "settings": {
+        "checkbox": "Suggests a promise to pay (amount and date)",
+        "hint": "A note with this status shows the promise amount and payment date (optional); when filled in, the promise is created with the note. Bulk notes and imports don't ask for it."
+      },
+      "err": {
+        "too_many_accounts": "The client has too many accounts to apply the note to all of them; untick \"Apply to all the client's accounts\"."
+      }
     }
   }
 }

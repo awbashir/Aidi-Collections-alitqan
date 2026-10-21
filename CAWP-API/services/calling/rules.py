@@ -145,6 +145,14 @@ def case_in_scope_of(user_id, case_id) -> dict | None:
     return dict(r) if r else None
 
 
+def case_row(case_id) -> dict | None:
+    """The case row without any scope (callers decide access; see the campaign grant)."""
+    r = sess().execute(text("""
+        SELECT c.id, c."identityNumber" AS identity_number, c.is_archive, c.is_locked, c.user_id
+          FROM clints c WHERE c.id = CAST(:case AS uuid)"""), {"case": str(case_id)}).mappings().first()
+    return dict(r) if r else None
+
+
 def outstanding(case_id):
     from services.money import _BALANCE_SQL
     r = sess().execute(_BALANCE_SQL, {"cid": str(case_id)}).mappings().first()
@@ -216,10 +224,13 @@ def transport_status() -> dict | None:
 
 
 # --------------------------------------------------------------------------- the rules
-def evaluate(*, actor_id, case_id, contact_id, own_attempt=None, extension=None) -> Plan:
+def evaluate(*, actor_id, case_id, contact_id, own_attempt=None, extension=None, campaign_id=None) -> Plan:
     """Run every rule for `actor_id` calling `contact_id` on `case_id`. Raises RuleRefused.
     `own_attempt` excludes that attempt's own reservation; `extension` (when given) must
-    still be the collector's active extension."""
+    still be the collector's active extension. `campaign_id` (campaign dispatch only): an
+    UNASSIGNED case outside the actor's scope may still be dialled when the campaign is
+    unassigned-only, the actor an active member and the case in the creator's scope
+    (campaign_rules.unassigned_dispatch_ok; customer approval 2026-10-21)."""
     from services.calling import extensions as X
     from services.calling import settings as S
     active, granted = _permission(actor_id, CALLS_MAKE)
@@ -233,6 +244,10 @@ def evaluate(*, actor_id, case_id, contact_id, own_attempt=None, extension=None)
     if extension is not None and own["extension"] != extension:
         raise RuleRefused("no_extension", {"extension_changed": True})
     case = case_in_scope_of(actor_id, case_id)
+    if case is None and campaign_id is not None:
+        from services.calling import campaign_rules
+        if campaign_rules.unassigned_dispatch_ok(campaign_id, actor_id, case_id):
+            case = case_row(case_id)
     if case is None:
         raise RuleRefused("not_found", {"case_id": str(case_id)})
     if case["is_archive"]:

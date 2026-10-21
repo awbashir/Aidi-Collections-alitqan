@@ -10,9 +10,12 @@ Rules (docs/phase1-spec.md "Stream B", docs/PROJECT-NOTES.md §2.4):
   is an event;
 * completing late keeps `due_at` and records `completed_late`, so a missed callback stays
   a recorded fact;
-* an outcome note with a promise-to-pay status (0079, `requires_promise`) needs `promise` =
+* an outcome note with a promise-to-pay status (0079, `requires_promise`) offers `promise` =
   {amount, due_date} (created with the note, source `follow_up`) or {promise_id} (an open
-  promise of the case): 422 `promise_required` otherwise (services/promise_required.py);
+  promise of the case); since 2026-10-21 it is optional (services/promise_required.py);
+* `apply_to_all_accounts` (0081): the outcome note is also written to the debtor's other
+  active accounts (services/note_siblings.py); the completion, the next follow-up and the
+  promise stay on this case only;
 * writers lock the case row first (FOR NO KEY UPDATE, the same lock as the note trigger),
   then the follow-up, so concurrent writers on one case serialise in one order.
 
@@ -29,6 +32,7 @@ from core import audit
 from core.api_response import FORBIDDEN, NOT_FOUND, ApiError
 from core.revisions import RevisionConflict
 from services import comment_status_tree as status_tree
+from services import note_siblings
 from services import promise_required as promise_rules
 from services import worklist_common as wc
 from services.worklist_common import CLINTS, FOLLOW_UP_EVENTS as EV, FOLLOW_UPS as FU, USERS
@@ -191,8 +195,15 @@ def list_follow_ups(session, flt: wc.CaseFilter, *, bucket=None, page=1, page_si
 # case view
 # --------------------------------------------------------------------------------------
 
-def _require_case(session, scope, case_id, *, lock=False):
+def _require_case(session, scope, case_id, *, lock=False, grant=False):
     row = wc.case_in_scope(session, scope, case_id, lock=lock)
+    if row is None and grant:                    # campaign grant (client-page read only)
+        from services.calling import campaign_rules
+        if campaign_rules.campaign_grant(scope.identity, case_id):
+            from types import SimpleNamespace
+
+            from services.clients_scope import SUPER
+            row = wc.case_in_scope(session, SimpleNamespace(kind=SUPER), case_id, lock=lock)
     if row is None:   # absent or outside the caller's scope: same answer, no existence leak
         raise ApiError(404, NOT_FOUND, "case not found", {"case_id": str(case_id)})
     return row
@@ -201,7 +212,7 @@ def _require_case(session, scope, case_id, *, lock=False):
 def case_follow_ups(session, scope, case_id, *, day=None, event_limit=500) -> dict:
     day = day or wc.Day()
     case_id = str(case_id)
-    case = _require_case(session, scope, case_id)
+    case = _require_case(session, scope, case_id, grant=True)
     rows = session.execute(
         sa.select(FU).where(FU.c.case_id == case_id).order_by(FU.c.created_at.desc(), FU.c.id.desc())
     ).mappings().all()
@@ -379,18 +390,22 @@ def complete(session, scope, identity, follow_up_id, body, expected, *, can_mana
     _check_note_status(session, note)
     _check_lookup(session, CONTACT_METHODS, note["contact_method_id"], "outcome_note.contact_method_id")
     _check_lookup(session, REACHABILITY, note["comment_reachability_id"], "outcome_note.comment_reachability_id")
-    # 0079: a promise-to-pay status needs a promise; a promise needs such a status
+    # 0079: a promise needs a promise-to-pay status, which offers one (optional since 2026-10-21)
     promise_spec = promise_rules.parse(body.get("promise"), "promise")
-    if promise_rules.status_requires_promise(note["comment_status_id"], note["comment_sub_status_id"], session):
-        if promise_spec is None:
-            raise promise_rules.required_error("status")
-    elif promise_spec is not None:
+    if promise_spec is not None and not promise_rules.status_requires_promise(
+            note["comment_status_id"], note["comment_sub_status_id"], session):
         raise ApiError(422, "promise_not_allowed", "a promise is recorded with a promise-to-pay note status",
                        {"promise": "not_allowed_for_status"})
 
+    apply_all = note_siblings.parse(body)
+    if apply_all:                                  # 0081: before the case lock (no deadlock)
+        peek = _get(session, str(follow_up_id))
+        if peek is not None:
+            note_siblings.serialize(peek["case_id"], session)
     case, row = _load_for_write(session, scope, identity, follow_up_id, expected, can_manage=can_manage)
     fid, case_id = str(row["id"]), str(row["case_id"])
     before = _audit_view(row)
+    planned = note_siblings.plan(case_id, note["comment_status_id"], session) if apply_all else None
 
     # The outcome note is a real legacy note (timeline, reports, last_comment_at). When it
     # schedules the next call it carries next_contact_date like a legacy callback note, but
@@ -407,6 +422,8 @@ def complete(session, scope, identity, follow_up_id, body, expected, *, can_mana
         comment_reachability_id=note["comment_reachability_id"], next_contact_date=next_due,
         contactNumber=note["contact_number"]))
     session.execute(sa.text("SELECT set_config('cawp.skip_note_follow_up', '', true)"))
+    # 0081: the same outcome note on the debtor's other active accounts (no follow-up there)
+    siblings = note_siblings.write(planned, note_id, case_id, str(identity), source="follow_up", session=session)
 
     completed_late = wc.riyadh.civil_date(day.at) > wc.riyadh.civil_date(row["due_at"])
     next_id = str(uuid.uuid4()) if next_due is not None else None
@@ -436,6 +453,8 @@ def complete(session, scope, identity, follow_up_id, body, expected, *, can_mana
     out = {"completed": follow_up_dict(done, day), "next": None, "outcome_comment_id": note_id}
     if promise is not None:
         out["promise"] = promise
+    if siblings is not None:
+        out.update(siblings)
     if next_id:
         new = _get(session, next_id)
         audit.record("follow_up.create", "follow_up", next_id, case_id=case_id, after=_audit_view(new),

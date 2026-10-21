@@ -27,6 +27,10 @@ type InitialData = {
   parent_id?: string | null;
   /** 0079: a note with this status needs a promise (a sub-status carries its main status's flag) */
   requires_promise?: boolean;
+  /** 0080: the case's latest note with this status leaves every campaign (the row's own flag) */
+  stops_campaigns?: boolean;
+  /** 0080: recording this status on a call blocks the dialled number (the row's own flag) */
+  blocks_dialed_number?: boolean;
 };
 
 export type FormModel = InitialData;
@@ -76,6 +80,8 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
       color: DEFAULT_STATUS_COLOR,
       parent_id: null,
       requires_promise: false,
+      stops_campaigns: false,
+      blocks_dialed_number: false,
     },
     onFormSubmit,
     onDiscard,
@@ -93,6 +99,8 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
           parent_id: initialData.parent_id ?? null,
           color: initialData.color || DEFAULT_STATUS_COLOR,
           requires_promise: initialData.requires_promise === true,
+          stops_campaigns: initialData.stops_campaigns === true,
+          blocks_dialed_number: initialData.blocks_dialed_number === true,
         }}
         validationSchema={validationSchema}
         onSubmit={(values: FormModel, { setSubmitting }) => {
@@ -102,6 +110,8 @@ const PortfolioForm = forwardRef<FormikRef, PortfolioForm>((props, ref) => {
           formData.parent_id = formData.parent_id || null;
           formData.color = formData.color || DEFAULT_STATUS_COLOR;
           formData.requires_promise = formData.requires_promise === true;
+          formData.stops_campaigns = formData.stops_campaigns === true;
+          formData.blocks_dialed_number = formData.blocks_dialed_number === true;
 
           onFormSubmit?.(formData, setSubmitting);
         }}

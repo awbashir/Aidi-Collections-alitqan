@@ -15,16 +15,23 @@ One wrap-up per attempt, saved in ONE transaction (the @idempotent route commits
 4. an optional CALLBACK is that note's `next_contact_date` (a Riyadh date means 09:00 Riyadh;
    never before Riyadh today), so it needs a note status (422 `callback_needs_note_status`);
 5. a PROMISE is created through the Phase 1 promise service (services/promise_required.py).
-   Customer decision 2026-10-20 (migration 0079): the outcome `promise_discussed`, and a note
-   status with `requires_promise` («وعد بالسداد», or its sub-status), NEED one: `promise` =
-   {amount, due_date} (a new promise, source `call_wrapup`) or {promise_id} (link an open
-   promise of the case); without it 422 `promise_required`. Such a status needs the outcome
-   connected or promise_discussed (422 `promise_needs_conversation`). Otherwise a promise stays
-   optional, with outcome `connected` only and `promise.agreed` exactly true (and the promises
-   key). A required promise needs no promises key: the note right covers it (customer decision);
+   Migration 0079: the outcome `promise_discussed`, and a note status with `requires_promise`
+   («وعد بالسداد», or its sub-status), OFFER one: `promise` = {amount, due_date} (a new promise,
+   source `call_wrapup`) or {promise_id} (link an open promise of the case). Customer feedback
+   2026-10-21: it is OPTIONAL (the 2026-10-20 422 `promise_required` is gone): without it the
+   wrap-up is saved with no promise; given values are still validated. Such a status needs the
+   outcome connected or promise_discussed (422 `promise_needs_conversation`). Otherwise a promise
+   stays optional, with outcome `connected` only and `promise.agreed` exactly true (and the
+   promises key). An offered promise needs neither: the note right covers it (customer decision);
+5b. `apply_to_all_accounts` (0081, default false): the note (only when the result writes one,
+   i.e. has a status) is also written to every other active account of the same debtor, in this
+   transaction (services/note_siblings.py). The promise and the callback follow-up stay on this
+   case. `wrapup.applied_to` of the call detail lists the copies;
 6. `wrong_number` blocks that contact with the Phase 1 `is_blocked` flag (the same rules as
    the contact screen: blocking the default needs `replacement_default_id` when the debtor
-   has other eligible contacts); `do_not_call` adds an active case calling block;
+   has other eligible contacts); `do_not_call` adds an active case calling block. 0080: a note
+   status with `blocks_dialed_number` blocks the dialled number too, and a promise on an
+   UNASSIGNED campaign case assigns it to the caller (services/calling/campaign_rules.py);
 7. the call_wrapups row, `wrapped_up_at` on the attempt, the release of the attempt's
    reservation (source `wrapup`) and the audit rows.
 
@@ -69,8 +76,10 @@ from core import audit, riyadh
 from core.api_response import NOT_FOUND, VALIDATION_FAILED, ApiError
 from core.revisions import RevisionConflict, parse_revision
 from services import comment_status_tree as status_tree
+from services import note_siblings
 from services import promise_required as promise_rules
 from services.calling import attempts as A
+from services.calling import campaign_rules
 from services.calling.common import (OUTCOMES, SUPERVISE_KEYS, can_supervise, case_in_scope, iso, me,
                                      optional_text, parse_uuid, required_text, s, scope_sql, sess)
 
@@ -192,7 +201,8 @@ def validate_wrapup(body: dict, case: dict | None) -> dict:
     if status_requires and outcome not in promise_rules.PROMISE_OUTCOMES:
         _bad("note.comment_status_id", "this note status records a promise to pay: choose the outcome connected "
                                        "or promise_discussed", "needs_conversation", code="promise_needs_conversation")
-    required = case is not None and (outcome in promise_rules.REQUIRED_OUTCOMES or status_requires)
+    # offered (2026-10-21: no longer required): `agreed` may be omitted and the note right covers it
+    suggested = case is not None and (outcome in promise_rules.SUGGESTED_OUTCOMES or status_requires)
     raw_promise = body.get("promise")
     promise = None
     if raw_promise is not None:
@@ -203,21 +213,19 @@ def validate_wrapup(body: dict, case: dict | None) -> dict:
             _bad("promise", "promise must be an object: {amount, due_date} or {promise_id}")
         agreed = raw_promise.get("agreed")
         # an optional promise (connected, no promise status) needs the explicit agreement as
-        # before; a required one IS the agreement (`agreed` may be omitted, never false)
-        bad_agreed = (agreed is not None and agreed is not True) if required else agreed is not True
+        # before; an offered one IS the agreement (`agreed` may be omitted, never false)
+        bad_agreed = (agreed is not None and agreed is not True) if suggested else agreed is not True
         if bad_agreed:
             _bad("promise.agreed", "a promise needs promise.agreed = true (explicitly agreed by the debtor)",
                  "required", code="promise_not_agreed")
         promise = promise_rules.parse(raw_promise, "promise", extra_keys=("agreed",))
-        if promise is None and not required:
+        if promise is None and not suggested:
             _bad("promise.amount", "promise.amount is required", "required")
-        if not required:
+        if not suggested:
             from core.auth import has_permission
             if not (has_permission("promises") or has_permission("clints_PayemntDates")):
                 raise ApiError(403, "forbidden", "recording a promise needs the promises permission",
                                {"required_any": ["promises", "clints_PayemntDates"]})
-    if required and promise is None:
-        raise promise_rules.required_error("status" if status_requires else "outcome")
 
     return {
         "outcome": outcome, "note_text": text_, "status_id": status_id, "sub_status_id": sub_id, "method_id": method_id,
@@ -226,6 +234,8 @@ def validate_wrapup(body: dict, case: dict | None) -> dict:
                                    if body.get("replacement_default_id") not in (None, "") else None),
         "wrong_number_reason": optional_text(body, "wrong_number_reason", max_len=500),
         "do_not_call_reason": optional_text(body, "do_not_call_reason", max_len=500),
+        # 0081: the note on every active account of the same debtor (only with a note row)
+        "apply_all": note_siblings.parse(body) and status_id is not None and case is not None,
     }
 
 
@@ -267,6 +277,10 @@ def wrapup_access(attempt) -> dict:
     own = str(attempt["collector_user_id"]) == me()
     manager = can_supervise()
     in_scope = case is not None and _in_scope(case["id"])
+    if case is not None and own and not in_scope:
+        # campaign grant: an unassigned campaign case the collector is calling (campaign_rules)
+        from services.calling import campaign_rules
+        in_scope = campaign_rules.campaign_grant(me(), case["id"])
     if case is None:
         reason = "case_deleted"
     elif own and not in_scope:
@@ -383,12 +397,15 @@ def _insert_note(attempt_id, case_id, actor, contact, attempt, v) -> str:
 
 def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
     actor, attempt_id, case_id = me(), str(attempt["id"]), str(case["id"])
+    if v["apply_all"]:
+        note_siblings.serialize(case_id)                           # before the case lock (no deadlock)
     _lock_case(case_id)
     if v["outcome"] == "wrong_number" and contact is None:
         _bad("contact_id", "a wrong number needs the contact that was called", "required",
              code="contact_required")
 
     note_id = follow_up_id = None
+    planned = note_siblings.plan(case_id, v["status_id"]) if v["apply_all"] else None
     if v["status_id"] is not None:
         note_id = _insert_note(attempt_id, case_id, actor, contact, attempt, v)
         if v["callback"] is not None:                              # opened by comments_follow_up_trg
@@ -401,14 +418,24 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
                             "next_contact_date": iso(v["callback"]), "call_id": attempt_id,
                             "follow_up_id": follow_up_id}, reason="call wrap-up")
 
+    # 0080: a promise on an unassigned campaign case first assigns it to the agent who made the
+    # call (so the promise is created on their own case), then the promise is recorded
+    assigning = campaign_rules.claim_on_promise(attempt, case_id, v)
     promise = None
     if v["promise"] is not None:                                   # create (source call_wrapup) or link
         promise = promise_rules.apply(case_id, actor, v["promise"], source="call_wrapup", comment_id=note_id)
+    # 0081: the same note on the debtor's other active accounts (no promise, no follow-up there)
+    siblings = note_siblings.write(planned, note_id, case_id, actor, source="call_wrapup") if note_id else None
 
     contact_blocked = False
     if v["outcome"] == "wrong_number":
         contact_blocked = _block_wrong_number(contact, attempt_id, v)
+    # 0080: a blocks_dialed_number status blocks the dialled number too (audited; call_wrapups.
+    # contact_blocked stays the wrong_number outcome's, its CHECK call_wrapups_contact_block_only_wrong_number)
+    status_blocked = v["outcome"] != "wrong_number" and campaign_rules.block_dialed_by_status(contact, attempt_id, v)
     block_id = _do_not_call(case_id, attempt_id, v) if v["outcome"] == "do_not_call" else None
+    # 0080: a promise on an unassigned campaign case assigns it to the agent who made the call
+    assigned = campaign_rules.record_assignment(attempt, case_id, assigning, promise)
 
     from flask import request
     wid = sess().execute(text("""
@@ -431,7 +458,9 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
         "wrapup_id": str(wid), "outcome": v["outcome"], "note_id": note_id, "follow_up_id": follow_up_id,
         "promise_id": promise["id"] if promise else None,
         "promise_linked": bool(promise and promise.get("linked")), "contact_blocked": contact_blocked,
-        "calling_block_id": block_id, "reservation_released": released})
+        "calling_block_id": block_id, "reservation_released": released,
+        "contact_blocked_by_status": status_blocked, "assigned_by_campaign": assigned,
+        "applied_to": [a["case_id"] for a in siblings["applied_to"]] if siblings else None})
     return {"wrapup_id": str(wid)}
 
 
@@ -440,7 +469,7 @@ def log_manual_call(body: dict) -> str:
     """Record a call made outside the PBX flow (desk phone, mobile) with its wrap-up."""
     allowed = {"case_id", "contact_id", "started_at", "duration_seconds", "direction", "transcript", "outcome",
                "note", "callback_at", "promise", "replacement_default_id", "wrong_number_reason",
-               "do_not_call_reason"}
+               "do_not_call_reason", note_siblings.FIELD}
     unknown = set(body) - allowed
     if unknown:
         raise ApiError(422, VALIDATION_FAILED, f"unknown fields: {', '.join(sorted(unknown))}",
@@ -478,7 +507,7 @@ def log_manual_call(body: dict) -> str:
 
 def wrapup(attempt_id, body: dict, expected_revision) -> str:
     allowed = {"outcome", "note", "callback_at", "promise", "replacement_default_id", "wrong_number_reason",
-               "do_not_call_reason", "expected_revision"}
+               "do_not_call_reason", "expected_revision", note_siblings.FIELD}
     unknown = set(body) - allowed
     if unknown:
         raise ApiError(422, VALIDATION_FAILED, f"unknown fields: {', '.join(sorted(unknown))}",
@@ -517,6 +546,8 @@ def wrapup(attempt_id, body: dict, expected_revision) -> str:
         _save_for_review(dict(attempt), {"id": attempt["case_id"]}, contact, v, "case_deleted")
         return str(attempt_id)
     contact = _contact(attempt["contact_id"], case) if attempt["contact_id"] else None
+    if v["apply_all"]:
+        note_siblings.serialize(attempt["case_id"])               # 0081: before the case lock
     state = sess().execute(text("""
         SELECT is_locked, is_archive FROM clints WHERE id = CAST(:id AS uuid) FOR NO KEY UPDATE"""),
         {"id": str(attempt["case_id"])}).mappings().first()
@@ -549,7 +580,8 @@ def _save_for_review(attempt: dict, case: dict, contact: dict | None, v: dict, r
              code="contact_required")
     deferred = {
         "note": {"comment_status_id": v["status_id"], "comment_sub_status_id": v["sub_status_id"],
-                 "contact_method_id": v["method_id"], "comment_reachability_id": v["reach_id"]},
+                 "contact_method_id": v["method_id"], "comment_reachability_id": v["reach_id"],
+                 **({note_siblings.FIELD: True} if v["apply_all"] else {})},
         "callback_at": iso(v["callback"]),
         "promise": promise_rules.deferred_view(v["promise"]),
         "wrong_number": ({"contact_id": str(contact["id"]), "replacement_default_id": v["replacement_default_id"],

@@ -4,23 +4,25 @@
  * reachability, status filtered by the case's contract, contact method defaulting to mobile).
  * The user confirms they reviewed the AI-generated text. There is no callback, promise, payment,
  * call or message: the API refuses those fields (`422 draft_note_only`).
- * A promise-to-pay status (0079, `requires_promise`) needs a promise, which a draft never
- * creates: the dialog explains it and the API refuses it (`422 promise_required`); the
- * collector saves such a note from the note form or the call result.
+ * A draft never creates a promise; since 2026-10-21 a promise-to-pay status (0079,
+ * `requires_promise`) no longer needs one, so such a note is saved like any other.
+ * 0081: "apply to all the client's accounts" (default on, when the case has other active
+ * accounts of the same identity) writes the same note to each of them.
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import ActionDialog from '@/components/v2/ActionDialog'
-import { draftsApi, describeP6Error } from '@/services/v2'
+import { draftsApi, describeP6Error, isV2Error } from '@/services/v2'
 import type { AiDraft, SavedNote, Translate } from '@/services/v2'
 import { Notice } from '@/views/phase5/parts'
 import { NoteFields } from '@/views/phase5/wrapup/fields'
 import { emptyNote, noteValid } from '@/views/phase5/wrapup/draft'
 import type { NoteDraft } from '@/views/phase5/wrapup/draft'
-import { describePromiseCode } from '@/views/phase1/money/requiredPromise'
+import { ApplyToAllAccounts, announceAppliedTo, useApplyToAll } from '@/views/phase1/history/ApplyToAllAccounts'
 import { AiGeneratedNotice, CheckField } from '../parts'
 
-const describe = (e: unknown, t: Translate) => describePromiseCode(e, t) ?? describeP6Error(e, t)
+const describe = (e: unknown, t: Translate) =>
+    isV2Error(e) && e.code === 'too_many_accounts' ? String(t('p11.notes.err.too_many_accounts')) : describeP6Error(e, t)
 
 const SaveAsNoteDialog = ({
     draft,
@@ -47,7 +49,7 @@ const SaveAsNoteDialog = ({
     const { t } = useTranslation()
     const [note, setNote] = useState<NoteDraft>(emptyNote())
     const [confirmed, setConfirmed] = useState(false)
-    const [needsPromise, setNeedsPromise] = useState(false)
+    const applyAll = useApplyToAll(draft.case_id, isOpen)
     useEffect(() => {
         if (isOpen) {
             setNote({ ...emptyNote(), text })
@@ -61,13 +63,14 @@ const SaveAsNoteDialog = ({
             isOpen={isOpen}
             title={t('p6.drafts.saveTitle')}
             confirmLabel={t('p6.drafts.saveConfirm')}
-            canSubmit={!blocked && !needsPromise && confirmed && noteValid(note)}
+            canSubmit={!blocked && confirmed && noteValid(note)}
             width={720}
             testId="p6-save-note"
             describeError={describe}
             onReload={onReload}
             onClose={onClose}
             onSubmit={async (key) => {
+                const applyFlag = applyAll.flag()
                 const res = await draftsApi.saveAsNote(
                     draft.id,
                     {
@@ -78,9 +81,11 @@ const SaveAsNoteDialog = ({
                         contact_method_id: note.method as string,
                         ...(note.reach ? { comment_reachability_id: note.reach } : {}),
                         confirmed: true,
+                        ...(applyFlag !== undefined ? { apply_to_all_accounts: applyFlag } : {}),
                     },
                     key
                 )
+                announceAppliedTo(t, res.applied_to, res.skipped_accounts)
                 onSaved(res)
             }}
         >
@@ -98,13 +103,8 @@ const SaveAsNoteDialog = ({
                 active={isOpen}
                 testId="p6-note"
                 textHint={t('p6.drafts.noteHint')}
-                onRequiresPromise={setNeedsPromise}
             />
-            {needsPromise && (
-                <Notice tone="warning" className="mb-3" testId="p10-ai-note-promise">
-                    {t('p10.promise.aiRefused')}
-                </Notice>
-            )}
+            <ApplyToAllAccounts state={applyAll} testId="p11-ai-apply-all" />
             <div className="rounded-md border border-gray-300 p-3 dark:border-night-border">
                 <CheckField checked={confirmed} onChange={setConfirmed} testId="p6-save-note-reviewed">
                     <span className="text-[13.5px] text-gray-800 dark:text-night-body">{t('p6.drafts.saveConfirmCheck')}</span>
