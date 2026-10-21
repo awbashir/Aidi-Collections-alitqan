@@ -1,0 +1,30 @@
+# Alitqan API (deploy/native/README.md). Same gunicorn command as CAWP-API/Dockerfile, on loopback:
+# nginx (deploy/native/alitqan.nginx.conf) is the only way in.
+[Unit]
+Description=Alitqan collections API (gunicorn)
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=cawp
+Group=cawp
+WorkingDirectory=/opt/alitqan/CAWP-API
+EnvironmentFile=/etc/alitqan/api.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ExecStart=/opt/alitqan-runtime/venv/bin/gunicorn --worker-class gthread --workers 1 --threads 32 \
+    --timeout 300 --graceful-timeout 30 --keep-alive 5 --bind 127.0.0.1:9797 \
+    --access-logfile - --error-logfile - app:app
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=40
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/alitqan
+
+[Install]
+WantedBy=multi-user.target

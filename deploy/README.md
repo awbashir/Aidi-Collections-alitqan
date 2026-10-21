@@ -1,5 +1,67 @@
 # Single-server production install
 
+## Alitqan: `root@10.10.10.150`, restored from the old system (native install)
+
+Installed 2026-10-21 for Alitqan from the old system's database (`dump-mydata-202610211450.sql`,
+pg_dump 18 custom format of PostgreSQL 16.3: 578,344 cases, 1.43M notes, 2.38M contacts, 37,369
+payments, 308 users). **Runs natively with systemd, not Docker**: the server is an unprivileged
+Proxmox LXC (CT 102) without nesting and the host cannot be changed. Runbook:
+[`native/README.md`](native/README.md). The old system (10.10.10.240) keeps running in parallel;
+before go-live take a fresh dump and re-import (same runbook).
+
+| Item | Value |
+| --- | --- |
+| URL | `https://10.10.10.150`, self-signed certificate (`/opt/alitqan/deploy/certs/`, made on the server, SAN IP 10.10.10.150, until 2029-01-23). The `alitqan_com_sa.crt` in the frontend tree expired on 2025-10-07 and only names the website |
+| PBX | Issabel `10.10.0.220` (CentOS 7, Asterisk 11.25.3, **chan_sip only, no PJSIP**), production: never restart or reload it without approval |
+| CDR | MySQL user `cawp_ro@10.10.10.150`, `SELECT` on `asteriskcdrdb.*` and `call_center.*` only (created 2026-10-21, online). `cdr` has no `calldate` index (2.6M rows) |
+| Recordings | PBX user `cawp-rec` (password locked) whose only key (`/etc/alitqan/recordings_ed25519` here) is `restrict,from="10.10.10.150",command="/usr/libexec/openssh/sftp-server -R"`: read-only SFTP, no shell; the files are world-readable, so no group. `RECORDINGS_READER=sftp`. Nothing on the PBX was reloaded |
+| Live monitor + listen / whisper / join | **commissioned 2026-10-21** (customer approval; reloads only, no restart; active calls unaffected). See "Alitqan PBX changes" below |
+| Click-to-call / campaigns | **not commissioned**: the attempt evidence relies on Asterisk 12+ AMI events (`BridgeEnter`, `DialBegin`, `Linkedid`, Originate `ChannelId`), so it needs porting to Asterisk 11 first. The calling service runs with `CALLING_DISPATCH_ENABLED=0`, `CALLING_CAMPAIGNS_ENABLED=0`, `CALLING_AGI_ENABLED=0`, so `POST /v2/calls` answers 503 `transport_not_connected` |
+| Softphone | **off for every user by default** (users call from their own VoIP phones, migration 0082). Enable per user on the Extensions page; it also needs WSS/WebRTC on the PBX (`docs/issabel-commissioning.md` §4b), not set up. Listening rings the supervisor's softphone when it is on, otherwise their own phone |
+| Roles | the merged new permission keys are `false` for every role except ADMIN: grant `calls` / `calls_make` (collectors) and `calls_supervise` (supervisors) in Roles before calling |
+| Extensions | `user_extensions` is empty: adopt the legacy `users.extension` values (Calling admin → legacy drift) |
+
+The Docker files in this folder were also sized for this server (8 GB RAM) but are not used here.
+
+### Alitqan PBX changes (Issabel 10.10.0.220, 2026-10-21)
+
+Backup before any change: `/root/cawp-backup-alitqan-20261021-201204/` on the PBX (`etc-asterisk.tgz` = all of `/etc/asterisk`,
+`before-status.txt`, `passwd`/`group`/`shadow`; `after-files.tgz` = the changed files).
+
+| Change | Where | Reload |
+| --- | --- | --- |
+| Read-only CDR user `cawp_ro@10.10.10.150` (`SELECT` on `asteriskcdrdb.*`, `call_center.*`) | MariaDB | none |
+| Recordings user `cawp-rec` (locked; key `restrict,from="10.10.10.150",command="/usr/libexec/openssh/sftp-server -R"`) | `/home/cawp-rec/.ssh/authorized_keys` | none |
+| AMI tunnel user `cawp-ami` (locked, `/sbin/nologin`; key `restrict,port-forwarding,permitopen="127.0.0.1:5038",from="10.10.10.150",command="/sbin/nologin"`) | `/home/cawp-ami/.ssh/authorized_keys` | none |
+| AMI user `[cawp-calling]`: `permit=127.0.0.1/32` (the tunnel), `read=call,user,system`, `write=originate,reporting,call`. AMI `[general]` untouched (no `timestampevents`: only click-to-call evidence uses it) | appended to `/etc/asterisk/manager_custom.conf` | `manager reload` |
+| Call-control dialplan (`python -m services.calling.callctl_dialplan` with `{"driver":"SIP","record":true,"max_call_seconds":3600,"ring_seconds":30,"recall_seconds":20}`): contexts `cawp-callctl-*`, reached only by AMI Redirect / Originate | `/etc/asterisk/cawp-callctl.conf` (root:asterisk 0640), `#include` appended to `extensions_custom.conf` | `dialplan reload` |
+| ConfBridge profiles `cawp_room`, `cawp_customer`, `cawp_member` (`--confbridge`) | `/etc/asterisk/confbridge_custom.conf` (was empty) | `module reload app_confbridge.so` |
+| PBX epoch global, written once (no pre-start hook: Asterisk's start script is untouched; a restart still changes the epoch through the process start time) | `/etc/asterisk/collections-pbx-epoch.conf`, `#include` in `globals_custom.conf` | `dialplan reload` |
+
+App server: `alitqan-ami-tunnel.service` (`127.0.0.1:15038` → PBX `127.0.0.1:5038`, host key pinned in
+`/etc/alitqan/pbx_known_hosts`); `/etc/alitqan/api.env`: `CALLING_ENABLED=1`, `CALLING_PBX_COMMISSIONED=1`,
+`CALLING_AMI_HOST=127.0.0.1`, `CALLING_AMI_PORT=15038`, `CALLING_AMI_TLS=0`, `CALLING_AMI_USERNAME=cawp-calling`,
+`CALLING_AMI_SECRET`, `CALLING_DRIVER=SIP`, dispatch / campaigns / AGI off, `CALLING_CONTROL_ENABLED=1`.
+
+Code fixes found on this PBX: Asterisk 11 writes `channelvars` as `ChanVariable(<channel>): …` (the
+AMI decoder now accepts exactly that and normalises it); its `CoreShowChannel` has no `Linkedid` /
+`BridgeId` (two-party bridges are paired from `BridgedUniqueID`); the monitor drops the dialer's
+`OutgoingSpoolFailed` pseudo channels, treats trunk legs being dialed as outbound, and joins
+`Local/…;1/;2` queue pairs to their call.
+
+**Still to check with a real call** (needs a supervisor and an agent, each with an app extension):
+listen → whisper → join → stop on an agent's live call; that `X-CAWP-Control` reaches a softphone
+(`sip set debug peer <ext>`); transfers and conferences.
+
+**Rollback** (in order): `systemctl stop alitqan-calling alitqan-ami-tunnel` (app server); on the
+PBX remove the `[cawp-calling]` block from `manager_custom.conf`, the `#include cawp-callctl.conf`
+line from `extensions_custom.conf` and the epoch include from `globals_custom.conf`, empty
+`confbridge_custom.conf`, then `manager reload`, `dialplan reload`, `module reload app_confbridge.so`;
+`userdel -r cawp-ami` / `cawp-rec`; `DROP USER 'cawp_ro'@'10.10.10.150'`. Or restore the files from
+`etc-asterisk.tgz` in the backup and run the same reloads.
+
+---
+
 First installed on `aiserver@10.0.40.6` (`~/cawp`, Ubuntu 24.04) on 2026-10-11 as a clean
 installation for `https://aicallcenter.a-alaoula.com`.
 

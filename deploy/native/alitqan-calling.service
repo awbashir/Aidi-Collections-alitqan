@@ -1,0 +1,27 @@
+# Alitqan calling service (the only AMI client + FastAGI hook; the compose `calling` service).
+# Idle until CALLING_ENABLED=1 and CALLING_PBX_COMMISSIONED=1 (docs/issabel-commissioning.md).
+[Unit]
+Description=Alitqan calling service (AMI / AGI)
+After=network-online.target postgresql.service alitqan-ami-tunnel.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=cawp
+Group=cawp
+WorkingDirectory=/opt/alitqan/CAWP-API
+EnvironmentFile=/etc/alitqan/api.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 CALLING_HEALTH_FILE=/tmp/cawp-calling.alive
+ExecStart=/opt/alitqan-runtime/venv/bin/python -m calling
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/alitqan
+
+[Install]
+WantedBy=multi-user.target

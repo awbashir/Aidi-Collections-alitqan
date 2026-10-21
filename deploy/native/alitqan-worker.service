@@ -1,0 +1,28 @@
+# Alitqan reviewed bulk jobs + report exports + retention (the compose `worker` service).
+[Unit]
+Description=Alitqan collections background worker
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=cawp
+Group=cawp
+WorkingDirectory=/opt/alitqan/CAWP-API
+EnvironmentFile=/etc/alitqan/api.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 BULK_BATCH_SIZE=500 BULK_LEASE_SECONDS=60 \
+    BULK_MAX_ATTEMPTS=3 BULK_RETENTION_INTERVAL_SECONDS=600 BULK_WORKER_HEALTH_FILE=/tmp/cawp-worker.alive
+ExecStart=/opt/alitqan-runtime/venv/bin/python -m worker
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+# the current batch finishes, then the job is released
+TimeoutStopSec=90
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/alitqan
+
+[Install]
+WantedBy=multi-user.target

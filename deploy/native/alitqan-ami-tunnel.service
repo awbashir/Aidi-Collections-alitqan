@@ -1,0 +1,29 @@
+# Alitqan AMI tunnel: the calling service talks AMI to 127.0.0.1:15038 here, forwarded over SSH
+# to the PBX's own 127.0.0.1:5038. The PBX's AMI has no TLS and the calling service refuses
+# plaintext AMI except on loopback (docs/issabel-commissioning.md §3, "Option without AMI TLS").
+# PBX side: user cawp-ami (password locked, /sbin/nologin) whose only key is
+#   restrict,port-forwarding,permitopen="127.0.0.1:5038",from="10.10.10.150",command="/sbin/nologin"
+# Host key pinned in /etc/alitqan/pbx_known_hosts (checked against the PBX's own fingerprint).
+[Unit]
+Description=Alitqan AMI tunnel to Issabel 10.10.0.220
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cawp
+Group=cawp
+ExecStart=/usr/bin/ssh -N -T -i /etc/alitqan/ami_tunnel_ed25519 \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes \
+    -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/alitqan/pbx_known_hosts \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+    -L 127.0.0.1:15038:127.0.0.1:5038 cawp-ami@10.10.0.220
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
