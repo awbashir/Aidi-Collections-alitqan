@@ -14,7 +14,8 @@ CALLING_* environment as the service, or flags) and checks, printing PASS / WARN
                  that would fail safely even on an over-privileged account)
   dialplan       ShowDialPlan of the restricted context: AGI via GLOBAL(COLLECTIONS_AGI_URL),
                  the ALLOW check, TIMEOUT(absolute), the fixed trunk Dial with only i/b/U/L(/F)
-                 options; with `--trunk A,B,C` (dialplan policy `trunks`) one Dial per trunk, in order
+                 options; with `--trunk A,B,C` (dialplan policy `trunks`, chan_sip) the trunk is
+                 selected in that order by SIPPEER(<trunk>,status) and there is exactly ONE Dial
   version        the AMI greeting agrees with CALLING_PBX_EVENTS (AMI 1.x = Asterisk <= 11 = legacy)
   channels       CoreShowChannels (the inventory P1 reconciliation uses)
   agi            the FastAGI port is reachable from THIS host (the PBX side is pbx-verify.sh)
@@ -49,7 +50,15 @@ from services.calling.ami import (AmiConfig, AmiDecoder, AmiError, AmiSession, a
 MUST_ALLOW = ("Originate", "Getvar", "CoreStatus", "CoreShowChannels", "Ping")
 MUST_DENY = ("Command", "Setvar", "Redirect", "Reload", "ModuleLoad", "Atxfer", "Bridge", "UpdateConfig",
              "GetConfig", "Filter", "DBPut")
+# The `call` write class that call control needs (docs/issabel-commissioning.md §3b: transfer,
+# conference, supervisor listen). With call control on, these are expected; the AMI client still
+# refuses any Setvar/Redirect outside the call-control allowlist (ami.call_control_fields_ok).
+CALL_CONTROL_ACTIONS = ("Setvar", "Redirect", "Atxfer", "Bridge")
 DENY_TEST_NUMBER = "+99900000000"                       # never routable; the gate refuses it too
+
+
+def call_control_on() -> bool:
+    return (os.environ.get("CALLING_CONTROL_ENABLED") or "1").strip() != "0"
 
 
 class Report:
@@ -138,12 +147,17 @@ def run_checks(cfg: AmiConfig, *, context: str, trunk: str | None, agi_host: str
         else:
             missing = [x for x in MUST_ALLOW if x not in allowed]
             extra = [x for x in MUST_DENY if x in allowed]
+            expected = [x for x in extra if call_control_on() and x in CALL_CONTROL_ACTIONS]
+            extra = [x for x in extra if x not in expected]
             if missing:
                 rep.add("FAIL", "privileges", f"not allowed but needed: {', '.join(missing)}")
             if extra:
                 rep.add("FAIL", "privileges", f"too much privilege, remove: {', '.join(extra)} "
-                                              "(write should be originate,reporting)")
-            if not missing and not extra:
+                                              "(write should be originate,reporting[,call for call control])")
+            if expected:
+                rep.add("WARN", "privileges", f"call write for call control (§3b): {', '.join(expected)} allowed; "
+                                              "the AMI client refuses any Setvar/Redirect outside its allowlist")
+            if not missing and not extra and not expected:
                 rep.add("PASS", "privileges", f"{len(allowed)} actions; only originate + reporting")
 
         refusals = _raw_probe(cfg, [
@@ -155,8 +169,12 @@ def run_checks(cfg: AmiConfig, *, context: str, trunk: str | None, agi_host: str
         ]) or {}
         bad = [k for k, (resp, msg) in refusals.items()
                if not (resp == "Error" and re.search(r"permission denied|forbidden", msg or "", re.I))]
+        if call_control_on() and "v-set" in bad:          # Setvar is part of the call write class (§3b)
+            bad.remove("v-set")
+            rep.add("WARN", "refusals", "Setvar is allowed (call control); its fields are checked by the AMI client")
         rep.add("FAIL" if bad or not refusals else "PASS", "refusals",
-                f"not refused: {', '.join(bad)}" if bad else "Command, Setvar and application Originate refused")
+                f"not refused: {', '.join(bad)}" if bad else "Command and application Originate refused"
+                + ("" if call_control_on() else ", Setvar refused"))
 
         _check_dialplan(s, cfg, rep, context, trunk)
 
@@ -253,6 +271,18 @@ def _check_dialplan(s: AmiSession, cfg: AmiConfig, rep: Report, context: str, tr
     if not apps:
         rep.add("FAIL", "dialplan", f"context {context!r} not found (install the generated dialplan)")
         return
+    problems = dialplan_problems(apps, trunk)
+    rep.add("FAIL" if problems else "PASS", "dialplan",
+            "; ".join(problems) if problems else f"{context}: {len(apps)} priorities, gate + fixed trunk Dial")
+
+
+TRUNK_DIAL = "SIP/${COLLECTIONS_TRUNK}/"
+
+
+def dialplan_problems(apps, trunk: str | None) -> list[str]:
+    """Pure: the restricted context's priorities [(application, data)] -> what is wrong with them.
+    `trunk` "A" = one Dial of A; "A,B,C" = the `trunks` policy: COLLECTIONS_TRUNK set to A, B, C in
+    that order, each followed by its SIPPEER status check, and exactly one Dial of SIP/${COLLECTIONS_TRUNK}/."""
     text = [f"{a}({d})" for a, d in apps]
     problems = []
     if "AGI(${GLOBAL(COLLECTIONS_AGI_URL)})" not in text:
@@ -263,21 +293,29 @@ def _check_dialplan(s: AmiSession, cfg: AmiConfig, rep: Report, context: str, tr
         problems.append("TIMEOUT(absolute) missing")
     dials = [d for a, d in apps if a == "Dial"]
     trunks = [t for t in (trunk or "").split(",") if t] or [None]
-    if len(dials) != len(trunks):
-        problems.append(f"expected exactly one Dial, found {len(dials)}" if len(trunks) == 1
-                        else f"expected one Dial per trunk ({len(trunks)}), found {len(dials)}")
+    if len(trunks) > 1:
+        chosen = [d[len("COLLECTIONS_TRUNK="):] for a, d in apps if a == "Set" and d.startswith("COLLECTIONS_TRUNK=")]
+        checks = [d for a, d in apps if a == "GotoIf" and "SIPPEER(" in d]
+        if chosen != trunks + [""]:
+            problems.append(f"trunk selection order {chosen!r} is not {trunks!r} (then none)")
+        if checks != [f'$["${{SIPPEER({t},status):0:2}}" = "OK"]?trunk' for t in trunks]:
+            problems.append("each trunk must be selected only when SIPPEER(<trunk>,status) starts with OK")
+    if len(dials) != 1:
+        problems.append(f"expected exactly one Dial, found {len(dials)}")
     else:
-        for dial, want in zip(dials, trunks):
+        for dial, want in zip(dials, trunks[:1]):
             target, _ring, options = (dial.split(",", 2) + ["", ""])[:3]
-            if want and not (target.endswith("@" + want) or target.startswith(f"SIP/{want}/")):
+            if len(trunks) > 1:
+                if not target.startswith(TRUNK_DIAL):
+                    problems.append(f"Dial target {target!r} is not the selected trunk {TRUNK_DIAL}")
+            elif want and not (target.endswith("@" + want) or target.startswith(f"SIP/{want}/")):
                 problems.append(f"Dial target {target!r} is not the fixed trunk {want!r}")
             stripped = options
             while re.search(r"\([^()]*\)", stripped):
                 stripped = re.sub(r"\([^()]*\)", "", stripped)
             if set(stripped) - set("ibULF"):
                 problems.append(f"Dial has extra options {stripped!r} (only i, b, U, L, F are generated)")
-    rep.add("FAIL" if problems else "PASS", "dialplan",
-            "; ".join(problems) if problems else f"{context}: {len(apps)} priorities, gate + fixed trunk Dial")
+    return problems
 
 
 def _deny_test(s: AmiSession, events, lock, rep: Report, context: str, extension: str, driver: str = "PJSIP"):
@@ -356,7 +394,7 @@ def main(argv=None) -> int:
     p.add_argument("--username", default=os.environ.get("CALLING_AMI_USERNAME"))
     p.add_argument("--context", default="collections-human-outbound")
     p.add_argument("--trunk", default=None,
-                   help="the outbound trunk the generated dialplan must dial (A,B,C: the failover `trunks`, in order)")
+                   help="the outbound trunk the generated dialplan must dial (A,B,C: the `trunks` selection order; one Dial of the selected trunk)")
     p.add_argument("--driver", choices=("PJSIP", "SIP"),
                    default=(os.environ.get("CALLING_DRIVER") or "PJSIP").strip().upper() or "PJSIP")
     p.add_argument("--pbx-events", choices=("modern", "legacy"),

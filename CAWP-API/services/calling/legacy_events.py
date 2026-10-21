@@ -15,6 +15,13 @@ Asterisk 11.25 (AMI 1.3, chan_sip). Its call events differ from Asterisk 12+:
                                                    two-party bridge), BridgeNumChannels 2,
                                                    BridgePeerUniqueid / BridgePeerChannel = the
                                                    other channel
+    Hangup Channel: <name><ZOMBIE>                 MasqueradeZombie  Channel, Uniqueid, Cause
+          (the husk a masquerade leaves:                (NOT a hangup of the leg: after a Redirect,
+          Redirect, hold, transfer, pickup)             hold, transfer or pickup the call goes on
+                                                        in the channel that took the leg's place)
+    Masquerade (Clone, CloneState, Original,       unchanged (Masquerade has no Uniqueid: it is
+          OriginalState), Rename (Channel,              attributed by channel name), Rename
+          Newname, Uniqueid)                            unchanged
     any other event                                unchanged
 
 Values `<null>` (e.g. the Uniqueid of a failed OriginateResponse) become absent. Every converted
@@ -27,6 +34,7 @@ from __future__ import annotations
 from services.calling.ami import Frame
 
 NULL = "<null>"
+ZOMBIE = "<ZOMBIE>"
 BRIDGE_MEMBERS = "2"
 
 
@@ -96,4 +104,10 @@ def normalise(frame) -> list:
                                ("BridgeNumChannels", BRIDGE_MEMBERS), ("BridgePeerUniqueid", peer),
                                ("BridgePeerChannel", peer_chan), ("LegacyEvent", f"Bridge/{state}")]))
         return out
+    if event == "Hangup":
+        chan = _v(frame, "Channel")
+        if chan and chan.endswith(ZOMBIE):
+            return [_frame([("Event", "MasqueradeZombie"), ("Timestamp", ts), ("Channel", chan),
+                            ("Uniqueid", _v(frame, "Uniqueid")), ("Cause", _v(frame, "Cause")),
+                            ("LegacyEvent", "Hangup/ZOMBIE")])]
     return [_strip_null(frame)]

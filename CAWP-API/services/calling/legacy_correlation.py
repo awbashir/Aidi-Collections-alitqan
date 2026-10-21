@@ -12,9 +12,12 @@ A. ActionID registry. The dispatcher records the Originate's ActionID on the que
    `Response: Failure` (Uniqueid `<null>`) is the agent's failure (projection ORIGINATE_REASON).
    A response that does not match is kept on the attempt with `binding: refused:<why>`
    (the projection makes the attempt uncertain); nothing is bound.
-B. FastAGI (services/calling/agi.py): the hook accepts the 11-style Uniqueid; on allow it binds it
-   (call_dispatch_tokens.bound_uniqueid + call_legs), and refuses `agent_channel_mismatch` when
-   the attempt already has another agent leg. This thread learns those bindings from call_legs.
+B. FastAGI (services/calling/agi.py): the hook accepts the 11-style Uniqueid only when it IS the
+   agent leg bound by A (agi_agent_check / originate_binding). It waits briefly for that binding
+   (the consumer may lag behind the PBX), then denies `agent_leg_unbound`; a refused or failed
+   OriginateResponse denies (`agent_leg_refused`, `originate_failed`), a different channel
+   `agent_channel_mismatch`. On allow it records the channel (call_dispatch_tokens.bound_uniqueid;
+   the call_legs row already exists). This thread learns bindings from call_legs.
 C. Customer legs: a `Dial` Begin (-> DialBegin) whose Uniqueid is the agent leg names a customer leg
    in DestUniqueID (the projection decides whether several, sequential failover dials, are fine).
 D. Everything else is attributed only by its Uniqueid being one of the attempt's legs (a cache,
@@ -54,7 +57,11 @@ from services.calling.evidence import (CHANNEL_EVENTS, KEEP_FIELDS, LIFECYCLE_EV
 log = logging.getLogger("cawp.calling.legacy")
 
 UID_RE = re.compile(r"^[0-9]{1,12}\.[0-9]{1,9}$")            # Asterisk <= 11 "<epoch>.<seq>"
-LEGACY_KEEP = ("ChanUniqueid", "BridgePeerUniqueid", "LegacyEvent")
+LEGACY_KEEP = ("ChanUniqueid", "BridgePeerUniqueid", "LegacyEvent", "Clone", "CloneState", "Original",
+               "OriginalState", "Newname")
+# Asterisk 11 events that swap a leg's channel underneath it (projection: `leg_masqueraded`)
+MASQUERADE_EVENTS = frozenset({"Masquerade", "Rename", "MasqueradeZombie"})
+MAX_NAMES = 50000
 TRACK_STATES = ("authorized", "dispatched", "agent_ringing", "agent_answered", "customer_dialing",
                 "customer_answered", "bridged", "uncertain", "ended", "failed")
 PENDING_TTL = 180.0
@@ -87,7 +94,7 @@ def classify(frame, epoch: str, rx_ts: decimal.Decimal) -> dict | None:
             if body_uid and uniqueid and body_uid != uniqueid:
                 conflict = True
             uniqueid = body_uid or uniqueid
-        elif event in CHANNEL_EVENTS:
+        elif event in CHANNEL_EVENTS or event in MASQUERADE_EVENTS:
             pass
         elif event in LIFECYCLE_EVENTS:
             uniqueid = None
@@ -102,7 +109,7 @@ def classify(frame, epoch: str, rx_ts: decimal.Decimal) -> dict | None:
         if ts is None:
             ts = rx_ts
             payload["pbx_ts_source"] = "receipt"
-        channel = get("Channel") or get("DestChannel")
+        channel = get("Channel") or get("DestChannel") or get("Clone")
         action_id = get("ActionID")
     except Exception:  # noqa: BLE001
         return None
@@ -191,11 +198,60 @@ def bind_agent_leg(session, epoch, uniqueid, attempt_id, *, channel=None, event_
          "eid": event_id})
 
 
+AGENT_LEG_UNBOUND = "agent_leg_unbound"
+
+
+def originate_binding(session, attempt_id, epoch) -> tuple[str, str | None]:
+    """What the attempt's own OriginateResponse (matched by its ActionID, stored by the evidence
+    consumer) bound, read fresh from the database:
+        ("unbound", None)     no OriginateResponse stored yet (the consumer may lag)
+        ("bound", uniqueid)   one Success that bound this agent leg (call_legs role agent)
+        ("refused", why)      a response that bound nothing (binding refused:<why>), several
+                              different channels, or a Success whose leg row is missing
+        ("failed", None)      Response: Failure (the PBX says the agent channel never came up)"""
+    rows = session.execute(text("""
+        SELECT e.uniqueid, e.payload->>'Response' AS response, e.payload->>'binding' AS binding
+          FROM call_events e
+         WHERE e.attempt_id = CAST(:a AS uuid) AND e.pbx_epoch = :ep AND e.source = 'ami'
+           AND e.event = 'OriginateResponse' AND e.payload->>'correlated_by' = 'action_id'
+         ORDER BY e.id"""), {"a": str(attempt_id), "ep": epoch}).mappings().all()
+    if not rows:
+        return "unbound", None
+    for r in rows:
+        if (r["binding"] or "").startswith("refused:"):
+            return "refused", r["binding"][len("refused:"):] or "originate_response_mismatch"
+    if any(r["response"] == "Failure" for r in rows):
+        return "failed", None
+    bound = {r["uniqueid"] for r in rows if r["response"] == "Success"}
+    if len(bound) != 1 or None in bound:
+        return "refused", "agent_leg_conflict"
+    uid = next(iter(bound))
+    owner = leg_owner(session, epoch, uid)
+    if owner is None or owner["attempt_id"] != str(attempt_id) or owner["role"] != "agent":
+        return "refused", "agent_leg_conflict"
+    return "bound", uid
+
+
 def agi_agent_check(session, attempt_id, epoch, uniqueid) -> str | None:
-    """FastAGI (legacy): the deny reason when the AGI channel cannot be the attempt's agent leg."""
+    """FastAGI (legacy): the deny reason when the AGI channel is not PROVABLY the attempt's agent
+    leg, None when it is. Proof = the agent leg bound from this attempt's own OriginateResponse
+    (ActionID registry) is exactly `uniqueid`. A token alone proves nothing on Asterisk 11: any
+    channel that can read the variables could present it.
+    AGENT_LEG_UNBOUND = no OriginateResponse stored yet: the caller may wait for the consumer
+    (Asterisk 11 sends the OriginateResponse before the dialplan runs) and must deny when it
+    never comes."""
     if not epoch or not UID_RE.match(uniqueid or ""):
         return "agent_channel_mismatch"
-    return "agent_channel_mismatch" if agent_conflict(session, epoch, attempt_id, uniqueid) else None
+    if agent_conflict(session, epoch, attempt_id, uniqueid):
+        return "agent_channel_mismatch"
+    status, value = originate_binding(session, attempt_id, epoch)
+    if status == "unbound":
+        return AGENT_LEG_UNBOUND
+    if status == "refused":
+        return "agent_leg_refused"
+    if status == "failed":
+        return "originate_failed"
+    return None if value == uniqueid else "agent_channel_mismatch"
 
 
 # --------------------------------------------------------------------------- correlator
@@ -206,6 +262,7 @@ class LegacyCorrelator:
         self.legs: collections.OrderedDict = collections.OrderedDict()   # (epoch, uid) -> (attempt, role)
         self.agents: dict = {}                                            # (epoch, attempt) -> agent uid
         self.pending: collections.OrderedDict = collections.OrderedDict()  # (epoch, uid) -> [(rx, row)]
+        self.names: collections.OrderedDict = collections.OrderedDict()    # (epoch, channel name) -> uid
         self.pending_ttl, self.max_pending, self.refresh_seconds = pending_ttl, max_pending, refresh_seconds
         self.dirty = False
         self._refreshed_at: dict = {}
@@ -245,6 +302,29 @@ class LegacyCorrelator:
     def agent_of(self, epoch, attempt):
         return self.agents.get((epoch, attempt))
 
+    def learn_name(self, epoch, name, uid):
+        """A leg's channel name (Masquerade events name channels, not Uniqueids)."""
+        if not name or not uid or (epoch, uid) not in self.legs:
+            return
+        self.names[(epoch, name[:200])] = uid
+        self.names.move_to_end((epoch, name[:200]))
+        while len(self.names) > MAX_NAMES:
+            self.names.popitem(last=False)
+
+    def leg_by_name(self, epoch, *names):
+        """(uid, (attempt, role)) of the first leg one of `names` is (or wraps: `AsyncGoto/<name>`,
+        `<name><ZOMBIE>`), else None."""
+        for name in names:
+            if not name:
+                continue
+            cands = [name, name[:-len("<ZOMBIE>")] if name.endswith("<ZOMBIE>") else None,
+                     name.split("/", 1)[1] if name.count("/") >= 2 else None]
+            for cand in cands:
+                uid = cand and self.names.get((epoch, cand))
+                if uid and self.known(epoch, uid):
+                    return uid, self.known(epoch, uid)
+        return None
+
     def refresh(self, session, epoch, *, force=False) -> None:
         """Seed / refresh the cache from call_legs (bindings the FastAGI hook wrote, a restart)."""
         now = time.monotonic()
@@ -252,7 +332,7 @@ class LegacyCorrelator:
             return
         self._refreshed_at[epoch] = now
         rows = session.execute(text("""
-            SELECT l.uniqueid, l.attempt_id::text AS attempt_id, l.role
+            SELECT l.uniqueid, l.attempt_id::text AS attempt_id, l.role, l.channel
               FROM call_legs l JOIN call_attempts a ON a.id = l.attempt_id AND a.pbx_epoch = l.pbx_epoch
              WHERE l.pbx_epoch = :ep AND l.role IN ('agent', 'customer') AND a.mode <> 'manual'
                AND a.state = ANY(CAST(:st AS text[])) AND a.created_at > now() - interval '12 hours'
@@ -260,6 +340,7 @@ class LegacyCorrelator:
              LIMIT 20000"""), {"ep": epoch, "st": list(TRACK_STATES)}).mappings().all()
         for r in rows:
             self.learn(epoch, r["uniqueid"], r["attempt_id"], r["role"])
+            self.learn_name(epoch, r["channel"], r["uniqueid"])
         self.stats["refreshes"] += 1
 
     # ---- pending ---------------------------------------------------------------------
@@ -274,8 +355,7 @@ class LegacyCorrelator:
         if len(items) >= MAX_PENDING_PER_UID:
             self.stats["pending_dropped"] += 1
             return
-        items.append((time.monotonic(), row))
-        self.pending.move_to_end(key)
+        items.append((time.monotonic(), row))     # the key keeps its place: ordered by first hold
         self.stats["held"] += 1
 
     def due(self, epoch) -> list:
@@ -290,15 +370,15 @@ class LegacyCorrelator:
         return out
 
     def expired(self) -> list:
-        """Held rows past the TTL (or beyond the size bound), oldest first, with their keys."""
+        """Held rows past the TTL (or beyond the size bound: the earliest held first), with their
+        keys. Every key is checked (the TTL holds for each one, whatever its place); the dict is
+        bounded, because every call evicts what is over `max_pending`."""
         now = time.monotonic()
         out = []
         over = len(self.pending) - self.max_pending
         for i, (key, items) in enumerate(self.pending.items()):
-            if i < over or (items and now - items[0][0] > self.pending_ttl):
+            if i < over or (items and now - items[0][0] > self.pending_ttl):     # items[0]: its oldest
                 out.extend((key, r) for _t, r in items)
-            elif i >= over:
-                break
         return out
 
     def drop(self, keys_rows) -> None:
@@ -336,6 +416,7 @@ class LegacyCorrelator:
             elif row["payload"].get("Response") == "Success":
                 out["bind_agent"] = uid
                 self.learn(epoch, uid, attempt, "agent")
+                self.learn_name(epoch, row.get("channel"), uid)
             out["agent_uid"] = self.agent_of(epoch, attempt)
             return "store", out
         if event == "UserEvent":
@@ -348,6 +429,19 @@ class LegacyCorrelator:
             if known[0] != claimed:
                 return "untrusted", untrusted(row)
             return "store", {**row, "attempt_id": claimed, "agent_uid": self.agent_of(epoch, claimed)}
+        if event == "Masquerade":
+            # no Uniqueid: by the name of a leg (Clone = the leg itself, or Original wrapping it)
+            hit = self.leg_by_name(epoch, row["payload"].get("Clone"), row["payload"].get("Original"))
+            if hit is None:
+                return "drop", None
+            leg_uid, (attempt, _role) = hit
+            return "store", {**row, "uniqueid": leg_uid, "attempt_id": attempt,
+                             "agent_uid": self.agent_of(epoch, attempt)}
+        if event in MASQUERADE_EVENTS:            # Rename / MasqueradeZombie: by Uniqueid, never held
+            known = self.known(epoch, uid)
+            if known is None:
+                return "drop", None
+            return "store", {**row, "attempt_id": known[0], "agent_uid": self.agent_of(epoch, known[0])}
         if event not in CHANNEL_EVENTS:
             return "drop", None
         known = self.known(epoch, uid)
@@ -355,10 +449,13 @@ class LegacyCorrelator:
             dest = row.get("dest_uid")
             if known is not None and known[1] == "agent" and dest and dest != uid:
                 self.learn(epoch, dest, known[0], "customer")
+                self.learn_name(epoch, row["payload"].get("DestChannel"), dest)
             elif known is None and dest:
                 known = self.known(epoch, dest)
         elif event in ("BridgeEnter", "BridgeLeave") and known is None:
             known = self.known(epoch, row.get("peer_uid"))
         if known is None:
             return "hold", None
+        if uid and known == self.known(epoch, uid) and event in ("Newchannel", "Newstate"):
+            self.learn_name(epoch, row.get("channel"), uid)
         return "store", {**row, "attempt_id": known[0], "agent_uid": self.agent_of(epoch, known[0])}

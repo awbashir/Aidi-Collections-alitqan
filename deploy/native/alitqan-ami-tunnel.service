@@ -4,6 +4,10 @@
 # PBX side: user cawp-ami (password locked, /sbin/nologin) whose only key is
 #   restrict,port-forwarding,permitopen="127.0.0.1:5038",from="10.10.10.150",command="/sbin/nologin"
 # Host key pinned in /etc/alitqan/pbx_known_hosts (checked against the PBX's own fingerprint).
+# -R: the click-to-call FastAGI hook. The PBX cannot open connections to this server, so the PBX's
+# own 127.0.0.1:4573 (sshd GatewayPorts=no: loopback only) is forwarded back to the calling
+# service's 127.0.0.1:4573 (CALLING_AGI_BIND / CALLING_AGI_ALLOWED_PEERS = 127.0.0.1); the PBX global
+# COLLECTIONS_AGI_URL is agi://127.0.0.1:4573/collections-authorize.
 [Unit]
 Description=Alitqan AMI tunnel to Issabel 10.10.0.220
 After=network-online.target
@@ -17,7 +21,7 @@ ExecStart=/usr/bin/ssh -N -T -i /etc/alitqan/ami_tunnel_ed25519 \
     -o BatchMode=yes -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes \
     -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/alitqan/pbx_known_hosts \
     -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
-    -L 127.0.0.1:15038:127.0.0.1:5038 cawp-ami@10.10.0.220
+    -L 127.0.0.1:15038:127.0.0.1:5038 -R 127.0.0.1:4573:127.0.0.1:4573 cawp-ami@10.10.0.220
 Restart=always
 RestartSec=5
 NoNewPrivileges=yes

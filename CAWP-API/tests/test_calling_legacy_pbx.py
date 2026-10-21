@@ -6,10 +6,12 @@ AMI 1.3): OriginateResponse, Dial Begin/End, Newchannel (no Linkedid), Newstate,
 UserEvents carry `ChanUniqueid: ${UNIQUEID}` as the legacy dialplan generates them.
 
 Pure: the normaliser (services/calling/legacy_events.py), derive() on legacy shapes, the dialplan
-policy (dial_format national_sa, trunks failover, pbx_events legacy), the mode helpers.
-Database: ActionID binding through the real evidence consumer, held events, failover legs,
-OriginateResponse failures, the FastAGI hook's legacy accept/deny, the dispatcher's ActionID
-registry and the version fail-safe.
+policy (dial_format national_sa, trunks selection, pbx_events legacy), calling.verify's dialplan
+check, the correlator's held-row TTL, the mode helpers.
+Database: ActionID binding through the real evidence consumer, held events, a second customer leg,
+masquerades, Issabel-dialer traffic, OriginateResponse failures, the FastAGI hook's legacy
+accept/deny (only the leg the OriginateResponse bound), the dispatcher's ActionID registry and the
+version fail-safe.
 """
 from __future__ import annotations
 
@@ -97,6 +99,16 @@ def user_event(attempt, st, chan_uid, *, top_uid=None, ts=None, **extra):
              *extra.items())
 
 
+def masquerade(clone, original, ts=None):
+    return F(("Event", "Masquerade"), ("Privilege", "call,all"), ("Timestamp", ts), ("Clone", clone),
+             ("CloneState", "Up"), ("Original", original), ("OriginalState", "Up"))
+
+
+def rename(chan, newname, uid, ts=None):
+    return F(("Event", "Rename"), ("Privilege", "call,all"), ("Timestamp", ts), ("Channel", chan),
+             ("Newname", newname), ("Uniqueid", uid))
+
+
 def uids(n=4):
     base = random.randint(1792600000, 1792699999)
     return [f"{base}.{random.randint(1000, 999999) + i}" for i in range(n)]
@@ -130,6 +142,14 @@ def test_bridge_link_and_unlink_become_two_enters_and_leaves_with_one_sorted_id(
     from services.calling.live_monitor import legacy_link
     assert legacy_link({"BridgedUniqueID": c}.get, a)[1] == frames[0].get("BridgeUniqueid")
     assert LE.normalise(bridge("Link", "SIP/401-0000001a", a, "SIP/401-0000001a", a)) == []
+
+
+def test_zombie_hangup_is_not_a_hangup_and_masquerade_events_pass():
+    [z] = LE.normalise(hangup("SIP/401-0000001a<ZOMBIE>", "1792601562.101"))
+    assert z.event == "MasqueradeZombie" and z.get("Uniqueid") == "1792601562.101"
+    assert z.get("LegacyEvent") == "Hangup/ZOMBIE" and z.get("Channel") == "SIP/401-0000001a<ZOMBIE>"
+    m = masquerade("SIP/401-0000001a", "AsyncGoto/SIP/401-0000001a")
+    assert LE.normalise(m) == [m]
 
 
 def test_null_values_are_dropped_and_other_events_pass_unchanged():
@@ -230,20 +250,77 @@ def _failover(first_status="CONGESTION", first_hangup="2.5", second_dial="3.0"):
             _ev(10, "Hangup", "9.0", CU2, Cause="16"), _ev(11, "Hangup", "9.1", AG, Cause="16")]
 
 
-def test_derive_sequential_failover_legs_are_one_call():
-    f = P.derive(A_ID, _failover(), ALLOW, AG)
-    assert f.ambiguity is None and len(f.customer) == 2
-    assert f.bridged == P._num("4.1") and f.customer_dialing == P._num("2.0")
-    assert (f.terminal, f.reason, f.duration) == ("ended", "customer_hung_up", 5)
-    f = P.derive(A_ID, _failover(first_status="CHANUNAVAIL"), ALLOW, AG)
-    assert f.ambiguity is None and f.terminal == "ended"
-
-
-@pytest.mark.parametrize("kw", [{"first_status": "BUSY"}, {"first_status": "NOANSWER"}, {"first_status": None},
-                                {"first_hangup": None}, {"first_hangup": "3.5"}])
-def test_derive_overlapping_or_unproven_failover_is_ambiguous(kw):
+@pytest.mark.parametrize("kw", [{}, {"first_status": "CHANUNAVAIL"}, {"first_status": "BUSY"},
+                                {"first_status": "NOANSWER"}, {"first_status": None}, {"first_hangup": None},
+                                {"first_hangup": "3.5"}])
+def test_derive_a_second_customer_leg_is_always_ambiguous(kw):
+    """One attempt dials the customer once: even a clean CONGESTION/CHANUNAVAIL then a second dial
+    (what a "failover" would be) never looks like one clean call."""
     f = P.derive(A_ID, _failover(**kw), ALLOW, AG)
-    assert f.ambiguity == "multiple_customer_legs" and f.bridged is None
+    assert f.ambiguity == "multiple_customer_legs" and f.bridged is None and f.terminal is None
+
+
+def _unlinked(with_link):
+    bid = "|".join(sorted((AG, CU)))
+    evs = _legacy_call(link=with_link) + [
+        _ev(7, "HangupRequest", "9.0", CU), _ev(8, "BridgeLeave", "9.0", AG, BridgeUniqueid=bid),
+        _ev(9, "BridgeLeave", "9.0", CU, BridgeUniqueid=bid), _ev(10, "Hangup", "9.1", CU, Cause="16"),
+        _ev(11, "DialEnd", "9.2", AG, DialStatus="ANSWER"), _ev(12, "Hangup", "9.3", AG, Cause="16")]
+    return evs
+
+
+def test_derive_unlink_without_link_is_unobserved_not_unbridged():
+    f = P.derive(A_ID, _unlinked(with_link=False), ALLOW, AG)
+    assert f.ambiguity == "bridge_unobserved" and f.terminal is None and f.bridged is None
+    f = P.derive(A_ID, _unlinked(with_link=True), ALLOW, AG)                 # with the Link: a conversation
+    assert f.ambiguity is None and (f.terminal, f.reason, f.duration) == ("ended", "customer_hung_up", 6)
+
+
+def test_derive_masquerade_or_zombie_of_a_leg_is_ambiguous():
+    bid = "|".join(sorted((AG, CU)))
+    for ev in (_ev(7, "MasqueradeZombie", "5.0", AG, Cause="16"), _ev(7, "Rename", "5.0", AG),
+               _ev(7, "Masquerade", "5.0", AG)):
+        evs = _legacy_call() + [ev, _ev(8, "BridgeLeave", "9.0", AG, BridgeUniqueid=bid),
+                                _ev(9, "BridgeLeave", "9.0", CU, BridgeUniqueid=bid),
+                                _ev(10, "Hangup", "9.1", CU, Cause="16"), _ev(11, "Hangup", "9.3", AG, Cause="16")]
+        f = P.derive(A_ID, evs, ALLOW, AG)
+        assert f.ambiguity == "leg_masqueraded" and f.terminal is None and f.duration is None
+
+
+def test_derive_no_trunk_fails_without_a_customer_leg():
+    evs = [_ev(1, "OriginateResponse", "1.0", AG, Response="Success", Reason="4", correlated_by="action_id"),
+           _ev(2, "UserEvent", "1.1", AG, state="authorized"), _ev(3, "UserEvent", "1.2", AG, state="customer_dialing"),
+           _ev(4, "UserEvent", "1.3", AG, state="no_trunk"),
+           _ev(5, "UserEvent", "1.4", AG, state="agent_ended", Cause="34", DialStatus=""),
+           _ev(6, "Hangup", "1.5", AG, Cause="34")]
+    f = P.derive(A_ID, evs, ALLOW, AG)
+    assert (f.terminal, f.reason, f.hangup_cause) == ("failed", "no_trunk_available", 34) and not f.customer
+
+
+# --------------------------------------------------------------------------- correlator (pure)
+def test_held_rows_expire_by_their_own_age_whatever_the_key_order(monkeypatch):
+    from services.calling import legacy_correlation as LC
+    now = [1000.0]
+    monkeypatch.setattr(LC.time, "monotonic", lambda: now[0])
+    c = LC.LegacyCorrelator(pending_ttl=10)
+    row = lambda uid, k: {"uniqueid": uid, "dedupe_key": k}  # noqa: E731
+    c.hold("ep", row("1.1", "a1"))                     # t=1000
+    now[0] = 1008.0
+    c.hold("ep", row("1.2", "b1"))                     # t=1008
+    now[0] = 1009.0
+    c.hold("ep", row("1.1", "a2"))                     # t=1009: the key keeps its first-hold place
+    assert list(c.pending) == [("ep", "1.1"), ("ep", "1.2")]
+    now[0] = 1012.0
+    assert [r["dedupe_key"] for _k, r in c.expired()] == ["a1", "a2"]
+    # a key whose place says "young" is still checked: every key is
+    c.pending.move_to_end(("ep", "1.1"))
+    assert [r["dedupe_key"] for _k, r in c.expired()] == ["a1", "a2"]
+    now[0] = 1019.0
+    assert sorted(r["dedupe_key"] for _k, r in c.expired()) == ["a1", "a2", "b1"]
+    # the size bound still evicts the earliest held first
+    c2 = LC.LegacyCorrelator(pending_ttl=1000, max_pending=1)
+    c2.hold("ep", row("2.1", "x")), c2.hold("ep", row("2.2", "y"))
+    assert [r["dedupe_key"] for _k, r in c2.expired()] == ["x"]
 
 
 # --------------------------------------------------------------------------- modes, config, AMI (pure)
@@ -309,30 +386,70 @@ BASE = {"context": CONTEXT, "driver": "SIP", "trunk": "Mobily18", "max_call_seco
         "record": True, "calling_windows": WIN}
 
 
-def test_dialplan_national_sa_with_sequential_trunk_failover_and_legacy_events():
+TRUNK_SELECTION = [
+    " same => n,Set(COLLECTIONS_TRUNK=Mobily18)",
+    ' same => n,GotoIf($["${SIPPEER(Mobily18,status):0:2}" = "OK"]?trunk)',
+    " same => n,Set(COLLECTIONS_TRUNK=Mobily19)",
+    ' same => n,GotoIf($["${SIPPEER(Mobily19,status):0:2}" = "OK"]?trunk)',
+    " same => n,Set(COLLECTIONS_TRUNK=Mobily20)",
+    ' same => n,GotoIf($["${SIPPEER(Mobily20,status):0:2}" = "OK"]?trunk)',
+    " same => n,Set(COLLECTIONS_TRUNK=)",
+    " same => n,Goto(notrunk)",
+    " same => n(trunk),Dial(SIP/${COLLECTIONS_TRUNK}/${COLLECTIONS_DIAL_NUMBER},30,ib(collections-customer-created^s^1)"
+    "U(collections-customer-answered)L($[${COLLECTIONS_GATE_LIMIT} * 1000]))",
+    " same => n,UserEvent(CollectionsCall,AttemptId: ${COLLECTIONS_ATTEMPT},ChanUniqueid: ${UNIQUEID},State: dial_end,"
+    "DialStatus: ${DIALSTATUS})",
+    " same => n,Hangup()",
+    " same => n(notrunk),UserEvent(CollectionsCall,AttemptId: ${COLLECTIONS_ATTEMPT},ChanUniqueid: ${UNIQUEID},"
+    "State: no_trunk)",
+    " same => n,Hangup(34)",
+    " same => n(deny),UserEvent(CollectionsCall,AttemptId: ${COLLECTIONS_ATTEMPT},ChanUniqueid: ${UNIQUEID},State: denied)",
+]
+
+
+def test_dialplan_national_sa_with_trunk_selection_and_legacy_events():
     from services.calling import dialplan
     trunks = ["Mobily18", "Mobily19", "Mobily20"]
     text = dialplan.render({**BASE, "trunks": trunks, "dial_format": "national_sa", "pbx_events": "legacy"})
     lines = text.splitlines()
-    dials = [ln for ln in lines if ",Dial(" in ln]
-    assert [d.split("Dial(")[1].split(",")[0] for d in dials] == [f"SIP/{t}/${{COLLECTIONS_DIAL_NUMBER}}" for t in trunks]
-    assert len({d.split(",", 2)[2] for d in dials}) == 1                  # the same ring timeout and options
+    # ONE Dial, of the first trunk whose chan_sip status is OK; after it, whatever DIALSTATUS: Hangup
+    assert [ln for ln in lines if "Dial(" in ln] == [TRUNK_SELECTION[8]]
+    at = lines.index(TRUNK_SELECTION[0])
+    assert lines[at:at + len(TRUNK_SELECTION)] == TRUNK_SELECTION
+    assert '"${DIALSTATUS}" !=' not in text and "CHANUNAVAIL" not in text and "(done)" not in text
+    # selection right before the Dial: after the national number is built and checked
+    assert lines.index(" same => n,Set(COLLECTIONS_DIAL_NUMBER=0${COLLECTIONS_GATE_DESTINATION:4})") < at
     assert ' same => n,GotoIf($[${REGEX("^[+]966[0-9]{9}$" ${COLLECTIONS_GATE_DESTINATION})} != 1]?deny)' in lines
-    assert " same => n,Set(COLLECTIONS_DIAL_NUMBER=0${COLLECTIONS_GATE_DESTINATION:4})" in lines
-    # the next trunk only after CHANUNAVAIL / CONGESTION; never after NOANSWER/BUSY/ANSWER/CANCEL
-    goto = ' same => n,GotoIf($["${DIALSTATUS}" != "CHANUNAVAIL" & "${DIALSTATUS}" != "CONGESTION"]?done)'
-    assert lines.count(goto) == 2
-    for i, d in enumerate(dials[:-1]):
-        at = lines.index(d)
-        assert lines[at + 2] == goto and lines[at + 3] == dials[i + 1]
-    assert lines.index(" same => n(done),Hangup()") > lines.index(dials[-1])
     # the gate itself is unchanged: AGI before any Dial, E.164 checks, the destination is the Exten
-    assert lines.index(" same => n,AGI(${GLOBAL(COLLECTIONS_AGI_URL)})") < lines.index(dials[0])
+    assert lines.index(" same => n,AGI(${GLOBAL(COLLECTIONS_AGI_URL)})") < at
     assert ' same => n,GotoIf($["${COLLECTIONS_GATE_DESTINATION}" != "${EXTEN}"]?deny)' in lines
     # every UserEvent names its own channel (Asterisk 11 has no Linkedid)
     events = [ln for ln in lines if "UserEvent(CollectionsCall" in ln]
-    assert len(events) == 11 and all("AttemptId: ${COLLECTIONS_ATTEMPT},ChanUniqueid: ${UNIQUEID}," in e for e in events)
+    assert len(events) == 10 and all("AttemptId: ${COLLECTIONS_ATTEMPT},ChanUniqueid: ${UNIQUEID}," in e for e in events)
     assert "PJSIP_ENDPOINT" not in text
+    assert "trunks=Mobily18,Mobily19,Mobily20 (first with SIPPEER status OK, one Dial, no retry)" in lines[2]
+
+
+def _apps(text):
+    """The rendered context as ShowDialPlan lists it: [(application, data)]."""
+    import re
+    out = []
+    for ln in text.split("\n\n[collections-customer-created]")[0].splitlines():
+        m = re.match(r"^(?:exten => _\+X\.,1|\s*same => n(?:\([a-z]+\))?),([A-Za-z]+)\((.*)\)$", ln)
+        if m:
+            out.append((m.group(1), m.group(2)))
+    return out
+
+
+def test_verify_checks_the_trunk_selection_and_the_single_dial():
+    from calling.verify import dialplan_problems
+    from services.calling import dialplan
+    trunks = ["Mobily18", "Mobily19", "Mobily20"]
+    text = dialplan.render({**BASE, "trunks": trunks, "dial_format": "national_sa", "pbx_events": "legacy"})
+    assert dialplan_problems(_apps(text), ",".join(trunks)) == []
+    assert dialplan_problems(_apps(text), "Mobily19,Mobily18,Mobily20")                  # wrong order
+    assert dialplan_problems(_apps(dialplan.render(BASE)), "Mobily18") == []              # single trunk unchanged
+    assert dialplan_problems(_apps(dialplan.render(BASE)), "Mobily18,Mobily19")           # not the selection
 
 
 def test_dialplan_new_policy_keys_default_to_the_unchanged_output():
@@ -342,8 +459,8 @@ def test_dialplan_new_policy_keys_default_to_the_unchanged_output():
         assert dialplan.render({**BASE, "driver": driver, "trunks": ["Mobily18"], "dial_format": "e164",
                                 "pbx_events": "modern"}) == plain
         assert "ChanUniqueid" not in plain and "COLLECTIONS_DIAL_NUMBER" not in plain and "(done)" not in plain
-    pj = dialplan.render({**BASE, "driver": "PJSIP", "trunks": ["Mobily18", "Mobily19"]})
-    assert '${PJSIP_ENDPOINT(Mobily19,allow_transfer)}' in pj and "PJSIP/${COLLECTIONS_GATE_DESTINATION}@Mobily19" in pj
+    with pytest.raises(dialplan.DialplanPolicyError):            # the selection needs chan_sip's SIPPEER
+        dialplan.render({**BASE, "driver": "PJSIP", "trunks": ["Mobily18", "Mobily19"]})
 
 
 @pytest.mark.parametrize("bad", [{"trunks": ["Mobily19", "Mobily18"]}, {"trunks": []}, {"trunks": ["Mobily18", "Mobily18"]},
@@ -530,17 +647,105 @@ def test_another_extensions_channel_is_not_bound(rig, pgc):
     assert state(pgc, rig.attempt) == ("uncertain", "originate_response_mismatch")
 
 
-def test_sequential_failover_legs_are_one_call(rig, pgc):
+def test_a_second_customer_leg_after_congestion_is_never_a_clean_call(rig, pgc):
+    """The dialplan never re-dials (trunks = selection before ONE Dial); if a second customer leg
+    shows up anyway, the attempt goes to review instead of looking like one clean call."""
     feed(rig, agent_answers(rig)
          + [newchannel(rig.cchan, rig.C), dial_begin(rig.achan, rig.A, rig.cchan, rig.C),
             hangup(rig.cchan, rig.C, "34"), dial_end(rig.achan, rig.A, "CONGESTION"),
             user_event(rig.attempt, "dial_end", rig.A, DialStatus="CONGESTION")]
          + customer_answers(rig, cu=rig.C2, cchan=rig.c2chan)
          + [bridge("Link", rig.achan, rig.A, rig.c2chan, rig.C2)])
-    assert state(pgc, rig.attempt) == ("bridged", None)
+    assert state(pgc, rig.attempt) == ("uncertain", "multiple_customer_legs")
     feed(rig, customer_hangs_up(rig, cu=rig.C2, cchan=rig.c2chan))
-    assert final(pgc, rig.attempt)[:2] == ("ended", "customer_hung_up")
+    assert final(pgc, rig.attempt)[:4] == ("uncertain", "multiple_customer_legs", None, None)
     assert legs(pgc, rig.attempt) == {rig.A: "agent", rig.C: "customer", rig.C2: "customer"}
+
+
+def test_no_trunk_fails_the_attempt_without_a_dial(rig, pgc):
+    feed(rig, agent_answers(rig) + [user_event(rig.attempt, "no_trunk", rig.A),
+                                    user_event(rig.attempt, "agent_ended", rig.A, Cause="34", DialStatus=""),
+                                    hangup(rig.achan, rig.A, "34")])
+    st = final(pgc, rig.attempt)
+    assert st[:3] == ("failed", "no_trunk_available", 34)
+    assert legs(pgc, rig.attempt) == {rig.A: "agent"}
+
+
+def hold_redirect(r, new_uid):
+    """Asterisk 11 AMI Redirect of the bridged agent channel (hold): AsyncGoto masquerade, the
+    leg's own structure becomes `<name><ZOMBIE>` and hangs up; the call goes on in `new_uid`."""
+    tmp = f"AsyncGoto/{r.achan}"
+    return [newchannel(tmp, new_uid), masquerade(r.achan, tmp), rename(r.achan, f"{r.achan}<ZOMBIE>", r.A),
+            rename(tmp, r.achan, new_uid), bridge("Unlink", r.achan, r.A, r.cchan, r.C),
+            hangup(f"{r.achan}<ZOMBIE>", r.A)]
+
+
+def test_hold_redirect_masquerade_never_ends_with_a_wrong_duration(rig, pgc):
+    feed(rig, agent_answers(rig) + customer_answers(rig) + [bridge("Link", rig.achan, rig.A, rig.cchan, rig.C)])
+    assert state(pgc, rig.attempt) == ("bridged", None)
+    feed(rig, hold_redirect(rig, rig.X))
+    assert state(pgc, rig.attempt) == ("uncertain", "leg_masqueraded")
+    # the call goes on: re-Link of the surviving channel, then the agent hangs up
+    feed(rig, [bridge("Link", rig.achan, rig.X, rig.cchan, rig.C), hangup_request(rig.achan, rig.X),
+               hangup_request(rig.cchan, rig.C, soft=True), bridge("Unlink", rig.achan, rig.X, rig.cchan, rig.C),
+               hangup(rig.achan, rig.X), hangup(rig.cchan, rig.C),
+               user_event(rig.attempt, "customer_ended", rig.C, Cause="16")])
+    st = final(pgc, rig.attempt)
+    assert st[:4] == ("uncertain", "leg_masqueraded", None, None)      # reconciliation / review decide
+    # the zombie's Hangup is stored as what it is, never as the agent leg's hangup
+    assert q1(pgc, "SELECT hungup_pbx_ts FROM call_legs WHERE pbx_epoch = %s AND uniqueid = %s",
+              rig.ctx.epoch, rig.A)[0] is None
+    assert q1(pgc, "SELECT count(*) FROM call_events WHERE attempt_id = %s AND event = 'MasqueradeZombie'",
+              rig.attempt)[0] == 1
+
+
+@pytest.mark.parametrize("which", ["masquerade_customer", "masquerade_agent", "rename", "zombie"])
+def test_any_masquerade_evidence_of_a_leg_is_ambiguous(rig, pgc, which):
+    feed(rig, agent_answers(rig) + customer_answers(rig) + [bridge("Link", rig.achan, rig.A, rig.cchan, rig.C)])
+    frame = {"masquerade_customer": masquerade(rig.cchan, f"AsyncGoto/{rig.cchan}"),
+             "masquerade_agent": masquerade("Local/9@park-0000001;2", f"AsyncGoto/{rig.achan}"),
+             "rename": rename(rig.achan, f"{rig.achan}<ZOMBIE>", rig.A),
+             "zombie": hangup(f"{rig.cchan}<ZOMBIE>", rig.C)}[which]
+    feed(rig, [frame])
+    assert state(pgc, rig.attempt) == ("uncertain", "leg_masqueraded")
+
+
+def test_issabel_dialer_traffic_interleaved_with_ours_is_ignored(rig, pgc):
+    """Issabel's own predictive dialer shares the AMI stream: its OriginateResponses (its ActionIDs)
+    and its Local/...@from-queue Dial and Bridge events never touch our attempt."""
+    d1, d2, d3 = uids(3)
+    loc1, loc2 = "Local/0500000009@from-queue-0000002a;1", "Local/0500000009@from-queue-0000002a;2"
+    foreign = [
+        originate_response("1729000001", "403", d1, exten="0500000009", context="from-internal"),
+        F(("Event", "OriginateResponse"), ("Privilege", "call,all"), ("ActionID", "dialer-77"), ("Response", "Success"),
+          ("Channel", loc1), ("Context", "from-queue"), ("Exten", "0500000009"), ("Reason", "4"), ("Uniqueid", d1)),
+        newchannel(loc1, d1, context="from-queue"), newchannel(loc2, d2, context="from-queue"),
+        dial_begin(loc2, d2, "SIP/Mobily20-0000002c", d3), newstate("SIP/Mobily20-0000002c", d3, "6"),
+        bridge("Link", loc2, d2, "SIP/Mobily20-0000002c", d3), masquerade(loc1, f"AsyncGoto/{loc1}"),
+        dial_end(loc2, d2, "ANSWER"), hangup(f"{loc1}<ZOMBIE>", d1), hangup("SIP/Mobily20-0000002c", d3)]
+    ours = agent_answers(rig) + customer_answers(rig) + [bridge("Link", rig.achan, rig.A, rig.cchan, rig.C)]
+    mixed = [f for pair in zip(ours, foreign + [None] * len(ours)) for f in pair if f is not None]
+    feed(rig, mixed)
+    assert state(pgc, rig.attempt) == ("bridged", None)
+    assert legs(pgc, rig.attempt) == {rig.A: "agent", rig.C: "customer"}
+    assert q1(pgc, "SELECT count(*) FROM call_events WHERE uniqueid = ANY(%s)", [d1, d2, d3])[0] == 0
+    assert q1(pgc, "SELECT count(*) FROM call_legs WHERE uniqueid = ANY(%s)", [d1, d2, d3])[0] == 0
+    feed(rig, customer_hangs_up(rig))
+    assert final(pgc, rig.attempt)[:2] == ("ended", "customer_hung_up")
+
+
+def test_a_duplicate_link_is_harmless(rig, pgc):
+    feed(rig, agent_answers(rig, ts=1792601000) + customer_answers(rig, ts=1792601003)
+         + [bridge("Link", rig.achan, rig.A, rig.cchan, rig.C, ts="1792601008.050"),
+            bridge("Link", rig.achan, rig.A, rig.cchan, rig.C, ts="1792601008.050"),
+            bridge("Link", rig.achan, rig.A, rig.cchan, rig.C, ts="1792601009.000")]
+         + customer_hangs_up(rig, ts=1792601050.05))
+    assert final(pgc, rig.attempt)[:4] == ("ended", "customer_hung_up", 16, 42)
+
+
+def test_an_unlink_without_its_link_is_uncertain_not_unbridged(rig, pgc):
+    feed(rig, agent_answers(rig) + customer_answers(rig) + customer_hangs_up(rig, link=True))
+    assert final(pgc, rig.attempt)[:4] == ("uncertain", "bridge_unobserved", None, None)
 
 
 def test_overlapping_customer_legs_are_ambiguous(rig, pgc):
@@ -605,9 +810,37 @@ def legacy_env_of(uid, chan="SIP/7201-0000004d"):
     return {"env": {"agi_uniqueid": uid, "agi_type": "SIP", "agi_channel": chan}}
 
 
-def test_agi_accepts_the_asterisk_11_uniqueid_and_binds_it(agi_server, gate, pgc):
+@pytest.fixture(scope="module")
+def agi_server5(cl_app):
+    """The production exchange deadline (5 s): room for the 2.5 s wait for the binding."""
+    from services.calling.agi import FastAgiServer, PeerAllowlist
+    from test_calling_agi import AGI_KEY
+    srv = FastAgiServer(cl_app, host="127.0.0.1", port=0, secret=AGI_KEY,
+                        allowed_peers=PeerAllowlist(["127.0.0.1/32"]), exchange_timeout=5.0)
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+def originate_bound(epoch, attempt, uid, chan="SIP/7201-0000004d", *, refused=None, ok=True):
+    """What the evidence consumer commits for the attempt's OriginateResponse (by its ActionID):
+    the event, and (Success, not refused) the agent leg."""
+    import json
+    payload = {"Response": "Success" if ok else "Failure", "Reason": "4" if ok else "3", "correlated_by": "action_id",
+               "Context": CONTEXT, "pbx_ts_source": "receipt", **({"binding": f"refused:{refused}"} if refused else {})}
+    connect_run("INSERT INTO call_events (source, pbx_epoch, attempt_id, event, pbx_ts, uniqueid, channel, payload, "
+                "dedupe_key) VALUES ('ami', %s, %s, 'OriginateResponse', extract(epoch FROM now()), %s, %s, %s, %s)",
+                epoch, attempt, uid if ok else None, chan if ok else None, json.dumps(payload),
+                f"ami:test-{uuid.uuid4().hex}")
+    if ok and not refused:
+        connect_run("INSERT INTO call_legs (pbx_epoch, uniqueid, attempt_id, role, channel) VALUES (%s, %s, %s, 'agent', %s)",
+                    epoch, uid, attempt, chan)
+
+
+def test_agi_accepts_the_asterisk_11_uniqueid_bound_by_the_originate_response(agi_server, gate, pgc):
     a, token = gate.attempt()
     uid = uids(1)[0]
+    originate_bound(gate.epoch, a, uid)
     fake = FakeAsterisk(agi_server, attempt=a, token=token, **legacy_env_of(uid)).run()
     assert fake.allowed and decisions(pgc, a) == [("allow", "allowed")]
     assert q1(pgc, "SELECT bound_uniqueid, consumed_at IS NOT NULL FROM call_dispatch_tokens WHERE attempt_id = %s",
@@ -616,17 +849,66 @@ def test_agi_accepts_the_asterisk_11_uniqueid_and_binds_it(agi_server, gate, pgc
         ("agent", "SIP/7201-0000004d")
 
 
-def test_agi_denies_a_channel_other_than_the_bound_agent_leg(agi_server, gate, pgc):
+def test_agi_waits_for_the_binding_and_allows_when_it_lands_in_time(agi_server5, gate, pgc):
+    import threading
+    import time
+    a, token = gate.attempt()
+    uid = uids(1)[0]
+    late = threading.Timer(0.8, originate_bound, args=(gate.epoch, a, uid))     # the consumer lags 0.8 s
+    late.start()
+    t0 = time.monotonic()
+    fake = FakeAsterisk(agi_server5, attempt=a, token=token, **legacy_env_of(uid)).run()
+    late.join()
+    assert fake.allowed and decisions(pgc, a) == [("allow", "allowed")]
+    assert 0.7 < time.monotonic() - t0 < 2.6
+
+
+def test_agi_denies_when_the_binding_never_lands(agi_server5, gate, pgc):
+    import time
+    a, token = gate.attempt()
+    t0 = time.monotonic()
+    fake = FakeAsterisk(agi_server5, attempt=a, token=token, **legacy_env_of(uids(1)[0])).run()
+    waited = time.monotonic() - t0
+    assert not fake.allowed and decisions(pgc, a) == [("deny", "agent_leg_unbound")]
+    assert 2.3 < waited < 4.5                                                # waited, inside the 5 s deadline
+    assert q1(pgc, "SELECT consumed_at, bound_uniqueid FROM call_dispatch_tokens WHERE attempt_id = %s", a) == (None, None)
+    assert q1(pgc, "SELECT count(*) FROM call_legs WHERE attempt_id = %s", a)[0] == 0
+
+
+@pytest.mark.parametrize("kind,reason", [("refused", "agent_leg_refused"), ("failure", "originate_failed")])
+def test_agi_denies_after_a_refused_or_failed_originate_response(agi_server, gate, pgc, kind, reason):
+    a, token = gate.attempt()
+    uid = uids(1)[0]
+    if kind == "refused":
+        originate_bound(gate.epoch, a, uid, refused="originate_response_mismatch")
+    else:
+        originate_bound(gate.epoch, a, uid, ok=False)
+    fake = FakeAsterisk(agi_server, attempt=a, token=token, **legacy_env_of(uid)).run()
+    assert not fake.allowed and decisions(pgc, a) == [("deny", reason)]
+    assert q1(pgc, "SELECT consumed_at FROM call_dispatch_tokens WHERE attempt_id = %s", a)[0] is None
+
+
+def test_agi_denies_another_channel_presenting_the_right_token(agi_server, gate, pgc):
+    """The token leaked to another SIP/<ext> channel of the same extension: not the bound leg."""
     a, token = gate.attempt()
     bound, other = uids(2)
-    run(pgc, "INSERT INTO call_legs (pbx_epoch, uniqueid, attempt_id, role) VALUES (%s, %s, %s, 'agent')",
-        gate.epoch, bound, a)
-    fake = FakeAsterisk(agi_server, attempt=a, token=token, **legacy_env_of(other)).run()
+    originate_bound(gate.epoch, a, bound)
+    fake = FakeAsterisk(agi_server, attempt=a, token=token, **legacy_env_of(other, chan="SIP/7201-0000009e")).run()
     assert not fake.allowed and decisions(pgc, a) == [("deny", "agent_channel_mismatch")]
     assert q1(pgc, "SELECT consumed_at, bound_uniqueid FROM call_dispatch_tokens WHERE attempt_id = %s", a) == (None, None)
     # the bound leg itself is allowed
     fake = FakeAsterisk(agi_server, attempt=a, token=token, **legacy_env_of(bound)).run()
     assert fake.allowed
+
+
+def test_agi_denies_a_channel_bound_only_by_a_previous_hook_call(agi_server, gate, pgc):
+    """An agent leg row without the attempt's OriginateResponse proves nothing."""
+    a, token = gate.attempt()
+    uid = uids(1)[0]
+    run(pgc, "INSERT INTO call_legs (pbx_epoch, uniqueid, attempt_id, role) VALUES (%s, %s, %s, 'agent')",
+        gate.epoch, uid, a)
+    fake = FakeAsterisk(agi_server, attempt=a, token=token, **legacy_env_of(uid)).run()
+    assert not fake.allowed and decisions(pgc, a) == [("deny", "agent_leg_unbound")]
 
 
 @pytest.mark.parametrize("env,reason", [
@@ -710,3 +992,51 @@ def test_dispatcher_refuses_when_the_pbx_version_contradicts_the_mode(cl_app, cl
     assert state(pgc, a) == ("failed", "pbx_version_mismatch")
     assert queue(pgc, a)[:2] == ("refused", "pbx_version_mismatch")
     assert reservation(pgc, a) == (False, "no_customer_contact")
+
+
+def test_dialplan_issabel_caller_id_before_the_one_dial():
+    """issabel_trunk_ids: the caller ID IssabelPBX's own route would send (the Alitqan gateways answer
+    the agent's bare extension with SIP 604), chosen for the selected trunk, right before the Dial."""
+    from calling.verify import dialplan_problems
+    from services.calling import dialplan
+    trunks = ["Mobily18", "Mobily19", "Mobily20"]
+    policy = {**BASE, "trunks": trunks, "dial_format": "national_sa", "pbx_events": "legacy",
+              "issabel_trunk_ids": {"Mobily18": 2, "Mobily19": 3, "Mobily20": 4}}
+    text = dialplan.render(policy)
+    lines = text.splitlines()
+    for t, n in policy["issabel_trunk_ids"].items():
+        at = lines.index(f" same => n,Set(COLLECTIONS_TRUNK={t})")
+        assert lines[at + 1] == f" same => n,Set(COLLECTIONS_TRUNK_ID={n})"
+        assert "SIPPEER(" in lines[at + 2]
+    cid = lines.index(" same => n(trunk),Set(COLLECTIONS_CID=${DB(AMPUSER/${COLLECTIONS_GATE_EXTENSION}/outboundcid)})")
+    dial = next(i for i, ln in enumerate(lines) if "Dial(" in ln)
+    assert lines[cid + 1:dial] == [
+        " same => n,ExecIf($[${LEN(${COLLECTIONS_CID})} = 0]?Set(COLLECTIONS_CID=${GLOBAL(OUTCID_${COLLECTIONS_TRUNK_ID})}))",
+        " same => n,ExecIf($[${LEN(${GLOBAL(FORCEDOUTCID_${COLLECTIONS_TRUNK_ID})})} != 0]"
+        "?Set(COLLECTIONS_CID=${GLOBAL(FORCEDOUTCID_${COLLECTIONS_TRUNK_ID})}))",
+        " same => n,ExecIf($[${LEN(${COLLECTIONS_CID})} != 0]?Set(CALLERID(all)=${COLLECTIONS_CID}))",
+        " same => n,Set(CDR(outbound_cnum)=${CALLERID(num)})",
+    ]
+    assert lines[dial].startswith(" same => n,Dial(SIP/${COLLECTIONS_TRUNK}/${COLLECTIONS_DIAL_NUMBER},30,")
+    assert dialplan_problems(_apps(text), ",".join(trunks)) == []
+    assert "issabel_trunk_ids=Mobily18:2,Mobily19:3,Mobily20:4" in lines[2]
+    # the gate is unchanged: the caller ID is set only after ALLOW and every re-check
+    assert lines.index(' same => n,GotoIf($["${COLLECTIONS_GATE}" != "ALLOW"]?deny)') < cid
+    # single trunk: same block, then the fixed Dial
+    one = dialplan.render({**BASE, "driver": "SIP", "issabel_trunk_ids": {"Mobily18": 2}}).splitlines()
+    i = one.index(" same => n,Set(COLLECTIONS_TRUNK_ID=2)")
+    assert one[i + 1].startswith(" same => n,Set(COLLECTIONS_CID=") and "Dial(SIP/Mobily18/" in one[i + 6]
+
+
+@pytest.mark.parametrize("bad", [{"issabel_trunk_ids": {"Mobily18": 2}},                     # Mobily19 missing
+                                 {"issabel_trunk_ids": {"Mobily18": 2, "Mobily19": "3"}},
+                                 {"issabel_trunk_ids": {"Mobily18": 2, "Mobily19": True}},
+                                 {"issabel_trunk_ids": {"Mobily18": 2, "Mobily19": 0}},
+                                 {"issabel_trunk_ids": {"Mobily18": 2, "Mobily19": 3, "X": 4}},
+                                 {"issabel_trunk_ids": [2, 3]}])
+def test_dialplan_issabel_trunk_ids_validation(bad):
+    from services.calling import dialplan
+    with pytest.raises(dialplan.DialplanPolicyError):
+        dialplan.render({**BASE, "driver": "SIP", "trunks": ["Mobily18", "Mobily19"], **bad})
+    with pytest.raises(dialplan.DialplanPolicyError):          # PJSIP has no IssabelPBX chan_sip trunks
+        dialplan.render({**BASE, "driver": "PJSIP", "issabel_trunk_ids": {"Mobily18": 2}})

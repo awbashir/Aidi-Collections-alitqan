@@ -32,18 +32,27 @@ Optional:
                       0XXXXXXXXX (the Alitqan GSM gateways expect 05XXXXXXXX), and any destination
                       that is not +966 followed by 9 digits is DENIED. The Originate Exten, the
                       AGI-granted destination and the dispatch token stay E.164.
-    trunks            ["Mobily18", "Mobily19", ...] (1..16 distinct names, the first = `trunk`):
-                      SEQUENTIAL failover. The next trunk is dialled only when the previous Dial
-                      ended with DIALSTATUS CHANUNAVAIL or CONGESTION (a gateway that is down or
-                      out of channels); never after NOANSWER, BUSY, ANSWER or CANCEL. Each Dial has
-                      the same ring timeout, options and limits; TIMEOUT(absolute) bounds the
-                      whole call. Absent (or just [trunk]) = one Dial, output unchanged.
+    trunks            ["Mobily18", "Mobily19", ...] (1..16 distinct names, the first = `trunk`;
+                      driver SIP only): trunk SELECTION before the one Dial. The first trunk in the
+                      list whose chan_sip `${SIPPEER(<trunk>,status)}` starts with `OK` (qualify
+                      reachable) is dialled, and only that one: whatever the DIALSTATUS, no other
+                      trunk is tried afterwards (chan_sip maps far-end 480/404/503... to CONGESTION
+                      or CHANUNAVAIL, so "retry on CONGESTION" could ring the same customer on
+                      several gateways). No trunk OK -> UserEvent `no_trunk` and Hangup(34), no
+                      Dial. Absent (or just [trunk]) = one Dial of `trunk`, output unchanged.
     pbx_events        "modern" (default, output unchanged) | "legacy": Asterisk <= 11 (the Alitqan
                       Issabel; CALLING_PBX_EVENTS=legacy). Every CollectionsCall UserEvent body also
                       carries `ChanUniqueid: ${UNIQUEID}`, the Uniqueid of the channel that sends it
                       (the agent channel, or the customer channel in the pre-dial, answer and hangup
                       handlers): Asterisk 11 events have no Linkedid, and the calling service
                       attributes a UserEvent only when that channel is a leg of the claimed attempt.
+    issabel_trunk_ids {"Mobily18": 2, ...} (driver SIP; one IssabelPBX trunk number, the N of the
+                      `OUT_N = SIP/<trunk>` global, for every dialled trunk): the outgoing caller ID
+                      that IssabelPBX's own outbound route would send (macro-outbound-callerid),
+                      set right before the one Dial: the agent extension's `AMPUSER/<ext>/outboundcid`,
+                      else the trunk's `OUTCID_N`, and `FORCEDOUTCID_N` over both; read with GLOBAL().
+                      Without it the gateway sees the agent's extension as the caller ID (the Alitqan
+                      gateways answer that with SIP 604). Absent = output unchanged.
 
 Asterisk 11 (legacy) support of every construct used here: AGI/FastAGI, GLOBAL(), REGEX(),
 substrings ${VAR:offset}, GotoIfTime with a timezone, TIMEOUT(absolute), STRFTIME, MixMonitor b,
@@ -78,10 +87,9 @@ import sys
 from services.calling.windows import WindowError, dialplan_time_ranges, validate_windows
 
 KEYS = {"context", "driver", "trunk", "max_call_seconds", "ring_seconds", "record", "calling_windows"}
-OPTIONAL_KEYS = {"caller_id_gosub", "post_call_context", "dial_format", "trunks", "pbx_events"}
+OPTIONAL_KEYS = {"caller_id_gosub", "post_call_context", "dial_format", "trunks", "pbx_events", "issabel_trunk_ids"}
 DIAL_FORMATS = ("e164", "national_sa")
 MAX_TRUNKS = 16
-FAILOVER_STATUSES = ("CHANUNAVAIL", "CONGESTION")
 GOSUB_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 CONTEXT_RE = re.compile(r"^collections-human-[a-z0-9_-]{1,50}$")
 TRUNK_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -128,6 +136,16 @@ def validate_policy(policy) -> dict:
             raise DialplanPolicyError(f"trunks must be 1..{MAX_TRUNKS} distinct names matching [A-Za-z0-9_-]{{1,64}}")
         if trunks[0] != policy["trunk"]:
             raise DialplanPolicyError("trunks must start with trunk (the first trunk dialled)")
+        if len(trunks) > 1 and policy["driver"] != "SIP":
+            raise DialplanPolicyError("trunks (more than one) needs driver SIP: the trunk is selected by "
+                                      "SIPPEER(<trunk>,status) before the one Dial")
+    if "issabel_trunk_ids" in policy:
+        ids = policy["issabel_trunk_ids"]
+        if policy["driver"] != "SIP":
+            raise DialplanPolicyError("issabel_trunk_ids needs driver SIP (IssabelPBX chan_sip trunks)")
+        if (not isinstance(ids, dict) or set(ids) != set(policy.get("trunks") or [policy["trunk"]])
+                or any(not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 9999 for n in ids.values())):
+            raise DialplanPolicyError("issabel_trunk_ids must map every dialled trunk to its IssabelPBX trunk number 1..9999")
     try:
         windows = validate_windows(policy["calling_windows"])
     except WindowError as e:
@@ -150,20 +168,35 @@ def _dial_target(driver: str, trunk: str, number_var: str) -> str:
     return f"SIP/{trunk}/${{{number_var}}}"
 
 
+def _issabel_caller_id(label: str = "") -> list[str]:
+    """IssabelPBX macro-outbound-callerid for COLLECTIONS_TRUNK_ID: user CID, else trunk CID; forced wins."""
+    return [
+        f" same => n{label},Set(COLLECTIONS_CID=${{DB(AMPUSER/${{COLLECTIONS_GATE_EXTENSION}}/outboundcid)}})",
+        " same => n,ExecIf($[${LEN(${COLLECTIONS_CID})} = 0]?Set(COLLECTIONS_CID=${GLOBAL(OUTCID_${COLLECTIONS_TRUNK_ID})}))",
+        " same => n,ExecIf($[${LEN(${GLOBAL(FORCEDOUTCID_${COLLECTIONS_TRUNK_ID})})} != 0]"
+        "?Set(COLLECTIONS_CID=${GLOBAL(FORCEDOUTCID_${COLLECTIONS_TRUNK_ID})}))",
+        " same => n,ExecIf($[${LEN(${COLLECTIONS_CID})} != 0]?Set(CALLERID(all)=${COLLECTIONS_CID}))",
+        " same => n,Set(CDR(outbound_cnum)=${CALLERID(num)})",
+    ]
+
+
 def render(policy) -> str:
     p = validate_policy(policy)
     ctx, driver, trunk = p["context"], p["driver"], p["trunk"]
     trunks = p.get("trunks") or [trunk]
     national = p.get("dial_format", "e164") == "national_sa"
     legacy = p.get("pbx_events", "modern") == "legacy"
+    trunk_ids = p.get("issabel_trunk_ids")
     number_var = "COLLECTIONS_DIAL_NUMBER" if national else "COLLECTIONS_GATE_DESTINATION"
     ev = lambda state, extra="": _event(state, extra, legacy)  # noqa: E731
     ranges = dialplan_time_ranges(p["calling_windows"])
     windows_text = json.dumps(p["calling_windows"], separators=(",", ":"))
     extra_policy = "".join([
-        f" trunks={','.join(trunks)} (sequential failover on {'/'.join(FAILOVER_STATUSES)})" if len(trunks) > 1 else "",
+        f" trunks={','.join(trunks)} (first with SIPPEER status OK, one Dial, no retry)" if len(trunks) > 1 else "",
         " dial_format=national_sa" if national else "",
-        " pbx_events=legacy (Asterisk <= 11)" if legacy else ""])
+        " pbx_events=legacy (Asterisk <= 11)" if legacy else "",
+        f" issabel_trunk_ids={','.join(f'{t}:{trunk_ids[t]}' for t in trunks)} (IssabelPBX outbound caller ID)"
+        if trunk_ids else ""])
     lines = [
         "; Generated by `python -m services.calling.dialplan` (CAWP Phase 5, extension-first).",
         "; Review before installation. Regenerate instead of editing by hand.",
@@ -234,16 +267,36 @@ def render(policy) -> str:
         ]
     options = ("ib(collections-customer-created^s^1)U(collections-customer-answered)L($[${COLLECTIONS_GATE_LIMIT} * 1000])"
                + (f"F({p['post_call_context']}^s^1)" if p.get("post_call_context") else ""))
-    for i, t in enumerate(trunks):
+    if len(trunks) == 1:
+        if trunk_ids:
+            lines += [f" same => n,Set(COLLECTIONS_TRUNK_ID={trunk_ids[trunk]})", *_issabel_caller_id()]
         lines += [
-            f" same => n,Dial({_dial_target(driver, t, number_var)},{p['ring_seconds']},{options})",
+            f" same => n,Dial({_dial_target(driver, trunk, number_var)},{p['ring_seconds']},{options})",
             ev("dial_end", ",DialStatus: ${DIALSTATUS}"),
+            " same => n,Hangup()",
         ]
-        if i < len(trunks) - 1:                   # the next trunk only when this one could not carry it
-            lines.append(' same => n,GotoIf($["${DIALSTATUS}" != "CHANUNAVAIL" & "${DIALSTATUS}" != "CONGESTION"]'
-                         '?done)')
+    else:
+        # chan_sip (driver SIP only): pick the first reachable trunk BEFORE dialling; dial it once.
+        # COLLECTIONS_TRUNK is only ever set from the constant names below.
+        for t in trunks:
+            lines += [
+                f" same => n,Set(COLLECTIONS_TRUNK={t})",
+                *([f" same => n,Set(COLLECTIONS_TRUNK_ID={trunk_ids[t]})"] if trunk_ids else []),
+                f' same => n,GotoIf($["${{SIPPEER({t},status):0:2}}" = "OK"]?trunk)',
+            ]
+        lines += [
+            " same => n,Set(COLLECTIONS_TRUNK=)",
+            " same => n,Goto(notrunk)",
+            *(_issabel_caller_id("(trunk)") if trunk_ids else []),
+            f" same => n{'' if trunk_ids else '(trunk)'},Dial({_dial_target(driver, '${COLLECTIONS_TRUNK}', number_var)},{p['ring_seconds']},"
+            f"{options})",
+            ev("dial_end", ",DialStatus: ${DIALSTATUS}"),
+            " same => n,Hangup()",                  # any DIALSTATUS ends the attempt: never another trunk
+            f" same => n(notrunk),UserEvent(CollectionsCall,AttemptId: ${{COLLECTIONS_ATTEMPT}}"
+            f"{CHAN_UNIQUEID if legacy else ''},State: no_trunk)",
+            " same => n,Hangup(34)",
+        ]
     lines += [
-        " same => n(done),Hangup()" if len(trunks) > 1 else " same => n,Hangup()",
         f" same => n(deny),UserEvent(CollectionsCall,AttemptId: ${{COLLECTIONS_ATTEMPT}}"
         f"{CHAN_UNIQUEID if legacy else ''},State: denied)",
         " same => n,Hangup(21)",

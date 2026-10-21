@@ -11,20 +11,39 @@
 -- call_dispatch_tokens.bound_uniqueid the agent channel Uniqueid the FastAGI hook allowed (set in the
 --                                     same UPDATE that consumes the token; the 0049 guard already
 --                                     freezes a consumed token).
--- ix_call_legs_agent_uniqueid         agent leg -> attempt lookups by Uniqueid (call control).
+-- The agent-leg index on call_legs (the large, busy table) is built online by 0085
+-- (CREATE INDEX CONCURRENTLY, no-transaction).
 --
--- Additive: new nullable columns (metadata only), a partial unique index and a partial index on
--- small tables, a set-once trigger. Re-runnable. Instant.
+-- Locks: new nullable columns without default (metadata only); their CHECK constraints are added
+-- NOT VALID (no scan under the ADD) and then validated (one scan of rows that are all NULL; the two
+-- tables hold one row per dispatch and are pruned). A partial unique index on the small dispatch
+-- queue, a set-once trigger. The ALTERs take a brief ACCESS EXCLUSIVE lock on call_dispatch_queue /
+-- call_dispatch_tokens until the commit (lock_timeout 5 s from the runner: on a busy server it
+-- fails fast and rolls back; re-run). Nothing here locks call_legs or call_events. Re-runnable.
 
-ALTER TABLE call_dispatch_queue ADD COLUMN IF NOT EXISTS ami_action_id text
-    CHECK (ami_action_id IS NULL OR ami_action_id ~ '^[A-Za-z0-9-]{1,100}:[0-9]{1,18}$');
+ALTER TABLE call_dispatch_queue ADD COLUMN IF NOT EXISTS ami_action_id text;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'call_dispatch_queue'::regclass AND conname = 'call_dispatch_queue_ami_action_id_format') THEN
+        ALTER TABLE call_dispatch_queue ADD CONSTRAINT call_dispatch_queue_ami_action_id_format
+            CHECK (ami_action_id IS NULL OR ami_action_id ~ '^[A-Za-z0-9-]{1,100}:[0-9]{1,18}$') NOT VALID;
+    END IF;
+END $$;
+ALTER TABLE call_dispatch_queue VALIDATE CONSTRAINT call_dispatch_queue_ami_action_id_format;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_call_dispatch_queue_ami_action_id
     ON call_dispatch_queue (ami_action_id) WHERE ami_action_id IS NOT NULL;
 
-ALTER TABLE call_dispatch_tokens ADD COLUMN IF NOT EXISTS bound_uniqueid text
-    CHECK (bound_uniqueid IS NULL OR bound_uniqueid ~ '^[0-9]{1,12}\.[0-9]{1,9}$');
-
-CREATE INDEX IF NOT EXISTS ix_call_legs_agent_uniqueid ON call_legs (uniqueid) WHERE role = 'agent';
+ALTER TABLE call_dispatch_tokens ADD COLUMN IF NOT EXISTS bound_uniqueid text;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'call_dispatch_tokens'::regclass AND conname = 'call_dispatch_tokens_bound_uniqueid_format') THEN
+        ALTER TABLE call_dispatch_tokens ADD CONSTRAINT call_dispatch_tokens_bound_uniqueid_format
+            CHECK (bound_uniqueid IS NULL OR bound_uniqueid ~ '^[0-9]{1,12}\.[0-9]{1,9}$') NOT VALID;
+    END IF;
+END $$;
+ALTER TABLE call_dispatch_tokens VALIDATE CONSTRAINT call_dispatch_tokens_bound_uniqueid_format;
 
 CREATE OR REPLACE FUNCTION calling_dispatch_queue_action_id_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$

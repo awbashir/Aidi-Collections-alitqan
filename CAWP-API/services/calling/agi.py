@@ -22,10 +22,14 @@ Globals are read with GLOBAL() so a channel variable cannot stand in for them.
 Asterisk <= 11 (CALLING_PBX_EVENTS=legacy): the Originate ChannelId is ignored, so agi_uniqueid is
 an ordinary "<epoch>.<seq>" Uniqueid instead of `cawp-<attempt>`. It is accepted in that mode only;
 the one-shot token (bound to `cawp-<attempt>` as the app's id of the dispatch), agi_channel
-<driver>/<extension>-<hex>, context, destination and PBX epoch checks are unchanged. When the
-attempt already has an agent leg (bound from its OriginateResponse, services/calling/
-legacy_correlation.py) the AGI channel must be that leg (else `agent_channel_mismatch`); on allow
-the hook binds the channel as the agent leg (call_dispatch_tokens.bound_uniqueid, call_legs).
+<driver>/<extension>-<hex>, context, destination and PBX epoch checks are unchanged. The token
+alone does not prove the channel: ALLOW needs the agent leg bound from this attempt's own
+OriginateResponse (its ActionID; services/calling/legacy_correlation.originate_binding) to BE
+agi_uniqueid. Asterisk 11's async Originate sends that response before the dialplan runs, but the
+evidence consumer may lag, so the hook polls the database for it (fresh reads, up to
+LEGACY_BIND_WAIT seconds, inside the exchange deadline) and then denies `agent_leg_unbound`. A
+refused or failed response denies (`agent_leg_refused`, `originate_failed`), another channel
+`agent_channel_mismatch`. On allow the channel is recorded (call_dispatch_tokens.bound_uniqueid).
 
 Hardening: peer allowlist (CIDRs or host names), bounded concurrent connections, a whole-
 exchange deadline (5 s), bounded line length/count, fixed command set, fixed decision reasons.
@@ -57,6 +61,9 @@ TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 CONTEXT_RE = re.compile(r"^collections-human-[a-z0-9_-]{1,50}$")
 LEGACY_UID_RE = re.compile(r"^[0-9]{1,12}\.[0-9]{1,9}$")       # Asterisk <= 11 Uniqueid "<epoch>.<seq>"
+LEGACY_BIND_WAIT = 2.5          # s: longest wait for the OriginateResponse binding (Asterisk 11)
+LEGACY_BIND_POLL = 0.1          # s between fresh reads while waiting
+LEGACY_REPLY_MARGIN = 1.0       # s of the exchange deadline kept for the replies after the decision
 GATE_VARS = ("COLLECTIONS_GATE", "COLLECTIONS_GATE_DESTINATION", "COLLECTIONS_GATE_EXTENSION",
              "COLLECTIONS_GATE_LIMIT", "COLLECTIONS_GATE_EXPIRES")
 
@@ -212,6 +219,7 @@ class AgiRequest:
     token: str | None = None
     epoch_uuid: str | None = None
     legacy: bool = False
+    bind_deadline: float | None = None      # monotonic: until when to wait for the agent leg binding
 
 
 def _legacy_mode() -> bool:
@@ -305,10 +313,17 @@ def authorize(session, req: AgiRequest) -> Decision:
     if t["attempt_state"] in ("ended", "failed", "cancelled", "uncertain", "prepared"):
         raise AgiDeny("attempt_not_dispatchable", token_id=tid)
     if req.legacy:
-        # Asterisk 11: the agent leg may already be bound from the OriginateResponse; then this
-        # channel must be it (and it must not belong to anything else)
-        from services.calling.legacy_correlation import agi_agent_check
-        refused = agi_agent_check(session, req.attempt_id, t["pbx_epoch"], req.channel_id)
+        # Asterisk 11: this channel must be the agent leg bound from the attempt's own
+        # OriginateResponse; wait (bounded) for the evidence consumer to store it
+        from services.calling.legacy_correlation import AGENT_LEG_UNBOUND, agi_agent_check
+        while True:
+            refused = agi_agent_check(session, req.attempt_id, t["pbx_epoch"], req.channel_id)
+            if refused != AGENT_LEG_UNBOUND or req.bind_deadline is None:
+                break
+            left = req.bind_deadline - time.monotonic()
+            if left <= 0:
+                break
+            time.sleep(min(LEGACY_BIND_POLL, left))      # READ COMMITTED: the next read is fresh
         if refused is not None:
             raise AgiDeny(refused, token_id=tid)
     # P1: the case/contact safety rules can change while the agent's phone rings (a supervisor
@@ -322,6 +337,7 @@ def authorize(session, req: AgiRequest) -> Decision:
         from services.calling.legacy_correlation import bind_agent_leg
         session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now(), bound_uniqueid = :u "
                              "WHERE id = CAST(:id AS uuid)"), {"id": tid, "u": req.channel_id})
+        # idempotent: the consumer bound it from the OriginateResponse (fills the channel name only)
         bind_agent_leg(session, t["pbx_epoch"], req.channel_id, req.attempt_id, channel=req.channel)
     else:
         session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now() WHERE id = CAST(:id AS uuid)"),
@@ -418,6 +434,8 @@ class FastAgiServer(threading.Thread):
                 req.attempt_id = (ch.get_var("COLLECTIONS_ATTEMPT") or "").strip().lower()
                 req.token = (ch.get_var("COLLECTIONS_TOKEN") or "").strip().lower()
                 req.epoch_uuid = (ch.get_global("COLLECTIONS_HUMAN_PBX_EPOCH") or "").strip().lower() or None
+                if req.legacy:
+                    req.bind_deadline = min(time.monotonic() + LEGACY_BIND_WAIT, ch.deadline - LEGACY_REPLY_MARGIN)
                 try:
                     decision = authorize(db.session, req)
                     db.session.commit()                       # durable BEFORE anything is published
