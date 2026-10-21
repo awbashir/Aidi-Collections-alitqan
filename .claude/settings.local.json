@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(CAWP-API/**)",
+      "Edit(CAWP-frontend/src/**)"
+    ]
+  }
+}
