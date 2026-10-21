@@ -38,6 +38,7 @@ from core import audit
 from core.api_response import NOT_FOUND, REVISION_CONFLICT, VALIDATION_FAILED, ApiError
 from services.calling import extensions as ext_svc
 from services.calling import pbx_provision as pbx
+from services.calling import softphone_access
 from services.calling.common import (USER_NAME_SQL, advisory_lock, bool_arg, extension_arg, iso, me, parse_uuid,
                                      required_text, s, sess)
 
@@ -354,6 +355,7 @@ def overview(args) -> dict:
         recs[r["extension"]] = r
     in_use = {r[0] for r in sess().execute(text(
         "SELECT DISTINCT extension FROM call_reservations WHERE released_at IS NULL AND extension IS NOT NULL"))}
+    softphone = softphone_access.enabled_map(o["user_id"] for o in owners.values())
     keys = set(owners) | set(recs) | set(inv or {})
     items = []
     for ext in keys:
@@ -380,7 +382,8 @@ def overview(args) -> dict:
             "pbx": ({k: p.get(k) for k in ("name", "tech", "managed", "endpoint", "state", "registered", "in_call",
                                            "channels")} if p else None),
             "owner": ({"id": s(o["user_id"]), "name": (o["name"] or "").strip() or None, "user_name": o["user_name"],
-                       "is_active": o["is_active"], "assignment_id": s(o["id"]), "assigned_at": iso(o["assigned_at"])}
+                       "is_active": o["is_active"], "assignment_id": s(o["id"]), "assigned_at": iso(o["assigned_at"]),
+                       "softphone_enabled": softphone.get(s(o["user_id"]), False)}
                       if o else None),
             "provisioning": record_json(rec),
             "in_use": ext in in_use,

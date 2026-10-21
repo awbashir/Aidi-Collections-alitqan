@@ -28,7 +28,7 @@ import pytest
 
 from conftest import MAIN_DB
 from test_calling_helpers import CL, cl, new_user, pgc, q1, run  # noqa: F401
-from test_calling_sip import client, expire, hdr, issue, sip_app, sip_env  # noqa: F401
+from test_calling_sip import client, expire, hdr, issue, sip_app, sip_env, softphone_on  # noqa: F401
 
 PBX_HOST = os.environ.get("PBX_WEBRTC_HOST", "pbx-webrtc-test")
 EXT = "7005"
@@ -126,6 +126,7 @@ def owner_7005(pgc, monkeypatch):
     uid = new_user(pgc, name="Live 7005")
     xid = q1(pgc, "INSERT INTO user_extensions (extension, user_id, assigned_by, assign_reason) "
                   "VALUES (%s, %s, %s, 'live sip test') RETURNING id", EXT, uid, CL.super)[0]
+    softphone_on(pgc, uid)
     return uid, str(xid)
 
 

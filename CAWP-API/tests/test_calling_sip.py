@@ -81,12 +81,20 @@ def sip_env(monkeypatch):
 _EXT = iter(range(8100, 8999))
 
 
-def owner(conn, role=CL.collector_role, active=True):
+def softphone_on(conn, uid, enabled=True):
+    """The per-user switch (0082; no row = off)."""
+    run(conn, "INSERT INTO user_softphone_access (user_id, enabled, reason) VALUES (%s, %s, 'sip test') "
+              "ON CONFLICT (user_id) DO UPDATE SET enabled = EXCLUDED.enabled", uid, enabled)
+
+
+def owner(conn, role=CL.collector_role, active=True, softphone=True):
     """A user who actively owns a fresh extension -> (user_id, extension, user_extensions id)."""
     ext = str(next(_EXT))
     uid = new_user(conn, role, name=f"Sip {ext}", active=active)
     xid = q1(conn, "INSERT INTO user_extensions (extension, user_id, assigned_by, assign_reason) "
                    "VALUES (%s, %s, %s, 'sip test') RETURNING id", ext, uid, CL.super)[0]
+    if softphone:
+        softphone_on(conn, uid)
     return uid, ext, str(xid)
 
 
@@ -139,6 +147,7 @@ def test_no_extension_gets_a_clear_refusal_and_nothing_is_written(client, hdr, p
     run(pgc, "UPDATE user_extensions SET released_at = now(), released_by = %s, release_reason = 'left' "
              "WHERE id = %s", CL.super, xid)
     for who in (uid, legacy, released_uid):
+        softphone_on(pgc, who)                                   # switched on: the extension decides
         before = q1(pgc, "SELECT count(*) FROM audit_events WHERE action LIKE 'calling.sip_credentials.%%'")[0]
         st, body, _ = issue(client, hdr, who)
         assert (st, body["code"], body["error"]["rule"]) == (409, "no_extension", "no_extension")
@@ -275,6 +284,7 @@ def test_a_new_owner_supersedes_the_old_owners_credential(client, hdr, pgc):
              "WHERE id = %s", CL.super, xid)
     assert view_row(pgc, ext) is None                           # released: the PBX stops accepting it at once
     b = new_user(pgc)
+    softphone_on(pgc, b)
     run(pgc, "INSERT INTO user_extensions (extension, user_id, assign_reason) VALUES (%s, %s, 'new desk')", ext, b)
     new = issue(client, hdr, b)[1]["data"]
     assert q1(pgc, "SELECT revoke_reason FROM sip_credentials WHERE id = %s", old["credential_id"])[0] == "superseded"

@@ -12,6 +12,8 @@
  * - Assign / release reuse the ownership routes of Calling admin (reason, expected owner).
  * - "Users without an extension" with one-click create + assign, or assign an existing one.
  * - Settings: auto-create for new users (on by default) and the allocation range.
+ * - In-app softphone per owner (0082): off by default (the users call from their own VoIP
+ *   phones); enable / disable with a reason.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -45,7 +47,7 @@ const schema: HashSchema<HashState> = {
     view: { key: 'view', codec: hashCodec.oneOf(VIEWS), default: 'all' },
     q: { key: 'q', codec: hashCodec.text({ maxLength: 100 }), default: undefined, history: 'replace' },
 }
-const COLS = 6
+const COLS = 7
 
 /** Our own error codes first (p10.extprov.err.*), then the calling ones. */
 const OWN_CODES = new Set([
@@ -522,6 +524,8 @@ const ExtensionsPage = () => {
     const [renaming, setRenaming] = useState<ManagedExtension | null>(null)
     const [releasing, setReleasing] = useState<ManagedExtension | null>(null)
     const [deleting, setDeleting] = useState<ManagedExtension | null>(null)
+    const [switching, setSwitching] = useState<ManagedExtension | null>(null)
+    const switchOn = !switching?.owner?.softphone_enabled
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [retrying, setRetrying] = useState<string | null>(null)
     const data = all.data
@@ -645,6 +649,7 @@ const ExtensionsPage = () => {
                                 <Th>{t('p10.extprov.extension')}</Th>
                                 <Th>{t('p10.extprov.pbxCol')}</Th>
                                 <Th>{t('p10.extprov.owner')}</Th>
+                                <Th>{t('p10.extprov.softphoneCol')}</Th>
                                 <Th>{t('p10.extprov.statusCol')}</Th>
                                 <Th>{t('p10.extprov.request')}</Th>
                                 <Th />
@@ -680,6 +685,20 @@ const ExtensionsPage = () => {
                                                     '—'
                                                 )}
                                                 {x.in_use && <div className="font-extrabold text-warning">{t('p10.extprov.onCall')}</div>}
+                                            </Td>
+                                            <Td data-testid="p10-ext-softphone" data-enabled={x.owner ? (x.owner.softphone_enabled ? '1' : '0') : ''}>
+                                                {x.owner ? (
+                                                    <span className="flex flex-col items-start gap-1">
+                                                        <StatusPill tone={x.owner.softphone_enabled ? 'success' : 'neutral'} size="row">
+                                                            {x.owner.softphone_enabled ? t('p10.extprov.softphoneOn') : t('p10.extprov.softphoneOff')}
+                                                        </StatusPill>
+                                                        <Button size="xs" variant="plain" onClick={() => setSwitching(x)} data-testid="p10-ext-softphone-toggle">
+                                                            {x.owner.softphone_enabled ? t('p10.extprov.softphoneDisable') : t('p10.extprov.softphoneEnable')}
+                                                        </Button>
+                                                    </span>
+                                                ) : (
+                                                    '—'
+                                                )}
                                             </Td>
                                             <Td>
                                                 <StatusBadge status={x.status} />
@@ -730,7 +749,9 @@ const ExtensionsPage = () => {
                     </Table>
                 )}
             </TableFrame>
-            <Note className="mb-6 mt-3">{t('p10.extprov.note')}</Note>
+            <Note className="mb-6 mt-3">
+                {t('p10.extprov.note')} {t('p10.extprov.softphoneNote')}
+            </Note>
 
             <UsersWithout reloadKey={reloadKey} canCreate={canCreate} onCreate={(u) => setCreating({ preset: u })} onAssign={(u) => setAssigning({ ext: null, user: u })} />
 
@@ -751,6 +772,22 @@ const ExtensionsPage = () => {
                 onSubmit={async (reason, key) => {
                     if (!releasing) return
                     await callingAdminApi.release(releasing.extension, { reason, expected_owner_id: releasing.owner?.id || null }, key)
+                    reload()
+                }}
+            />
+            <ReasonDialog
+                isOpen={!!switching}
+                title={t(switchOn ? 'p10.extprov.softphoneEnableTitle' : 'p10.extprov.softphoneDisableTitle', { name: switching?.owner?.name || switching?.owner?.user_name || '—' })}
+                description={t(switchOn ? 'p10.extprov.softphoneEnableHint' : 'p10.extprov.softphoneDisableHint')}
+                confirmLabel={switchOn ? t('p10.extprov.softphoneEnable') : t('p10.extprov.softphoneDisable')}
+                tone={switchOn ? 'primary' : 'danger'}
+                testId="p10-ext-softphone-dialog"
+                describeError={describeExtError}
+                onReload={reload}
+                onClose={() => setSwitching(null)}
+                onSubmit={async (reason, key) => {
+                    if (!switching?.owner) return
+                    await extProvisionApi.setSoftphone(switching.owner.id, { enabled: switchOn, reason }, key)
                     reload()
                 }}
             />

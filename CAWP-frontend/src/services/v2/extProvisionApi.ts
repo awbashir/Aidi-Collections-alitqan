@@ -65,7 +65,7 @@ export type ManagedExtension = {
     /** null = the PBX could not be read */
     on_pbx: boolean | null
     pbx: PbxExtensionInfo | null
-    owner: (ExtUserRef & { is_active: boolean | null; assignment_id: string; assigned_at: string }) | null
+    owner: (ExtUserRef & { is_active: boolean | null; assignment_id: string; assigned_at: string; softphone_enabled: boolean }) | null
     provisioning: ProvisionRequest | null
     in_use: boolean
     in_range: boolean
@@ -122,6 +122,14 @@ export const extProvisionApi = {
     rename: (extension: string, body: { name: string; reason: string }, key: string) =>
         v2Post<{ extension: string; renamed: boolean; pbx: PbxExtensionInfo | null }>(
             `/v2/calling/pbx-extensions/${enc(extension)}/rename`,
+            body,
+            key
+        ),
+
+    /** 0082: the user's in-app softphone (off by default); off revokes their SIP credentials */
+    setSoftphone: (userId: string, body: { enabled: boolean; reason: string }, key: string) =>
+        v2Put<{ user_id: string; enabled: boolean; revision: number; credentials_revoked: number }>(
+            `/v2/calling/users/${enc(userId)}/softphone`,
             body,
             key
         ),

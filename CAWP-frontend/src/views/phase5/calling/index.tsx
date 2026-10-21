@@ -48,8 +48,8 @@ const MyCallingCard = () => {
     const { t } = useTranslation()
     const perms = usePermissions()
     const q = useV2Query((signal) => callsApi.myCalling(signal), [])
-    const phone = useSoftphoneStatus(!!perms.calls_make)
     const my = q.data
+    const phone = useSoftphoneStatus(!!perms.calls_make && my?.softphone_enabled === true)
     return (
         <Card title={t('p5.ws.myCalling')} testId="p5-ws-calling" actions={<Button size="xs" onClick={q.reload}>{t('p1.action.refresh')}</Button>}>
             {q.loading && !my ? (
@@ -76,7 +76,7 @@ const MyCallingCard = () => {
                                     <span data-status={phone.status}>{statusLabel(t, phone.status)}</span>
                                 </StatusPill>
                             ) : (
-                                <span className="text-gray-500">{t('p5.ws.noSoftphone')}</span>
+                                <span className="text-gray-500">{my.softphone_enabled === false ? t('p5.ws.softphoneOff') : t('p5.ws.noSoftphone')}</span>
                             )}
                         </Fact>
                         <Fact label={t('p5.ws.autoAnswer')}>{my.preferences.auto_answer_attempts ? t('p5.yes') : t('p5.no')}</Fact>

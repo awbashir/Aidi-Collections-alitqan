@@ -13,6 +13,8 @@ services/calling/extension_provisioning.py has the rules; assign / release stay 
   POST /v2/calling/pbx-extensions/<ext>/retry      retry a pending / failed request {reason?}                   calls_manage
   POST /v2/calling/pbx-extensions/<ext>/rename     {name, reason}                                               calls_manage
   POST /v2/calling/pbx-extensions/<ext>/delete     {reason}: unassigned only (or cancel a pending request)      calls_manage
+  PUT  /v2/calling/users/<user_id>/softphone       {enabled, reason}: the user's in-app softphone (0082; off by
+                                                   default; off revokes the user's SIP credentials)             calls_manage
 
 Writes need an Idempotency-Key. A create / retry commits its request row BEFORE the PBX is called
 (the PBX is not transactional): an unreachable PBX answers 201 with `state: "pending"`, never an
@@ -27,6 +29,7 @@ from flask_jwt_extended import jwt_required
 from core.api_response import created, json_body, ok, register_api_errors
 from core.idempotency import idempotent
 from services.calling import extension_provisioning as prov
+from services.calling import softphone_access
 from services.calling.common import CALLS_MANAGE, permission_required
 
 bp = Blueprint("calling_extensions", __name__)
@@ -100,3 +103,12 @@ def rename(extension):
 @idempotent()
 def delete(extension):
     return ok(prov.delete(extension, json_body()), "extension deleted")
+
+
+@bp.put("/v2/calling/users/<uuid:user_id>/softphone")
+@jwt_required()
+@permission_required(CALLS_MANAGE)
+@idempotent()
+def set_softphone(user_id):
+    out = softphone_access.set_enabled(user_id, json_body())
+    return ok(out, "softphone enabled" if out["enabled"] else "softphone disabled")

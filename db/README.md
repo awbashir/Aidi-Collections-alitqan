@@ -70,6 +70,7 @@ db/
 | 0062 | `migrations/0062_qc_library_templates.sql` | quality templates (Collections v1 seed), recording library, purge intents | new tables | Yes |
 | 0063 | `migrations/0063_qc_transcripts_reviews_approvals.sql` | transcript versions, review revisions, approvals with immutable snapshots | new tables | Yes |
 | 0064 | `migrations/0064_voice_lab_sessions.sql` | `voice_lab_sessions` log (no audio, transcript, instructions or secret) | new table | Yes |
+| 0082 | `migrations/0082_softphone_access.sql` | `user_softphone_access` (per-user in-app softphone switch, no row = off), `pbx_ps_auths` also requires it, `sip_credentials.revoke_reason` accepts `softphone_disabled` | new table + view + CHECK swap, instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

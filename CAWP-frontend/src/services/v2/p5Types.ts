@@ -303,6 +303,8 @@ export type MyCallingInfo = {
         updated_at: Iso | null
     }
     window: WindowStatus
+    /** 0082: the in-app softphone is switched on for me (off by default: my own phone rings) */
+    softphone_enabled?: boolean
     can_call: boolean
     reason: string | null
     active_attempt_id: string | null

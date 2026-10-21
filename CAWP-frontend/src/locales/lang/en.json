@@ -3531,6 +3531,7 @@
       "windowMissing": "Not configured",
       "softphone": "Softphone",
       "noSoftphone": "Not available",
+      "softphoneOff": "Off: calls ring your own phone",
       "autoAnswer": "Auto-answer my calls",
       "canCall": "Click-to-call is available now (every call is still checked when you place it).",
       "howToCall": "Place calls from a case's contacts (the phone icon), or take part in a campaign.",
@@ -5946,6 +5947,8 @@
         "listenTo": "Listen to {{agent}}",
         "title": "Listening to {{agent}}",
         "connected": "Connected. Your softphone answered automatically.",
+        "ringingDesk": "Your phone on extension {{ext}} is ringing: pick it up to listen.",
+        "ringingSoftphone": "The in-app softphone (extension {{ext}}) is answering…",
         "ringingYou": "Ringing your extension {{ext}}…",
         "modeLabel": "Listening mode",
         "dismiss": "Close"
@@ -5955,6 +5958,16 @@
       }
     },
     "extprov": {
+      "softphoneCol": "In-app softphone",
+      "softphoneOn": "Enabled",
+      "softphoneOff": "Disabled",
+      "softphoneEnable": "Enable softphone",
+      "softphoneDisable": "Disable softphone",
+      "softphoneEnableTitle": "Enable the in-app softphone for {{name}}",
+      "softphoneDisableTitle": "Disable the in-app softphone for {{name}}",
+      "softphoneEnableHint": "The user can then register this extension in the browser. Their own phone keeps working; the extension rings wherever it is registered.",
+      "softphoneDisableHint": "The browser softphone stops at once (its current credential is revoked). Calls keep ringing the user's own phone.",
+      "softphoneNote": "The in-app softphone is off for every user by default: users call from their own VoIP phones. Enable it per user here.",
       "nav": "Extensions",
       "title": "Extensions",
       "subtitle": "{{total}} extensions · {{assigned}} assigned · {{unassigned}} unassigned · {{registered}} connected now",

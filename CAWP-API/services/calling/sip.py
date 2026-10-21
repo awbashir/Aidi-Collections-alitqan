@@ -14,6 +14,8 @@ Design (review/phase5-softphone.md §2):
   a new issue for the extension supersedes (revokes) the previous one at once.
 * Issuing also clears the HA1 of every expired credential (nothing password-equivalent is kept
   longer than needed) and is rate limited per user.
+* 0082: only for a user whose softphone a calling administrator switched on
+  (services/calling/softphone_access.py); off by default, the users dial from their desk phones.
 
 Nothing here talks to the PBX. Nothing here logs the password or the HA1.
 """
@@ -31,6 +33,7 @@ from core import audit
 from core.api_response import ApiError
 from services.calling import extensions as ext_svc
 from services.calling import settings as settings_svc
+from services.calling import softphone_access
 from services.calling.common import advisory_lock, iso, sess, user_row
 from services.calling.sip_config import SipSettings, load
 from services.calling.sip_tag import ATTEMPT_HEADER
@@ -89,6 +92,7 @@ def status(user_id) -> dict:
         configured, reason = True, None
     except ApiError as e:
         settings, configured, reason = None, False, e.code
+    enabled = softphone_access.is_enabled(user_id)
     cur = _current_row(user_id)
     current = None
     if cur is not None:
@@ -96,7 +100,13 @@ def status(user_id) -> dict:
                    "issued_at": iso(cur["issued_at"]), "expires_at": iso(cur["expires_at"]),
                    "active": bool(cur["unexpired"]) and extension is not None
                    and extension["extension"] == cur["extension"]}
-    return {"configured": configured, "reason": reason if not configured else (None if extension else NO_EXTENSION),
+    if not configured:
+        why = reason
+    elif not enabled:
+        why = softphone_access.DISABLED
+    else:
+        why = None if extension else NO_EXTENSION
+    return {"configured": configured, "enabled": enabled, "reason": why,
             "extension": extension["extension"] if extension else None,
             "wss_url": settings.wss_url if settings else None,
             "ttl_seconds": settings.ttl_seconds if settings else None,
@@ -108,6 +118,10 @@ def issue(user_id) -> dict:
     settings = load()
     user_id = str(user_id)
     advisory_lock("sip-credentials-user", user_id)
+    if not softphone_access.is_enabled(user_id):
+        raise ApiError(403, softphone_access.DISABLED,
+                       "the in-app softphone is not enabled for you; use your own phone or ask a calling administrator",
+                       {"rule": softphone_access.DISABLED})
     owner = ext_svc.active_for_user(user_id, lock=True)
     if owner is None:
         raise ApiError(409, NO_EXTENSION, "you have no extension assigned; ask a calling administrator",
