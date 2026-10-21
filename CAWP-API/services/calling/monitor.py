@@ -70,6 +70,7 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import re
+import uuid
 
 from sqlalchemy import text
 
@@ -114,14 +115,42 @@ def scope(user_id=None) -> dict:
     return {"kind": kind, "extensions": exts, "owners": names}
 
 
-def narrow(sc: dict, extension) -> dict:
-    """The scope narrowed to one extension (the page's user filter); 403 outside the scope."""
+def narrow(sc: dict, extension, contract=None) -> dict:
+    """The scope narrowed to one extension (the page's user filter; 403 outside the scope) and/or
+    to the users of one contract (2026-10-21: `users.contract_id`; inside the scope only, so an
+    unknown or foreign contract simply matches nobody)."""
+    if contract not in (None, ""):
+        try:
+            cid = str(uuid.UUID(str(contract)))
+        except (ValueError, TypeError):
+            raise ApiError(422, VALIDATION_FAILED, "contract must be a UUID", {"contract": "invalid"}) from None
+        users = {r[0] for r in sess().execute(text(
+            "SELECT id::text FROM users WHERE contract_id = CAST(:c AS uuid)"), {"c": cid})}
+        exts = {e for e, o in sc["owners"].items() if o["id"] in users}
+        if sc["extensions"] is not None:
+            exts &= sc["extensions"]
+        sc = {**sc, "extensions": exts, "contract": cid}
     if extension in (None, ""):
         return sc
     ext = str(extension).strip()
     if not AGENT_EXT_RE.match(ext) or (sc["extensions"] is not None and ext not in sc["extensions"]):
         raise ApiError(403, "not_in_scope", "this extension is not in your scope", {"extension": "not_in_scope"})
     return {**sc, "extensions": {ext}, "filtered": ext}
+
+
+def contracts(sc: dict) -> list[dict]:
+    """The contracts of the users in the scope (before any filter), for the page's contract filter:
+    [{id, name, users}] by name. Never a contract with nobody of the caller's scope."""
+    exts = sc["extensions"] if sc["extensions"] is not None else set(sc["owners"])
+    ids = sorted({sc["owners"][e]["id"] for e in exts if e in sc["owners"] and sc["owners"][e]["id"]})
+    if not ids:
+        return []
+    rows = sess().execute(text("""
+        SELECT c.id::text AS id, c.name, count(*) AS users
+          FROM users u JOIN contracts c ON c.id = u.contract_id
+         WHERE u.id = ANY(CAST(:ids AS uuid[]))
+         GROUP BY c.id, c.name ORDER BY c.name"""), {"ids": ids}).mappings().all()
+    return [{"id": r["id"], "name": r["name"], "users": int(r["users"])} for r in rows]
 
 
 def options(sc: dict) -> list[dict]:
@@ -205,9 +234,10 @@ def _sip_groups(rows) -> dict[str, list[dict]]:
 
 
 # --------------------------------------------------------------------------- live
-def live(user_id=None, extension=None) -> dict:
+def live(user_id=None, extension=None, contract=None) -> dict:
     full = scope(user_id)
-    sc = narrow(full, extension)
+    base = narrow(full, None, contract)              # the user filter's choices follow the contract
+    sc = narrow(base, extension)
     snap = sess().execute(text("""
         SELECT captured_at, ok, error, channel_count, extract(epoch FROM now() - captured_at) AS age
           FROM pbx_live_snapshot WHERE id = 1""")).mappings().first()
@@ -273,7 +303,8 @@ def live(user_id=None, extension=None) -> dict:
               for e in exts]
     age = float(snap["age"]) if snap else None
     return {
-        "scope": sc["kind"], "extension": sc.get("filtered"), "options": options(full),
+        "scope": sc["kind"], "extension": sc.get("filtered"), "options": options(base),
+        "contract": sc.get("contract"), "contracts": contracts(full),
         "snapshot": {"captured_at": iso(snap["captured_at"]) if snap else None, "ok": bool(snap["ok"]) if snap else False,
                      "error": snap["error"] if snap else "no_snapshot", "age_seconds": round(age, 1) if age is not None else None,
                      "stale": age is None or age > 15 or not snap["ok"]},
@@ -322,6 +353,30 @@ def _agent_filter(ext=None, driver="PJSIP") -> tuple[str, tuple]:
     return "(channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')", ()
 
 
+_CDR_HAS_LINKEDID: dict[str, bool] = {}
+
+
+def _cdr_shape(cur) -> bool:
+    """Whether asteriskcdrdb.cdr has `linkedid` (Asterisk 12+ CDR schema); cached per process.
+    The Alitqan Issabel (Asterisk 11) has none: there one CDR row is one leg."""
+    key = "asteriskcdrdb.cdr"
+    if key not in _CDR_HAS_LINKEDID:
+        cur.execute("SHOW COLUMNS FROM asteriskcdrdb.cdr LIKE %s", ("linkedid",))
+        _CDR_HAS_LINKEDID[key] = bool(cur.fetchall())
+    return _CDR_HAS_LINKEDID[key]
+
+
+def _uniqueid_bounds(lo, hi) -> tuple[str, str]:
+    """`uniqueid` range for an Asterisk <= 11 CDR (uniqueid = "<epoch>.<seq>", the only index; no
+    Originate ChannelId there, so never "cawp-..."): the period in PBX local time (Asia/Riyadh)
+    widened by an hour on each side. String comparison is exact while epochs have 10 digits."""
+    def epoch(v):
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=riyadh.RIYADH)
+        return int(v.timestamp())
+    return str(epoch(lo) - 3600), str(epoch(hi) + 3600)
+
+
 def _cdr_rows(lo, hi, ext=None, number=None):
     """The agent CDR rows of the period; `ext` (an already validated extension) narrows them to the
     rows that involve it (the same calls: classify() only counts the extensions on a row);
@@ -339,12 +394,17 @@ def _cdr_rows(lo, hi, ext=None, number=None):
             if number:
                 like = f"%{number}" if len(number) >= numsearch.KEY_DIGITS else f"%{number}%"
                 agent, params = f"{agent} AND (src LIKE %s OR dst LIKE %s)", (*params, like, like)
+            if _cdr_shape(cur):
+                linked, bound, bparams = "linkedid", "", ()
+            else:                                        # Asterisk <= 11: no linkedid column
+                linked, bound, bparams = "uniqueid AS linkedid", "uniqueid >= %s AND uniqueid < %s AND ", \
+                    _uniqueid_bounds(lo, hi)
             cur.execute(f"""
-                SELECT calldate, channel, dstchannel, disposition, billsec, duration, linkedid, uniqueid,
+                SELECT calldate, channel, dstchannel, disposition, billsec, duration, {linked}, uniqueid,
                        src, dst, userfield, recordingfile, lastapp, dcontext
                   FROM asteriskcdrdb.cdr
-                 WHERE calldate >= %s AND calldate < %s AND {agent}
-                 ORDER BY calldate LIMIT %s""", (lo, hi, *params, MAX_CDR_ROWS + 1))
+                 WHERE {bound}calldate >= %s AND calldate < %s AND {agent}
+                 ORDER BY calldate LIMIT %s""", (*bparams, lo, hi, *params, MAX_CDR_ROWS + 1))
             return cur.fetchall()
         finally:
             cur.close()
@@ -416,7 +476,8 @@ def stats(args, user_id=None, rows=None) -> dict:
     first, x hour of day, with the number of such days in the period); `number` (number_search)
     keeps only the calls with that client number, as on the calls page."""
     full = scope(user_id)
-    sc = narrow(full, args.get("extension"))
+    base = narrow(full, None, args.get("contract"))
+    sc = narrow(base, args.get("extension"))
     start, end, lo, hi = _range(args)
     gran = args.get("granularity") or ("hour" if start == end else "day")
     if gran not in ("hour", "day"):
@@ -478,7 +539,8 @@ def stats(args, user_id=None, rows=None) -> dict:
     users = sorted(per_user.values(), key=lambda u: -(u["outbound"] + u["inbound_answered"] + u["internal"]))
     for u in users:
         u["handled"] = u["outbound"] + u["inbound_answered"] + u["internal"]
-    return {"scope": sc["kind"], "extension": sc.get("filtered"), "options": options(full),
+    return {"scope": sc["kind"], "extension": sc.get("filtered"), "options": options(base),
+            "contract": sc.get("contract"), "contracts": contracts(full),
             "from": start.isoformat(), "to": end.isoformat(), "granularity": gran, "number": number,
             "truncated": len(cdr) > MAX_CDR_ROWS, "users": users, "series": list(series.values()),
             "totals": {"handled": sum(u["handled"] for u in users), "outbound": sum(u["outbound"] for u in users),
@@ -610,7 +672,7 @@ def _merged(args, user_id=None, rows=None):
     """(scope, start, end, truncated, items): one item per call and agent, oldest first; `number`
     (2026-10-19, number_search) keeps the calls with that client number (not internal calls)."""
     full = scope(user_id)
-    sc = narrow(full, args.get("extension"))
+    sc = narrow(full, args.get("extension"), args.get("contract"))
     start, end, lo, hi = _range(args)
     number = numsearch.needle(args.get("number"))
     cdr = _rows_for(sc, lo, hi, rows, number)
@@ -632,7 +694,8 @@ def _with_clients(items, user_id=None):
 def calls(args, user_id=None, rows=None) -> dict:
     """One row per call and agent (the CDR rows of one linkedid merged), oldest first."""
     sc, start, end, truncated, items = _merged(args, user_id, rows)
-    return {"scope": sc["kind"], "extension": sc.get("filtered"), "from": start.isoformat(), "to": end.isoformat(),
+    return {"scope": sc["kind"], "extension": sc.get("filtered"), "contract": sc.get("contract"),
+            "from": start.isoformat(), "to": end.isoformat(),
             "number": numsearch.needle(args.get("number")), "truncated": truncated, "calls": _with_clients(items, user_id)}
 
 
@@ -659,7 +722,8 @@ def calls_page(args, user_id=None, rows=None) -> dict:
     for c in chunk:                                       # the PBX writes Riyadh wall clock
         c["at"] = c["at"].replace(tzinfo=riyadh.RIYADH).isoformat(timespec="seconds") if c["at"].tzinfo is None \
             else c["at"].isoformat(timespec="seconds")
-    return {"scope": sc["kind"], "extension": sc.get("filtered"), "from": start.isoformat(), "to": end.isoformat(),
+    return {"scope": sc["kind"], "extension": sc.get("filtered"), "contract": sc.get("contract"),
+            "from": start.isoformat(), "to": end.isoformat(),
             "number": numsearch.needle(args.get("number")), "truncated": truncated, "items": chunk,
             "total": len(items), "page": page, "page_size": size}
 
@@ -703,6 +767,10 @@ def _info_sheet(wb, data, owners, kind_ar):
                          ("وقت الإنشاء (الرياض)", riyadh.now().strftime("%Y-%m-%d %H:%M")),
                          ("ملاحظة", "المكالمات تُنسب للمالك الحالي للتحويلة؛ الأوقات بتوقيت الرياض")):
         sh.append([("s", label), ("s", value)])
+    if data.get("contract"):
+        name = sess().execute(text("SELECT name FROM contracts WHERE id = CAST(:c AS uuid)"),
+                              {"c": data["contract"]}).scalar()
+        sh.append([("s", "العقد"), ("s", name or data["contract"])])
     if data.get("number"):
         sh.append([("s", "بحث برقم العميل (آخر 9 أرقام)"), ("s", data["number"])])
     if data.get("truncated"):

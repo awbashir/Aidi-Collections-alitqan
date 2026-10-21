@@ -446,11 +446,17 @@ export type CallingHoliday = { date: string; label?: string }
 export type MonitorScope = 'all' | 'team' | 'own'
 export type MonitorAgent = { extension: string; user_id: string | null; name: string | null }
 
+/** A contract of the scope's users (the call monitor's contract filter, 2026-10-21). */
+export type MonitorContract = { id: string; name: string; users: number }
+
 export type MonitorLive = {
     scope: MonitorScope
     /** The user filter applied (an extension), and every extension the scope allows (for the filter). */
     extension: string | null
     options: MonitorAgent[]
+    /** the contract filter in effect (null: none) and the scope's contracts */
+    contract?: string | null
+    contracts?: MonitorContract[]
     snapshot: { captured_at: Iso | null; ok: boolean; error: string | null; age_seconds: number | null; stale: boolean }
     summary: { active_calls: number; talking: number; ringing: number; in_ivr: number; agents_on_call: number; agents: number }
     calls: Array<{
@@ -489,6 +495,9 @@ export type MonitorStats = {
     scope: MonitorScope
     extension: string | null
     options: MonitorAgent[]
+    /** the contract filter in effect (null: none) and the scope's contracts */
+    contract?: string | null
+    contracts?: MonitorContract[]
     from: string
     to: string
     granularity: 'hour' | 'day'

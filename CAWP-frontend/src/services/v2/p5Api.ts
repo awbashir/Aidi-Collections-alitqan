@@ -198,14 +198,14 @@ export const callingAdminApi = {
 
 /** Call monitor: live calls and calls by user over time (scope decided by the API). */
 export const callMonitorApi = {
-    live: (q: { extension?: string }, signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', q, signal),
-    stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day'; extension?: string; number?: string }, signal?: AbortSignal) =>
+    live: (q: { extension?: string; contract?: string }, signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', q, signal),
+    stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day'; extension?: string; contract?: string; number?: string }, signal?: AbortSignal) =>
         v2Get<MonitorStats>('/v2/calling/monitor/stats', q, signal),
     /** One user's calls of the period, newest first (page_size max 200). */
-    calls: (q: { from?: string; to?: string; extension?: string; number?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+    calls: (q: { from?: string; to?: string; extension?: string; contract?: string; number?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
         v2Get<MonitorCallsPage>('/v2/calling/monitor/calls', q, signal),
     /** XLSX download with the bearer token: `summary` = the per-user table, `calls` = one row per call. */
-    download: async (kind: 'summary' | 'calls', q: { from?: string; to?: string; extension?: string; number?: string }) =>
+    download: async (kind: 'summary' | 'calls', q: { from?: string; to?: string; extension?: string; contract?: string; number?: string }) =>
         downloadXlsx(kind === 'summary' ? '/v2/calling/monitor/stats/export' : '/v2/calling/monitor/calls/export', q, `call-monitor-${kind}.xlsx`),
 }
 

@@ -20,6 +20,9 @@
  * The API decides the scope: SuperAdmin every extension, a supervisor their team's, anyone
  * else their own. The user filter (one extension) narrows both sections; its choices are the
  * scope's own extensions (`options`), and the API refuses any other (403 not_in_scope).
+ * The contract filter (2026-10-21) narrows both sections to the users of one contract
+ * (`users.contract_id`); its choices are the contracts of the scope's users (`contracts`), and
+ * the user filter then offers that contract's users only.
  * Extensions are attributed to their current owner.
  */
 import { useEffect, useRef, useState } from 'react'
@@ -34,7 +37,7 @@ import { EmptyState, ErrorState, SkeletonLines, SkeletonRows } from '@/component
 import { PageHead, TableFrame, rowClass } from '@/components/v2/ListParts'
 import { Segmented } from '@/views/phase1/followUps/parts'
 import { callMonitorApi, describeP5Error } from '@/services/v2'
-import type { MonitorAgent, MonitorLive, MonitorStats, Option, Translate } from '@/services/v2'
+import type { MonitorAgent, MonitorContract, MonitorLive, MonitorStats, Option, Translate } from '@/services/v2'
 import { useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { Card, Fact, Notice } from '../parts'
@@ -63,7 +66,7 @@ const agentLabel = (a: { name: string | null; extension: string }) => (a.name ? 
 
 /* ------------------------------------------------------------------ live */
 
-function useLive(ext: string) {
+function useLive(ext: string, contract: string) {
     const [data, setData] = useState<MonitorLive | null>(null)
     const [error, setError] = useState<unknown>(null)
     const [fetchedAt, setFetchedAt] = useState(0)
@@ -76,7 +79,7 @@ function useLive(ext: string) {
             ctrl.current?.abort()
             ctrl.current = new AbortController()
             try {
-                const res = await callMonitorApi.live({ extension: ext || undefined }, ctrl.current.signal)
+                const res = await callMonitorApi.live({ extension: ext || undefined, contract: contract || undefined }, ctrl.current.signal)
                 if (!alive) return
                 setData(res)
                 setError(null)
@@ -96,7 +99,7 @@ function useLive(ext: string) {
             if (timer.current) window.clearInterval(timer.current)
             window.clearInterval(ticker)
         }
-    }, [ext])
+    }, [ext, contract])
     const elapsed = fetchedAt ? (Date.now() - fetchedAt) / 1000 : 0
     return { data, error, elapsed }
 }
@@ -108,15 +111,19 @@ const STATE_TONE: Record<string, string> = {
     connecting: 'bg-gray-100 text-gray-700 dark:bg-night-page dark:text-night-body',
 }
 
-const LiveSection = ({ ext, onOptions }: { ext: string; onOptions: (o: MonitorAgent[]) => void }) => {
+const LiveSection = ({ ext, contract, onOptions, onContracts }: { ext: string; contract: string; onOptions: (o: MonitorAgent[]) => void; onContracts: (c: MonitorContract[]) => void }) => {
     const { t } = useTranslation()
-    const { data, error, elapsed } = useLive(ext)
+    const { data, error, elapsed } = useLive(ext, contract)
     const listen = useListen()
     const canListen = !!listen.caps?.listen
     useEffect(() => {
         if (data) onOptions(data.options)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data?.options.length])
+    }, [data?.options.length, data?.contract])
+    useEffect(() => {
+        if (data) onContracts(data.contracts || [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data?.contracts?.length])
     if (error && !data) return <ErrorState error={error} onRetry={() => window.location.reload()} describe={describe} />
     if (!data) return <SkeletonLines rows={5} />
     const stale = data.snapshot.stale
@@ -219,21 +226,21 @@ const LiveSection = ({ ext, onOptions }: { ext: string; onOptions: (o: MonitorAg
 
 /* ------------------------------------------------------------------ stats */
 
-const StatsSection = ({ ext }: { ext: string }) => {
+const StatsSection = ({ ext, contract }: { ext: string; contract: string }) => {
     const { t } = useTranslation()
     const [from, setFrom] = useState(riyadhToday())
     const [to, setTo] = useState(riyadhToday())
     const [gran, setGran] = useState<'hour' | 'day'>('hour')
     const [number, setNumber] = useState<string | undefined>(undefined)
     const q = useV2Query(
-        (signal) => callMonitorApi.stats({ from, to, granularity: gran, extension: ext || undefined }, signal),
-        [from, to, gran, ext]
+        (signal) => callMonitorApi.stats({ from, to, granularity: gran, extension: ext || undefined, contract: contract || undefined }, signal),
+        [from, to, gran, ext, contract]
     )
     const data: MonitorStats | undefined = q.data
     /* The charts follow the number search too (2026-10-20): the same statistics for that number's calls. */
     const nq = useV2Query(
-        number ? (signal) => callMonitorApi.stats({ from, to, granularity: gran, extension: ext || undefined, number }, signal) : null,
-        [from, to, gran, ext, number]
+        number ? (signal) => callMonitorApi.stats({ from, to, granularity: gran, extension: ext || undefined, contract: contract || undefined, number }, signal) : null,
+        [from, to, gran, ext, contract, number]
     )
     const chartData: MonitorStats | undefined = number ? (nq.loading ? undefined : nq.data) : data
     const drillDay = (day: string) => {
@@ -249,7 +256,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
         setDownloading(kind)
         setDownloadError(null)
         try {
-            await callMonitorApi.download(kind, { from, to, extension: ext || undefined, number: kind === 'calls' ? number : undefined })
+            await callMonitorApi.download(kind, { from, to, extension: ext || undefined, contract: contract || undefined, number: kind === 'calls' ? number : undefined })
         } catch (e) {
             setDownloadError(e)
         } finally {
@@ -309,7 +316,7 @@ const StatsSection = ({ ext }: { ext: string }) => {
                 </div>
             </div>
             {downloadError ? <Notice tone="danger">{describe(downloadError, t)}</Notice> : null}
-            {number && <NumberCalls from={from} to={to} ext={ext} number={number} />}
+            {number && <NumberCalls from={from} to={to} ext={ext} contract={contract} number={number} />}
             {q.error && !data ? (
                 <ErrorState error={q.error} onRetry={q.reload} describe={describe} />
             ) : !data || !totals ? (
@@ -445,12 +452,30 @@ const StatsSection = ({ ext }: { ext: string }) => {
 const CallMonitor = () => {
     const { t } = useTranslation()
     const [ext, setExt] = useState('')
+    const [contract, setContract] = useState('')
     const [agents, setAgents] = useState<MonitorAgent[]>([])
+    const [contracts, setContracts] = useState<MonitorContract[]>([])
     const userOptions: Option[] = [{ value: '', label: t('p5.monitor.allUsers') }, ...agents.map((a) => ({ value: a.extension, label: agentLabel(a) }))]
+    const contractOptions: Option[] = [{ value: '', label: t('p5.monitor.allContracts') }, ...contracts.map((c) => ({ value: c.id, label: `${c.name} (${formatCount(c.users)})` }))]
     return (
         <div data-testid="p5-monitor" className="flex flex-col gap-4">
             <PageHead title={t('p5.monitor.title')} subtitle={t('p5.monitor.subtitle')} />
             <div className="flex flex-wrap items-end gap-3" data-testid="p5-monitor-user-filter">
+                {contracts.length > 0 && (
+                    <label className="flex w-full max-w-[300px] flex-col gap-1 text-[12.5px]" data-testid="p5-monitor-contract-filter">
+                        <span className="text-gray-600">{t('p5.monitor.contract')}</span>
+                        <Select
+                            size="sm"
+                            isSearchable
+                            options={contractOptions}
+                            value={contractOptions.find((o) => o.value === contract) || contractOptions[0]}
+                            onChange={(o) => {
+                                setContract((o as Option | null)?.value || '')
+                                setExt('')            // the user list follows the contract
+                            }}
+                        />
+                    </label>
+                )}
                 <label className="flex w-full max-w-[340px] flex-col gap-1 text-[12.5px]">
                     <span className="text-gray-600">{t('p5.monitor.user')}</span>
                     <Select
@@ -461,17 +486,24 @@ const CallMonitor = () => {
                         onChange={(o) => setExt((o as Option | null)?.value || '')}
                     />
                 </label>
-                {ext && (
-                    <button type="button" className="mb-1 text-[12.5px] font-extrabold text-navy-600 underline dark:text-gray-100" onClick={() => setExt('')}>
+                {(ext || contract) && (
+                    <button
+                        type="button"
+                        className="mb-1 text-[12.5px] font-extrabold text-navy-600 underline dark:text-gray-100"
+                        onClick={() => {
+                            setExt('')
+                            setContract('')
+                        }}
+                    >
                         {t('p5.monitor.clearUser')}
                     </button>
                 )}
             </div>
             <Card lead title={t('p5.monitor.liveTitle')}>
-                <LiveSection ext={ext} onOptions={setAgents} />
+                <LiveSection ext={ext} contract={contract} onOptions={setAgents} onContracts={setContracts} />
             </Card>
             <Card title={t('p5.monitor.statsTitle')}>
-                <StatsSection ext={ext} />
+                <StatsSection ext={ext} contract={contract} />
             </Card>
         </div>
     )

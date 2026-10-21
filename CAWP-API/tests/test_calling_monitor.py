@@ -802,3 +802,97 @@ def test_live_issabel_dialer_and_queue_topology_on_chan_sip(mon_app, pgc, monkey
     assert o1 not in by_id and o2 not in by_id                      # Local-only plumbing is not a call
     assert by_id[qt]["state"] == "connecting"                       # the caller waits in the queue
     assert everything["summary"]["active_calls"] == 6 and everything["summary"]["talking"] == 1
+
+
+# --------------------------------------------------------------------------- Asterisk 11 CDR schema
+class _FakeCursor:
+    def __init__(self, has_linkedid):
+        self.has_linkedid, self.sql = has_linkedid, []
+
+    def execute(self, sql, params=()):
+        self.sql.append((sql, params))
+
+    def fetchall(self):
+        last = self.sql[-1][0]
+        if last.startswith("SHOW COLUMNS"):
+            return [("linkedid",)] if self.has_linkedid else []
+        return []
+
+    def close(self):
+        pass
+
+
+class _FakeConn:
+    def __init__(self, cur):
+        self.cur = cur
+
+    def cursor(self, dictionary=False):
+        return self.cur
+
+    def close(self):
+        pass
+
+
+def test_uniqueid_bounds_are_riyadh_epochs_widened_by_an_hour():
+    import datetime as dt
+    lo, hi = monitor._uniqueid_bounds(dt.datetime(2026, 10, 21), dt.datetime(2026, 10, 22))
+    start = int(dt.datetime(2026, 10, 20, 21, 0, tzinfo=dt.timezone.utc).timestamp())     # 00:00 Riyadh
+    assert (lo, hi) == (str(start - 3600), str(start + 86400 + 3600))
+    assert "1792601562.42206" >= lo and "1792601562.42206" < str(start + 86400 + 3600)
+
+
+@pytest.mark.parametrize("has_linkedid", [True, False])
+def test_cdr_query_follows_the_cdr_schema(monkeypatch, has_linkedid):
+    import datetime as dt
+    from services import reports_v2_cdr as cdrsrc
+    cur = _FakeCursor(has_linkedid)
+    monkeypatch.setattr(cdrsrc, "_connect", lambda: _FakeConn(cur))
+    monkeypatch.setattr(monitor, "_CDR_HAS_LINKEDID", {})
+    monkeypatch.setenv("CALLING_DRIVER", "SIP")
+    assert monitor._cdr_rows(dt.datetime(2026, 10, 21), dt.datetime(2026, 10, 22)) == []
+    sql, params = cur.sql[-1]
+    if has_linkedid:                                    # Asterisk 12+: unchanged
+        assert " linkedid, uniqueid" in sql and "uniqueid >= %s" not in sql
+        assert params[:2] == (dt.datetime(2026, 10, 21), dt.datetime(2026, 10, 22))
+    else:                                               # Asterisk 11 (Issabel): no linkedid column
+        assert "uniqueid AS linkedid" in sql and "WHERE uniqueid >= %s AND uniqueid < %s AND calldate" in sql
+        assert params[:2] == monitor._uniqueid_bounds(dt.datetime(2026, 10, 21), dt.datetime(2026, 10, 22))
+    # the schema is asked once per process
+    monitor._cdr_rows(dt.datetime(2026, 10, 21), dt.datetime(2026, 10, 22))
+    assert sum(s.startswith("SHOW COLUMNS") for s, _ in cur.sql) == 1
+
+
+# --------------------------------------------------------------------------- contract filter
+def test_contract_filter_narrows_to_that_contracts_users_within_scope(mon_app, pgc):
+    from test_calling_helpers import run
+    c1, _ = new_contract(pgc, "Monitor contract A")
+    c2, _ = new_contract(pgc, "Monitor contract B")
+    a, b, c = new_user(pgc), new_user(pgc), new_user(pgc)
+    for uid, cid in ((a, c1), (b, c2), (c, c1)):
+        run(pgc, "UPDATE users SET contract_id = %s WHERE id = %s", cid, uid)
+    ea, eb, ec = (f"6{uuid.uuid4().int % 900 + 100}" for _ in range(3))
+    own(pgc, a, ea)
+    own(pgc, b, eb)
+    own(pgc, c, ec)
+    from extensions import db
+    with mon_app.app_context():
+        full = monitor.scope(CL.super)
+        sc = monitor.narrow(full, None, c1)
+        assert sc["contract"] == c1 and {ea, ec} <= sc["extensions"] and eb not in sc["extensions"]
+        assert monitor.narrow(full, ea, c1)["extensions"] == {ea}
+        with pytest.raises(Exception) as e:                     # an extension outside the contract
+            monitor.narrow(full, eb, c1)
+        assert getattr(e.value, "status", None) == 403
+        with pytest.raises(Exception) as e:
+            monitor.narrow(full, None, "not-a-uuid")
+        assert getattr(e.value, "status", None) == 422
+        names = {x["name"]: x["users"] for x in monitor.contracts(full)}
+        assert names.get("Monitor contract A", 0) >= 2 and names.get("Monitor contract B", 0) >= 1
+        # a scope that has no user of a contract never lists it, and the filter matches nobody
+        own_scope = {"kind": "own", "extensions": {eb}, "owners": full["owners"]}
+        assert [x["name"] for x in monitor.contracts(own_scope)] == ["Monitor contract B"]
+        assert monitor.narrow(own_scope, None, c1)["extensions"] == set()
+        live = monitor.live(user_id=CL.super, contract=c1)
+        assert live["contract"] == c1 and {x["extension"] for x in live["agents"]} >= {ea, ec}
+        assert eb not in {x["extension"] for x in live["agents"]}
+        db.session.remove()
