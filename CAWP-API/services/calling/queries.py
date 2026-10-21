@@ -186,7 +186,7 @@ def my_calls(args, page, size, offset) -> dict:
 
 
 def case_calls(case_id, args, page, size, offset) -> dict:
-    case_in_scope(case_id)
+    case_in_scope(case_id, grant=True)
     return _list(["a.case_id = CAST(:cid AS uuid)"], {"cid": str(case_id)}, args, page, size, offset)
 
 
@@ -250,6 +250,9 @@ def call_detail(attempt_id, *, with_evidence: bool = True) -> dict:
             note = sess().execute(text('SELECT comment FROM "Comments" WHERE id = CAST(:id AS uuid)'),
                                   {"id": d["wrapup"]["note_id"]}).scalar()
         d["wrapup"]["note_text"] = note if note is not None else r["wrapup_note_text"]
+        # 0081: the copies of the note on the debtor's other accounts ([] when not applied)
+        from services import note_siblings
+        d["wrapup"]["applied_to"] = note_siblings.copies_of(d["wrapup"]["note_id"])
     d["reservation"] = _reservation(attempt_id)
     if with_evidence:
         d["evidence"] = evidence(attempt_id, show_numbers=show)

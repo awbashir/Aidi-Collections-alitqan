@@ -20,6 +20,12 @@ Rules
   promise (amount + due date, services/promise_required.py). A sub-status carries its main
   status's flag, copied and propagated like the contract and the reachability. Every row of
   GET /comment_status and GET /comment_status/<id> has the key.
+* `stops_campaigns` / `blocks_dialed_number` (0080, customer feedback 2026-10-21; enforced by
+  services/calling/campaign_rules.py): the case's latest note with such a status leaves every
+  campaign / recording it on a call blocks the dialled number. NOT copied to sub-statuses:
+  each row keeps its own flags and a note's effective flag is main OR sub-status (a flagged
+  main status covers its sub-statuses; a sub-status can be flagged alone). Every row of
+  GET /comment_status and GET /comment_status/<id> has both keys; POST/PUT accept them.
 
 The new columns are not mapped in models.py (their as_dict()/model_cols() are legacy wire
 contracts), so they are read and written here with SQL.
@@ -38,6 +44,7 @@ from core import audit
 from extensions import db
 
 DEFAULT_COLOR = "#FFFFFF"
+CAMPAIGN_FLAGS = ("stops_campaigns", "blocks_dialed_number")     # 0080: the row's own, never copied
 CACHE_KEYS = ("b1_comment_statuses",)
 
 MESSAGES = {
@@ -91,7 +98,8 @@ def invalidate_cache() -> None:
 _ROW = """
     SELECT s.id::text AS id, s.name, s.parent_id::text AS parent_id, s.deleted_at,
            s.deleted_by::text AS deleted_by, s.contract_id::text AS contract_id,
-           s."CommentReachability_id"::text AS reach, s.requires_promise
+           s."CommentReachability_id"::text AS reach, s.requires_promise,
+           s.stops_campaigns, s.blocks_dialed_number
       FROM "CommentStatuses" s"""
 
 
@@ -108,9 +116,11 @@ def tree_columns(session=None) -> dict:
     """{status id: {"parent_id", "deleted_at", "deleted_by", "requires_promise"}} for every
     status (a small table)."""
     rows = (session or _s()).execute(text("""
-        SELECT id::text, parent_id::text, deleted_at, deleted_by::text, requires_promise FROM "CommentStatuses"
+        SELECT id::text, parent_id::text, deleted_at, deleted_by::text, requires_promise,
+               stops_campaigns, blocks_dialed_number FROM "CommentStatuses"
     """)).all()
-    return {r[0]: {"parent_id": r[1], "deleted_at": r[2], "deleted_by": r[3], "requires_promise": r[4]}
+    return {r[0]: {"parent_id": r[1], "deleted_at": r[2], "deleted_by": r[3], "requires_promise": r[4],
+                   "stops_campaigns": r[5], "blocks_dialed_number": r[6]}
             for r in rows}
 
 
@@ -120,6 +130,8 @@ def with_tree(status_dict: dict, extra: dict | None, *, deleted=False) -> dict:
     extra = extra or {}
     status_dict["parent_id"] = extra.get("parent_id")
     status_dict["requires_promise"] = bool(extra.get("requires_promise") or False)
+    for k in CAMPAIGN_FLAGS:                                   # 0080
+        status_dict[k] = bool(extra.get(k) or False)
     if deleted:
         status_dict["deleted_at"] = extra.get("deleted_at")
     return status_dict
@@ -278,12 +290,24 @@ def _set_requires_promise(status_id, value: bool) -> None:
     """), {"v": bool(value), "id": str(status_id)})
 
 
+def _set_campaign_flags(status_id, flags: dict) -> None:
+    """0080: this row's own flags only (sub-statuses are not touched)."""
+    if flags:
+        _s().execute(text(f"""UPDATE "CommentStatuses" SET {', '.join(f'{k} = :{k}' for k in flags)}
+                              WHERE id = CAST(:id AS uuid)"""), {**flags, "id": str(status_id)})
+
+
+def _pop_campaign_flags(data: dict) -> dict:
+    return {k: _flag(data.pop(k)) for k in CAMPAIGN_FLAGS if k in data}
+
+
 def create(data: dict) -> dict:
     """POST /comment_status: the legacy ORM insert, plus parent_id and the default colour."""
     from models import CommentStatuses
     data = dict(data or {})
     parent_id = data.pop("parent_id", None)
     requires_promise = _flag(data.pop("requires_promise", False))
+    flags = _pop_campaign_flags(data)
     for k in ("deleted_at", "deleted_by", "parent"):
         data.pop(k, None)
     if not data.get("color"):
@@ -302,16 +326,19 @@ def create(data: dict) -> dict:
         _set_parent(status.id, parent["id"])
     if requires_promise:
         _set_requires_promise(status.id, True)
+    _set_campaign_flags(status.id, flags)
     _s().commit()
     invalidate_cache()
     return with_tree(status.as_dict(), {"parent_id": parent["id"] if parent else None,
-                                        "requires_promise": requires_promise})
+                                        "requires_promise": requires_promise,
+                                        **{k: flags.get(k, False) for k in CAMPAIGN_FLAGS}})
 
 
 def update(status, data: dict) -> dict:
     """PUT /comment_status/<id>: the legacy field updates, plus parent_id and the
     contract/reachability inheritance in both directions."""
     data = dict(data or {})
+    flags = _pop_campaign_flags(data)
     current = load(status.id, lock=True)
     if current["deleted_at"] is not None:
         raise StatusRuleError("status_deleted")
@@ -337,6 +364,7 @@ def update(status, data: dict) -> dict:
     _s().flush()
     _set_parent(status.id, parent["id"] if parent else None)
     _set_requires_promise(status.id, requires_promise)         # a main status: its sub-statuses follow
+    _set_campaign_flags(status.id, flags)
     if parent is None:                                   # a main status: its sub-statuses follow it
         _s().execute(text("""
             UPDATE "CommentStatuses"
@@ -349,7 +377,8 @@ def update(status, data: dict) -> dict:
     _s().commit()
     invalidate_cache()
     return with_tree(status.as_dict(), {"parent_id": parent["id"] if parent else None,
-                                        "requires_promise": requires_promise})
+                                        "requires_promise": requires_promise,
+                                        **{k: flags.get(k, bool(current[k])) for k in CAMPAIGN_FLAGS}})
 
 
 def soft_delete(status_id) -> dict:

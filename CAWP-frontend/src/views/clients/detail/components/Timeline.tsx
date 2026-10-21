@@ -55,6 +55,10 @@ type LegacyComment = {
   /** 0068: only on notes recorded with a sub-status */
   sub_status?: { id?: string; name?: string; color?: string | null } | null;
   reachability?: { name?: string } | null;
+  /** 0081: only on a copy of a note saved on another account of the same debtor */
+  applied_from?: { comment_id: string; case_id: string; account_number?: string | null } | null;
+  /** 0081: only on a note that was also applied to the debtor's other accounts */
+  applied_to?: Array<{ case_id: string; account_number?: string | null; comment_id: string }> | null;
 };
 
 const TimelineAvatar = ({ children, ...rest }: TimelineAvatarProps) => {
@@ -370,6 +374,33 @@ const TimeLineComment = () => {
                         <PlainBadge tone="neutral">
                           <span data-testid="p1-note-retired-badge">
                             {t("p1.notes.retired")}
+                          </span>
+                        </PlainBadge>
+                      )}
+
+                      {/* 0081: one note for every account of the same debtor */}
+                      {comment.applied_from && (
+                        <PlainBadge tone="info">
+                          <span data-testid="p11-note-applied-from">
+                            {t("p11.notes.timeline.appliedFrom", {
+                              account: comment.applied_from.account_number || "—",
+                            })}
+                          </span>
+                        </PlainBadge>
+                      )}
+                      {comment.applied_to && comment.applied_to.length > 0 && (
+                        <PlainBadge tone="neutral">
+                          <span
+                            data-testid="p11-note-applied-to"
+                            title={comment.applied_to
+                              .map((a) => a.account_number || "—")
+                              .join("، ")}
+                          >
+                            {t("p11.notes.timeline.appliedTo", {
+                              accounts: comment.applied_to
+                                .map((a) => a.account_number || "—")
+                                .join("، "),
+                            })}
                           </span>
                         </PlainBadge>
                       )}

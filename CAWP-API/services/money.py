@@ -203,9 +203,14 @@ def case_in_scope(case_id, scope) -> bool:
     return row is not None
 
 
-def require_case(case_id, scope, not_found: tuple | None = None):
+def require_case(case_id, scope, not_found: tuple | None = None, *, grant: bool = False):
     """404 when the case does not exist or is outside the caller's scope (no existence leak).
-    `not_found` = (code, message, error) to answer as the entity that was asked for."""
+    `not_found` = (code, message, error) to answer as the entity that was asked for.
+    `grant=True` (client-page reads only) also admits the campaign grant (campaign_rules)."""
+    if grant:
+        from services.calling import campaign_rules
+        if campaign_rules.campaign_grant(scope.identity, case_id):
+            return
     if not case_in_scope(case_id, scope):
         code, message, error = not_found or ("case_not_found", "case not found", {"case_id": str(case_id)})
         raise ApiError(404, code, message, error)

@@ -68,7 +68,7 @@ def _scope():
 @jwt_required()
 @require_any(*CASE_MONEY_READ)
 def case_balance(case_id):
-    svc.require_case(case_id, _scope())
+    svc.require_case(case_id, _scope(), grant=True)
     return ok(svc.case_balance(case_id))
 
 
@@ -76,7 +76,7 @@ def case_balance(case_id):
 @jwt_required()
 @require_any(*CASE_MONEY_READ)
 def case_payments(case_id):
-    svc.require_case(case_id, _scope())
+    svc.require_case(case_id, _scope(), grant=True)
     return ok(svc.case_payments(case_id))
 
 
@@ -150,7 +150,7 @@ def promise_detail(promise_id):
 @jwt_required()
 @require_any(*PROMISE_READ)
 def case_promises(case_id):
-    svc.require_case(case_id, _scope())
+    svc.require_case(case_id, _scope(), grant=True)
     return ok(psvc.case_promises(case_id))
 
 

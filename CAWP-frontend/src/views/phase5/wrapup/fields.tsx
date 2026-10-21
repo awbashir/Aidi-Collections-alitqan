@@ -2,8 +2,8 @@
  * Form pieces shared by the wrap-up dialog and the manual call log: the outcome picker,
  * the note (text, reachability, status, contact method: the legacy note form's rules),
  * the optional callback, and the optional EXPLICITLY AGREED promise (outcome `connected`
- * only, with the promises key). 2026-10-20 (0079): "promise discussed" and a promise-to-pay
- * note status REQUIRE a promise (RequiredPromiseSection, requiredPromiseForm.ts).
+ * only, with the promises key). 0079: "promise discussed" and a promise-to-pay note status
+ * OFFER a promise (RequiredPromiseSection, requiredPromiseForm.ts); optional since 2026-10-21.
  */
 import classNames from 'classnames'
 import { useEffect, useMemo } from 'react'
@@ -249,7 +249,7 @@ export const PromiseFields = ({
     testId?: string
 }) => {
     const { t } = useTranslation()
-    /* "promise discussed" REQUIRES a promise (RequiredPromiseSection) since 2026-10-20 */
+    /* "promise discussed" offers its own (optional) promise section (RequiredPromiseSection) */
     if (outcome !== 'connected') return null
     if (!canPromise) return <Note className="mb-3">{t('p5.wrapup.promiseNoKey')}</Note>
     return (
@@ -287,8 +287,9 @@ export const PromiseFields = ({
 }
 
 /**
- * The REQUIRED promise (0079): the outcome "promise discussed" or a promise-to-pay note status.
- * A promise-to-pay status with another outcome is explained instead (the API refuses it).
+ * The OFFERED promise (0079; optional since 2026-10-21): the outcome "promise discussed" or a
+ * promise-to-pay note status. A promise-to-pay status with another outcome is explained instead
+ * (the API refuses it).
  */
 export const RequiredPromiseSection = ({
     caseId,

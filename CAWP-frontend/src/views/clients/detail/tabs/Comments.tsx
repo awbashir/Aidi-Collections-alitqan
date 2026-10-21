@@ -53,6 +53,11 @@ import {
 } from "@/views/phase1/money/requiredPromise";
 import type { RequiredPromiseDraft } from "@/views/phase1/money/requiredPromise";
 import { riyadhToday } from "@/utils/v2/format";
+import {
+  ApplyToAllAccounts,
+  appliedToText,
+  useApplyToAll,
+} from "@/views/phase1/history/ApplyToAllAccounts";
 
 // Types
 import type { FieldProps } from "formik";
@@ -121,8 +126,9 @@ const Comments = ({ data }: NotificationSettingProps) => {
   const [commentStatus, setCommentStatus] = useState([]);
   const [commentStatusLoading, setCommentStatusLoading] = useState(false);
   const [call, setCall] = useState([]);
-  /* 0079: a promise-to-pay status («وعد بالسداد») needs the promise amount and
-   * due date (or an open promise linked); POST /comments creates it with the note. */
+  /* 0079: a promise-to-pay status («وعد بالسداد») offers the promise amount and
+   * due date (or an open promise linked); POST /comments creates it with the note.
+   * Optional since 2026-10-21: left empty, the note is saved without a promise. */
   const [reqPromise, setReqPromise] = useState<RequiredPromiseDraft>(
     emptyRequiredPromise()
   );
@@ -153,6 +159,8 @@ const Comments = ({ data }: NotificationSettingProps) => {
   }, [dock.focus.tick, resultAttempt]);
   /* The number just dialed on this case (the dock's live view) starts the form. */
   const dialed = callDock.lastDialed(caseKey);
+  /* 0081: the same note on the client's other active accounts (default on) */
+  const applyAll = useApplyToAll(caseKey);
 
   // Validation Schema
   const validationSchema = Yup.object().shape({
@@ -317,7 +325,7 @@ const Comments = ({ data }: NotificationSettingProps) => {
     values: ProfileFormModel,
     setSubmitting: (isSubmitting: boolean) => void
   ) => {
-    // 0079: the required promise is checked before anything is sent
+    // 0079: the offered promise, when started, is checked before anything is sent
     const needsPromise = statusRequiresPromise(
       commentsStatusOptions,
       values.comment_status_id,
@@ -329,7 +337,7 @@ const Comments = ({ data }: NotificationSettingProps) => {
     ) {
       setPromiseTried(true);
       toast.push(
-        <Notification title={String(t("p10.promise.fixFields"))} type="danger" />,
+        <Notification title={String(t("p11.notes.promise.fixFields"))} type="danger" />,
         { placement: "top-center" }
       );
       setSubmitting(false);
@@ -386,9 +394,15 @@ const Comments = ({ data }: NotificationSettingProps) => {
     // 0068: the optional sub-status is sent only when one was chosen
     if (!sendValues.comment_sub_status_id) delete sendValues.comment_sub_status_id;
     // 0079: promise_amount + promise_date (or promise_id) with a promise-to-pay status
-    const payload = needsPromise
-      ? { ...sendValues, ...requiredPromiseLegacyFields(reqPromise) }
-      : sendValues;
+    const promiseFields = needsPromise ? requiredPromiseLegacyFields(reqPromise) : {};
+    const withPromise = Object.keys(promiseFields).length > 0;
+    // 0081: apply_to_all_accounts only when the client has other active accounts
+    const applyFlag = applyAll.flag();
+    const payload = {
+      ...sendValues,
+      ...promiseFields,
+      ...(applyFlag !== undefined ? { apply_to_all_accounts: applyFlag } : {}),
+    };
 
     // Post the comment
     dispatch(postComments(payload as unknown as Parameters<typeof postComments>[0]))
@@ -405,20 +419,29 @@ const Comments = ({ data }: NotificationSettingProps) => {
           return;
         }
         dispatch(getComments(clint?.id));
+        if (withPromise) announcePromiseChanged(clint?.id ? String(clint.id) : null);
         if (needsPromise) {
-          announcePromiseChanged(clint?.id ? String(clint.id) : null);
           setReqPromise(emptyRequiredPromise());
           setPromiseTried(false);
         }
+        const applied = appliedToText(
+          t,
+          action?.payload?.applied_to,
+          action?.payload?.skipped_accounts
+        );
+        if (applyFlag !== undefined) applyAll.reset();
         toast.push(
           <Notification
             title={String(
-              needsPromise
+              withPromise
                 ? t("p10.promise.noteSaved")
                 : t("comments.addSuccess")
             )}
             type="success"
-          />,
+            duration={applied ? 6000 : undefined}
+          >
+            {applied}
+          </Notification>,
           { placement: "top-center" }
         );
       })
@@ -734,7 +757,18 @@ const Comments = ({ data }: NotificationSettingProps) => {
                       </FormRow>
                     )}
 
-                    {/* 0079: the required promise of a promise-to-pay status */}
+                    {/* 0081: the same note on the client's other active accounts */}
+                    {(applyAll.siblings?.count ?? 0) > 0 && (
+                      <div className="col-span-2">
+                        <ApplyToAllAccounts
+                          state={applyAll}
+                          className=""
+                          testId="p11-note-apply-all"
+                        />
+                      </div>
+                    )}
+
+                    {/* 0079: the offered (optional) promise of a promise-to-pay status */}
                     {needsPromise && (
                       <div className="col-span-2">
                         <RequiredPromiseFields

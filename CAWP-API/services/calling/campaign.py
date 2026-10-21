@@ -593,6 +593,9 @@ _MEMBER_FACTS = f"""
            aa.case_id AS active_case_id, aa.mode AS active_mode, aa.campaign_id AS active_campaign_id,
            aa.authorized_at AS active_authorized_at, aa.bridged_at AS active_bridged_at,
            aa.ended_at AS active_ended_at, ac.name AS active_case_name, ac."accountNumber" AS active_case_account,
+           aa.contact_id AS active_contact_id, aa.destination AS active_destination, ack.contact AS active_contact_value,
+           aca.contact_choice AS active_contact_choice, aca.contact_position AS active_contact_position,
+           aca.contact_count AS active_contact_count,
            last.released_at AS last_release_at
       FROM campaign_members m
       LEFT JOIN users u ON u.id = m.user_id
@@ -601,6 +604,8 @@ _MEMBER_FACTS = f"""
       LEFT JOIN call_reservations res ON res.collector_user_id = m.user_id AND res.released_at IS NULL
       LEFT JOIN call_attempts aa ON aa.id = res.attempt_id
       LEFT JOIN clints ac ON ac.id = aa.case_id
+      LEFT JOIN "ClintContacts" ack ON ack.id = aa.contact_id
+      LEFT JOIN campaign_attempts aca ON aca.attempt_id = aa.id
       LEFT JOIN LATERAL (SELECT cr.released_at FROM campaign_attempts ca
                            JOIN call_reservations cr ON cr.attempt_id = ca.attempt_id
                           WHERE ca.campaign_id = m.campaign_id AND ca.user_id = m.user_id
@@ -661,7 +666,18 @@ def _attempt_brief(f) -> dict | None:
             "case": {"id": s(f["active_case_id"]), "name": f["active_case_name"],
                      "account_number": f["active_case_account"]},
             "authorized_at": iso(f["active_authorized_at"]), "bridged_at": iso(f["active_bridged_at"]),
-            "ended_at": iso(f["active_ended_at"])}
+            "ended_at": iso(f["active_ended_at"]), "dialed": _dialed(f)}
+
+
+def _dialed(f) -> dict | None:
+    """2026-10-21: the number this call dialled (its rotation place for a campaign call). The
+    number itself needs clints_details, as in the call log (services/calling/queries.py)."""
+    if not f["active_contact_id"] and not f["active_destination"]:
+        return None
+    show = has_permission("clints_details")
+    return {"contact_id": s(f["active_contact_id"]), "choice": f["active_contact_choice"],
+            "number": (f["active_contact_value"] or f["active_destination"]) if show else None,
+            "position": f["active_contact_position"], "of": f["active_contact_count"]}
 
 
 def _today(campaign_id, user_id=None) -> dict:
@@ -691,19 +707,27 @@ def _today(campaign_id, user_id=None) -> dict:
          WHERE ca.campaign_id = CAST(:c AS uuid) {extra}
            AND ca.created_at >= (date_trunc('day', clock_timestamp() AT TIME ZONE 'Asia/Riyadh')) AT TIME ZONE 'Asia/Riyadh'
          GROUP BY GROUPING SETS ((ca.user_id, w.outcome), (w.outcome))"""), params).mappings().all()
+    # 2026-10-21: unassigned cases this campaign's promises assigned to the caller today
+    assigned = sess().execute(text(f"""
+        SELECT ca.user_id, count(*) AS n FROM campaign_case_assignments ca
+         WHERE ca.campaign_id = CAST(:c AS uuid) {extra}
+           AND ca.created_at >= (date_trunc('day', clock_timestamp() AT TIME ZONE 'Asia/Riyadh')) AT TIME ZONE 'Asia/Riyadh'
+         GROUP BY ROLLUP (ca.user_id)"""), params).mappings().all()
     out = {}
     for r in rows:
         k = s(r["user_id"]) or "*"
         out[k] = {x: int(r[x]) for x in ("attempts", "conversations", "customer_answered", "wrapped_up", "failed",
                                           "cancelled", "uncertain", "live")}
         out[k]["outcomes"] = {}
+    for r in assigned:
+        out.setdefault(s(r["user_id"]) or "*", {"outcomes": {}})["assigned_by_promise"] = int(r["n"])
     for r in outcomes:
         if r["outcome"] is None:
             continue
         k = s(r["user_id"]) or "*"
         out.setdefault(k, {"outcomes": {}})["outcomes"][r["outcome"]] = int(r["n"])
     empty = {"attempts": 0, "conversations": 0, "customer_answered": 0, "wrapped_up": 0, "failed": 0, "cancelled": 0,
-             "uncertain": 0, "live": 0, "outcomes": {}}
+             "uncertain": 0, "live": 0, "outcomes": {}, "assigned_by_promise": 0}
     return {k: {**empty, **v} for k, v in out.items()} | ({} if out else {"*": dict(empty)})
 
 
@@ -713,7 +737,7 @@ def _member_view(camp, f, transport_ok, today) -> dict:
     if att is not None:
         att["this_campaign"] = att["campaign_id"] == str(camp["id"])
     empty = {"attempts": 0, "conversations": 0, "customer_answered": 0, "wrapped_up": 0, "failed": 0, "cancelled": 0,
-             "uncertain": 0, "live": 0, "outcomes": {}}
+             "uncertain": 0, "live": 0, "outcomes": {}, "assigned_by_promise": 0}
     return {
         "user": user_ref(f["user_id"], f["name"]), "active": bool(f["active"]), "extension": f["extension"],
         "state": eff["state"], "reason": eff["reason"], "ready_at": eff["ready_at"],
@@ -808,7 +832,8 @@ def pool_view(campaign_id, args, page, size, offset) -> dict:
         "SELECT user_id FROM campaign_members WHERE campaign_id = CAST(:c AS uuid) AND active"),
         {"c": str(campaign_id)}).all()]
     reasons = [x for x in (args.get("reason") or "").split(",") if x]
-    out = P.listing(camp, active_ids, reason=reasons or None, page=page, size=size, offset=offset)
+    out = P.listing(camp, active_ids, reason=reasons or None, page=page, size=size, offset=offset,
+                    show_numbers=has_permission("clints_details"))
     out["summary"] = P.summary(camp, active_ids)
     return out
 

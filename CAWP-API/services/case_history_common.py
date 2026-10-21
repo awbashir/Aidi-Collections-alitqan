@@ -93,9 +93,25 @@ _CASE_COLS = """c.id, c.name, c."identityNumber", c."accountNumber", c.amount::t
        c.user_id, c.portfolios_id, c.is_locked, c.is_archive, c.revision"""
 
 
-def case_in_scope(case_id, *, lock: bool = False):
-    """The case row (mapping) when it exists and is in the caller's scope, else 404."""
+def _campaign_grant(case_id=None, identity_number=None) -> bool:
+    """The caller is calling this unassigned case from an unassigned-only campaign (or wrapped
+    it up < 30 min ago): services/calling/campaign_rules.py, customer approval 2026-10-21.
+    Only READ routes of the client page opt in (`grant=True`)."""
+    from flask_jwt_extended import get_jwt_identity
+    from services.calling import campaign_rules
+    ident = get_jwt_identity()
+    uid = ident.get("id") if isinstance(ident, dict) else ident
+    if case_id is not None:
+        return campaign_rules.campaign_grant(uid, case_id)
+    return campaign_rules.campaign_grant_identity(uid, identity_number)
+
+
+def case_in_scope(case_id, *, lock: bool = False, grant: bool = False):
+    """The case row (mapping) when it exists and is in the caller's scope, else 404.
+    `grant=True` (client-page reads only) also admits the campaign grant."""
     cond, params = scope_sql("c")
+    if grant and _campaign_grant(case_id=case_id):
+        cond, params = "TRUE", {}
     sql = f"SELECT {_CASE_COLS} FROM clints c WHERE c.id = CAST(:case_id AS uuid) AND {cond}"
     if lock:
         sql += " FOR UPDATE OF c"
@@ -105,8 +121,11 @@ def case_in_scope(case_id, *, lock: bool = False):
     return row
 
 
-def identity_in_scope(identity_number: str) -> None:
-    """404 unless the caller can see at least one case of this debtor."""
+def identity_in_scope(identity_number: str, *, grant: bool = False) -> None:
+    """404 unless the caller can see at least one case of this debtor (or, with `grant=True`,
+    holds the campaign grant on one of the debtor's cases)."""
+    if grant and _campaign_grant(identity_number=identity_number):
+        return
     cond, params = scope_sql("c")
     row = db.session.execute(
         text(f'SELECT 1 FROM clints c WHERE c."identityNumber" = :idn AND {cond} LIMIT 1'),

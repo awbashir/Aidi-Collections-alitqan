@@ -82,7 +82,7 @@ def _load_note(note_id):
 # --------------------------------------------------------------------------------------
 
 def case_notes(case_id, *, include_retired: bool, page: int, size: int, offset: int) -> dict:
-    case_in_scope(case_id)
+    case_in_scope(case_id, grant=True)
     where = "m.clint_id = CAST(:case_id AS uuid)" + ("" if include_retired else " AND m.is_deleted = false")
     params = {"case_id": str(case_id)}
     total = db.session.execute(text(f'SELECT count(*) FROM "Comments" m WHERE {where}'), params).scalar()

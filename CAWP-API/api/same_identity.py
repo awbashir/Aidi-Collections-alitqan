@@ -15,6 +15,17 @@ rules: services/same_identity.py. Read-only, not audited.
                         last_note{status, sub_status, color, at} | null,
                         owner{id,name} | null, can_open}]}
 Money is a string with 2 decimals; `paid` counts approved, non-deleted, non-reversed payments.
+
+    GET /v2/cases/<case_id>/note-siblings          (0081, customer feedback 2026-10-21)
+
+The accounts a note saved on this case with `apply_to_all_accounts` would also be written to:
+the other ACTIVE accounts (not archived, not locked) of the same identity, whatever their owner
+(services/note_siblings.py). Same authorization as above; read-only, not audited.
+
+    data = {case_id, count, limit, too_many,
+            accounts: [{id, account_number, name, contract{id,name} | null, owner{id,name} | null}]}
+`count` counts every such account; `accounts` holds at most `limit`; `too_many` = count > limit
+(a note can then not be applied to all of them: 422 too_many_accounts).
 """
 from __future__ import annotations
 
@@ -25,6 +36,7 @@ from core.api_response import ApiError, ok, register_api_errors
 from core.auth import has_permission
 from extensions import db
 from services import money
+from services import note_siblings
 from services import same_identity as svc
 
 bp = Blueprint("same_identity_v2", __name__)
@@ -41,7 +53,20 @@ def same_identity(case_id):
         raise ApiError(403, "forbidden", "You are not authorized to access this resource",
                        {"required_any": list(CASE_VIEW_KEYS)})
     scope = money.caller_scope(str(get_jwt_identity()))
-    money.require_case(case_id, scope)
+    money.require_case(case_id, scope, grant=True)
     data = svc.same_identity(case_id, scope, svc.parse_flag(request.args.get("include_archived")))
+    db.session.rollback()
+    return ok(data)
+
+
+@bp.get("/v2/cases/<uuid:case_id>/note-siblings")
+@jwt_required()
+def note_siblings_preview(case_id):
+    if not any(has_permission(k) for k in CASE_VIEW_KEYS):
+        raise ApiError(403, "forbidden", "You are not authorized to access this resource",
+                       {"required_any": list(CASE_VIEW_KEYS)})
+    scope = money.caller_scope(str(get_jwt_identity()))
+    money.require_case(case_id, scope, grant=True)
+    data = note_siblings.preview(case_id)
     db.session.rollback()
     return ok(data)

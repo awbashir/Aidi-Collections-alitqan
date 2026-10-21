@@ -11,8 +11,12 @@
  * - A deleted case (`case.missing`): only the outcome and the text; the API keeps them for a
  *   supervisor's review.
  * - Note text is never required.
- * - 2026-10-20 (0079): the outcome "promise discussed" or a promise-to-pay note status needs the
- *   promise amount and due date (or an open promise linked); the API creates it with the wrap-up.
+ * - 0079: the outcome "promise discussed" or a promise-to-pay note status offers the promise
+ *   amount and due date (or an open promise linked); the API creates it with the wrap-up.
+ *   Optional since 2026-10-21 (customer feedback).
+ * - 0081: "apply to all the client's accounts" (default on, when the case has other active
+ *   accounts of the same identity): the note (with a status) is written to each of them too;
+ *   the promise and the callback stay on this case.
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -29,6 +33,7 @@ import type { CaseFacts } from './caseFacts'
 import { BlockingOutcomeFields, CallbackFields, NoteFields, OutcomePicker, PromiseFields, RequiredPromiseSection } from './fields'
 import { useRequiredPromise } from './requiredPromiseForm'
 import { announcePromiseChanged } from '@/views/phase1/money/requiredPromise'
+import { ApplyToAllAccounts, announceAppliedTo, useApplyToAll } from '@/views/phase1/history/ApplyToAllAccounts'
 import {
     callbackValid,
     callbackValue,
@@ -65,6 +70,8 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
     const [candidates, setCandidates] = useState<Option[] | null>(null)
     const missing = !!view?.case?.missing
     const required = useRequiredPromise(outcome, missing)
+    /* 0081: the note on the debtor's other active accounts too (not for a deleted case) */
+    const applyAll = useApplyToAll(missing ? null : view?.case?.id)
 
     const reset = () => {
         setOutcome(undefined)
@@ -76,6 +83,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
         setReplacement(undefined)
         setCandidates(null)
         required.reset()
+        applyAll.reset()
     }
 
     const canSubmit =
@@ -94,6 +102,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
         const noteBody = missing ? (note.text.trim() ? { text: note.text.trim() } : undefined) : wrapupNoteBody(note)
         /* the required promise (0079), else the optional explicitly agreed one */
         const promiseBody = missing ? undefined : required.required ? required.body() : promiseValue(promise, outcome)
+        const applyFlag = noteBody?.comment_status_id ? applyAll.flag() : undefined
         try {
             const res = await callsApi.wrapup(
                 view.id,
@@ -106,6 +115,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
                     ...(outcome === 'wrong_number' && wrongReason.trim() ? { wrong_number_reason: wrongReason.trim() } : {}),
                     ...(outcome === 'wrong_number' && replacement ? { replacement_default_id: replacement } : {}),
                     ...(outcome === 'do_not_call' && dncReason.trim() ? { do_not_call_reason: dncReason.trim() } : {}),
+                    ...(applyFlag !== undefined ? { apply_to_all_accounts: applyFlag } : {}),
                 },
                 key
             )
@@ -118,6 +128,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
             )
             announceWrapped({ attemptId: view.id, caseId: view.case?.id || null, needsReview: review })
             if (promiseBody && !review) announcePromiseChanged(view.case?.id)
+            if (!review) announceAppliedTo(t, res.wrapup?.applied_to)
             reset()
             return res
         } catch (e) {
@@ -156,6 +167,7 @@ export function useWrapupForm(view: LiveCall | null, facts: CaseFacts | null) {
         setReplacement,
         candidates,
         required,
+        applyAll,
         reset,
         canSubmit,
         submit,
@@ -271,6 +283,10 @@ export const WrapupFields = ({
                         optional
                         onRequiresPromise={form.required.setStatusNeedsPromise}
                     />
+                    {/* 0081: only a result with a status writes a note */}
+                    {note.status && (
+                        <ApplyToAllAccounts state={form.applyAll} testId={testId === 'p5-wrapup' ? 'p11-apply-all' : `${testId}-apply-all`} />
+                    )}
                     <RequiredPromiseSection
                         caseId={view.case?.id}
                         state={form.required}

@@ -36,7 +36,12 @@ export type StatusFormValues = {
   parent_id: string | null;
   /** 0079: a note with this status needs a promise (amount + due date) */
   requires_promise?: boolean;
+  /** 0080: campaign flags, the row's own (a main status's flag also covers its sub-statuses) */
+  stops_campaigns?: boolean;
+  blocks_dialed_number?: boolean;
 };
+
+const CAMPAIGN_FLAGS = ["stops_campaigns", "blocks_dialed_number"] as const;
 
 type StatusRow = Named & {
   contract_id?: string | null;
@@ -44,6 +49,8 @@ type StatusRow = Named & {
   parent_id?: string | null;
   deleted_at?: string | null;
   requires_promise?: boolean;
+  stops_campaigns?: boolean;
+  blocks_dialed_number?: boolean;
 };
 
 type FieldsProps = {
@@ -97,6 +104,8 @@ const Fields = (props: FieldsProps) => {
           contract_id: s.contract_id ?? null,
           reach: s.CommentReachability_id ?? null,
           requires_promise: s.requires_promise === true,
+          stops_campaigns: s.stops_campaigns === true,
+          blocks_dialed_number: s.blocks_dialed_number === true,
         })),
     [statuses, values.id]
   );
@@ -275,6 +284,43 @@ const Fields = (props: FieldsProps) => {
             </div>
           )}
         </Field>
+      </FormItem>
+
+      {/* 0080 (customer 2026-10-21): campaigns skip the case / the dialled number is blocked.
+          Not copied to sub-statuses: a flagged main status covers them, a sub-status can be
+          flagged alone. */}
+      <FormItem label={String(t("p11.camprules.settings.label"))}>
+        <div className="flex flex-col gap-3" data-testid="p11-status-campaign-flags">
+          {CAMPAIGN_FLAGS.map((flag) => {
+            const fromParent = inherited && parent?.[flag] === true;
+            return (
+              <Field name={flag} key={flag}>
+                {({ form }: FieldProps) => (
+                  <div data-testid={`p11-status-${flag}`}>
+                    <Checkbox
+                      checked={fromParent || values[flag] === true}
+                      disabled={fromParent}
+                      onChange={(checked: boolean) =>
+                        form.setFieldValue(flag, checked)
+                      }
+                    >
+                      <span className="text-[13.5px] text-gray-800 dark:text-night-body">
+                        {t(`p11.camprules.settings.${flag}`)}
+                      </span>
+                    </Checkbox>
+                    <div className="mt-1 text-[12px] text-gray-600">
+                      {fromParent
+                        ? t("p11.camprules.settings.inherited", {
+                            name: parent?.label ?? "",
+                          })
+                        : t(`p11.camprules.settings.${flag}Hint`)}
+                    </div>
+                  </div>
+                )}
+              </Field>
+            );
+          })}
+        </div>
       </FormItem>
 
       {/* colour: a small palette (white first, the default) + the custom picker */}

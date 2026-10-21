@@ -29,6 +29,7 @@ import {
     statusRequiresPromise,
 } from '@/views/phase1/money/requiredPromise'
 import type { RequiredPromiseDraft } from '@/views/phase1/money/requiredPromise'
+import { ApplyToAllAccounts, announceAppliedTo, useApplyToAll } from '@/views/phase1/history/ApplyToAllAccounts'
 import { DueFields, FollowUpSummary, Segmented } from './parts'
 import { validDue } from './access'
 
@@ -134,12 +135,16 @@ export const CompleteFollowUpDialog = ({
     const [time, setTime] = useState('09:00')
     const [nextAction, setNextAction] = useState('')
     const [nfa, setNfa] = useState('')
-    /* 0079: a promise-to-pay outcome status needs the promise (amount + due date, or an open one linked) */
+    /* 0079: a promise-to-pay outcome status offers the promise (amount + due date, or an open one
+       linked); optional since 2026-10-21 */
     const [promise, setPromise] = useState<RequiredPromiseDraft>(emptyRequiredPromise())
     const [outstanding, setOutstanding] = useState<string | null>(null)
 
     const contract = contractId ?? followUp?.case?.contract?.id ?? null
     const caseId = followUp?.case_id ?? followUp?.case?.id ?? null
+    /* 0081: the outcome note on the debtor's other active accounts too (the follow-up and the
+       promise stay on this case) */
+    const applyAll = useApplyToAll(caseId, isOpen)
 
     useEffect(() => {
         if (!method && lk.methods.some((m) => m.value === MOBILE_METHOD_ID)) setMethod(MOBILE_METHOD_ID)
@@ -172,6 +177,7 @@ export const CompleteFollowUpDialog = ({
         setNextAction('')
         setNfa('')
         setPromise(emptyRequiredPromise())
+        applyAll.reset()
     }
 
     const needsPromise = statusRequiresPromise(lk.statuses, status, subStatus)
@@ -181,6 +187,8 @@ export const CompleteFollowUpDialog = ({
 
     const submit = async (key: string) => {
         if (!followUp) return
+        const promiseBody = needsPromise ? requiredPromiseBody(promise) : undefined
+        const applyFlag = applyAll.flag()
         const res = await worklistApi.complete(
             followUp.id,
             {
@@ -195,11 +203,13 @@ export const CompleteFollowUpDialog = ({
                 ...(mode === 'next'
                     ? { next: { due_at: riyadhInstant(date, time), next_action: nextAction.trim() } }
                     : { no_further_action_reason: nfa.trim() }),
-                ...(needsPromise ? { promise: requiredPromiseBody(promise) } : {}),
+                ...(promiseBody ? { promise: promiseBody } : {}),
+                ...(applyFlag !== undefined ? { apply_to_all_accounts: applyFlag } : {}),
             },
             key
         )
-        if (needsPromise) announcePromiseChanged(caseId)
+        if (promiseBody) announcePromiseChanged(caseId)
+        announceAppliedTo(t, res.applied_to, res.skipped_accounts)
         reset()
         onDone(res)
     }
@@ -297,6 +307,7 @@ export const CompleteFollowUpDialog = ({
                 </DialogField>
             )}
             {lk.failed && <Note className="-mt-2 mb-3 text-danger">{t('p1.followUps.lookupsFailed')}</Note>}
+            <ApplyToAllAccounts state={applyAll} testId="p11-fu-apply-all" />
             {needsPromise && (
                 <RequiredPromiseFields
                     caseId={caseId}

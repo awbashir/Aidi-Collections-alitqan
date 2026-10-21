@@ -11,6 +11,9 @@
  * - Pool (`GET …/pool`): the cases in dispatch order with each one's reason, filterable.
  * - Roster (`GET/POST …/members`, deactivate with a reason; a live call is never touched).
  * - Settings and pool definition, with "Edit" (`PATCH`, expected_revision).
+ * - 2026-10-21: the number each campaign call dialled (the rotation over the client's callable
+ *   numbers: "2 of 3"; the number itself needs clints_details) on the member's current call and
+ *   on each pool row, and the pool rows a promise assigned to the agent who made the call.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -28,17 +31,18 @@ import ToastNotification from '@/components/shared/myComponents/ToastNotificatio
 import useHashState, { hashCodec } from '@/utils/hooks/useHashState'
 import type { HashSchema } from '@/utils/hooks/useHashState'
 import { campaignsApi, describeP5Error, isV2Error, lookups } from '@/services/v2'
-import type { Campaign, CampaignLive, Option, Translate } from '@/services/v2'
+import type { Campaign, CampaignDialed, CampaignLive, Option, Translate } from '@/services/v2'
 import { usePermissions, useV2Query } from '@/utils/v2/hooks'
 import { formatCount } from '@/utils/v2/format'
 import { CallStateBadge, CampaignStatusBadge, Card, CaseCell, Fact, MemberStateBadge, Notice, OutcomeBadge } from '../parts'
 import { memberReason, poolReason } from '../labels'
 import CampaignForm from './CampaignForm'
+import CampaignReport from './CampaignReport'
 import PoolFilterChips, { usePoolNames } from './PoolFilterChips'
 
 const { THead, TBody, Tr, Th, Td } = Table
-type Tab = 'live' | 'pool' | 'roster' | 'settings'
-const TABS: Tab[] = ['live', 'pool', 'roster', 'settings']
+type Tab = 'live' | 'pool' | 'roster' | 'settings' | 'report'
+const TABS: Tab[] = ['live', 'pool', 'roster', 'settings', 'report']
 type HashState = { tab: Tab; reason: string | undefined; page: number }
 const schema: HashSchema<HashState> = {
     tab: { key: 'tab', codec: hashCodec.oneOf(TABS), default: 'live' },
@@ -46,6 +50,24 @@ const schema: HashSchema<HashState> = {
     page: { key: 'page', codec: hashCodec.int({ min: 1, max: 100000 }), default: 1 },
 }
 const describe = (e: unknown, t: Translate) => describeP5Error(e, t)
+
+/** Pool reasons added after p5 (0080) have their own label. */
+const P11_REASONS = new Set(['status_stops_campaigns'])
+const poolReasonText = (t: Translate, r: string) => (P11_REASONS.has(r) ? t(`p11.camprules.reason.${r}`) : poolReason(t, r))
+
+/** "0551… · 2 of 3": the dialled number (when visible to me) and its rotation place. */
+const DialedLine = ({ dialed, testId }: { dialed: CampaignDialed | null | undefined; testId?: string }) => {
+    const { t } = useTranslation()
+    if (!dialed) return null
+    const place = dialed.position && dialed.of ? String(t('p11.camprules.dialed.place', { position: dialed.position, of: dialed.of })) : ''
+    return (
+        <span className="text-[12px] text-gray-600" data-testid={testId} data-position={dialed.position ?? ''}>
+            {t('p11.camprules.dialed.label')}: {dialed.number ? <Ltr>{dialed.number}</Ltr> : t('p11.camprules.dialed.hidden')}
+            {place ? ` · ${place}` : ''}
+            {dialed.choice === 'default' ? ` · ${t('p11.camprules.dialed.default')}` : ''}
+        </span>
+    )
+}
 
 type Action = 'start' | 'pause' | 'drain' | 'stop'
 
@@ -229,6 +251,7 @@ const LiveTab = ({ campaignId, onCampaign }: { campaignId: string; onCampaign: (
                                             <div className="flex flex-col gap-1">
                                                 <CallStateBadge state={m.current_attempt.state} size="row" />
                                                 <CaseCell kase={{ ...m.current_attempt.case, missing: false }} />
+                                                <DialedLine dialed={m.current_attempt.dialed} testId="p11-cd-member-dialed" />
                                                 {!m.current_attempt.this_campaign && <span className="text-[11.5px] text-gray-500">{t('p5.cd.otherCall')}</span>}
                                             </div>
                                         ) : (
@@ -237,6 +260,11 @@ const LiveTab = ({ campaignId, onCampaign }: { campaignId: string; onCampaign: (
                                     </Td>
                                     <Td className="text-end tabular-nums text-[12.5px]">
                                         {t('p5.cd.todayCell', { attempts: m.today.attempts, conversations: m.today.conversations })}
+                                        {(m.today.assigned_by_promise || 0) > 0 && (
+                                            <div className="text-[12px] font-bold text-success-600 dark:text-success-400" data-testid="p11-cd-member-assigned">
+                                                {t('p11.camprules.assignedToday', { count: m.today.assigned_by_promise })}
+                                            </div>
+                                        )}
                                     </Td>
                                 </Tr>
                             ))}
@@ -257,7 +285,7 @@ const LiveTab = ({ campaignId, onCampaign }: { campaignId: string; onCampaign: (
                         <ul className="grid grid-cols-1 gap-1 text-[12.5px] sm:grid-cols-2">
                             {Object.entries(live.pool.excluded).map(([r, n]) => (
                                 <li key={r} className="flex justify-between gap-2" data-reason={r}>
-                                    <span>{poolReason(t, r)}</span>
+                                    <span>{poolReasonText(t, r)}</span>
                                     <span className="tabular-nums">{formatCount(n)}</span>
                                 </li>
                             ))}
@@ -287,6 +315,7 @@ const POOL_REASONS = [
     'in_call',
     'no_member_in_scope',
     'case_paid',
+    'status_stops_campaigns',
     'no_callable_contact',
     'callback_scheduled',
     'max_attempts_today',
@@ -298,7 +327,7 @@ const PoolTab = ({ campaignId, reason, page, onState }: { campaignId: string; re
     const { t } = useTranslation()
     const q = useV2Query((signal) => campaignsApi.pool(campaignId, { reason, page, page_size: 25 }, signal), [campaignId, reason, page])
     const data = q.data
-    const options = POOL_REASONS.map((r) => ({ value: r, label: String(poolReason(t, r)) }))
+    const options = POOL_REASONS.map((r) => ({ value: r, label: String(poolReasonText(t, r)) }))
     return (
         <div data-testid="p5-cd-pool">
             <div className="mb-3 flex flex-wrap items-end gap-3">
@@ -331,18 +360,25 @@ const PoolTab = ({ campaignId, reason, page, onState }: { campaignId: string; re
                                 <Th>{t('p5.cd.col.lastContact')}</Th>
                                 <Th>{t('p5.cd.col.callback')}</Th>
                                 <Th className="text-end">{t('p5.cd.col.attemptsToday')}</Th>
+                                <Th>{t('p11.camprules.col.lastDialed')}</Th>
                             </Tr>
                         </THead>
                         <TBody>
                             {q.loading && !data ? (
-                                <SkeletonRows cols={6} />
+                                <SkeletonRows cols={7} />
                             ) : data && data.items.length ? (
                                 data.items.map((it) => (
                                     <Tr key={it.case.id} data-testid="p5-cd-pool-row" data-reason={it.reason}>
                                         <Td>
                                             <CaseCell kase={{ ...it.case, missing: false }} />
+                                            {it.assigned_by_campaign && (
+                                                <div className="mt-1 text-[12px] font-bold text-success-600 dark:text-success-400" data-testid="p11-cd-pool-assigned">
+                                                    {t('p11.camprules.assigned', { name: it.assigned_by_campaign.user?.name || '—' })}{' '}
+                                                    <RiyadhTime iso={it.assigned_by_campaign.at} />
+                                                </div>
+                                            )}
                                         </Td>
-                                        <Td>{poolReason(t, it.reason)}</Td>
+                                        <Td>{poolReasonText(t, it.reason)}</Td>
                                         <Td>{t(`p5.cd.priority.${it.priority}`)}</Td>
                                         <Td>
                                             <RiyadhTime iso={it.last_contact_at} />
@@ -351,11 +387,21 @@ const PoolTab = ({ campaignId, reason, page, onState }: { campaignId: string; re
                                             <RiyadhTime iso={it.callback_at} />
                                         </Td>
                                         <Td className="text-end tabular-nums">{it.attempts_today}</Td>
+                                        <Td>
+                                            {it.last_dialed ? (
+                                                <div className="flex flex-col">
+                                                    <DialedLine dialed={it.last_dialed} testId="p11-cd-pool-dialed" />
+                                                    <RiyadhTime iso={it.last_dialed.at} />
+                                                </div>
+                                            ) : (
+                                                '—'
+                                            )}
+                                        </Td>
                                     </Tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={6}>
+                                    <td colSpan={7}>
                                         <EmptyState title={t('p5.cd.poolEmpty')} />
                                     </td>
                                 </tr>
@@ -517,6 +563,11 @@ const SettingsTab = ({ campaign }: { campaign: Campaign }) => {
                 <div className="flex flex-col gap-2 text-[13px]">
                     <Fact label={t('p5.cf.contracts')}>{campaign.pool.contract_ids.map((id) => names[id] || id.slice(0, 8)).join(String(t('p5.listSep'))) || '—'}</Fact>
                     <Fact label={t('p5.cf.portfolios')}>{campaign.pool.portfolio_ids.map((id) => names[id] || id.slice(0, 8)).join(String(t('p5.listSep'))) || '—'}</Fact>
+                    {campaign.pool.unassigned_only && (
+                        <Fact label={t('p11.camprules.unassigned.label')} testId="p11-cd-unassigned">
+                            {t('p11.camprules.unassigned.on')}
+                        </Fact>
+                    )}
                     <Fact label={t('p5.cf.listFilter')}>
                         {Object.keys(campaign.pool.filter || {}).length ? (
                             <PoolFilterChips filter={campaign.pool.filter} names={names} testId="p9-campaign-filter-chips" />
@@ -606,6 +657,11 @@ const CampaignDetail = () => {
                 </div>
                 {manage && (
                     <div className="flex flex-wrap items-center gap-2" data-testid="p5-cd-actions">
+                        {(status === 'stopped' || status === 'draining') && state.tab !== 'report' && (
+                            <Button size="sm" variant="solid" onClick={() => setState({ tab: 'report', page: 1 })} data-testid="p11-cd-open-report">
+                                {t('p11.campreport.open')}
+                            </Button>
+                        )}
                         {status !== 'stopped' && (
                             <Button size="sm" icon={<HiOutlinePencil />} onClick={() => setEditing(true)} data-testid="p5-cd-edit">
                                 {t('p5.cd.edit')}
@@ -636,7 +692,7 @@ const CampaignDetail = () => {
             </div>
             <div className="mb-4">
                 <CountTabs<Tab>
-                    tabs={TABS.map((tab) => ({ value: tab, label: t(`p5.cd.tab.${tab}`) }))}
+                    tabs={TABS.map((tab) => ({ value: tab, label: tab === 'report' ? t('p11.campreport.tab') : t(`p5.cd.tab.${tab}`) }))}
                     value={state.tab}
                     onChange={(tab) => setState({ tab, page: 1 })}
                     testId="p5-cd-tabs"
@@ -646,6 +702,7 @@ const CampaignDetail = () => {
             {state.tab === 'pool' && <PoolTab campaignId={campaign.id} reason={state.reason} page={state.page} onState={(p) => setState(p)} />}
             {state.tab === 'roster' && <RosterTab campaign={campaign} onChanged={q.reload} />}
             {state.tab === 'settings' && <SettingsTab campaign={campaign} />}
+            {state.tab === 'report' && <CampaignReport campaign={campaign} />}
             <TransitionDialog
                 campaign={campaign}
                 action={action}

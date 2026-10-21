@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { HiOutlinePlus } from 'react-icons/hi'
 import Button from '@/components/ui/Button'
 import Table from '@/components/ui/Table'
@@ -135,6 +135,16 @@ const Campaigns = () => {
                                         </Td>
                                         <Td>
                                             <CampaignStatusBadge status={c.status} size="row" />
+                                            {perms.campaigns_manage && (c.status === 'stopped' || c.status === 'draining') && (
+                                                <Link
+                                                    to={`/campaigns/${c.id}#tab=report`}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="ms-2 whitespace-nowrap text-[12px] font-extrabold text-azure-600 hover:underline"
+                                                    data-testid="p11-campaign-row-report"
+                                                >
+                                                    {t('p11.campreport.open')}
+                                                </Link>
+                                            )}
                                         </Td>
                                         <Td>{t(`p5.campaign.mode.${c.settings.next_mode}`)}</Td>
                                         <Td className="text-end tabular-nums">

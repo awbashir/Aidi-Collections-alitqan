@@ -158,6 +158,7 @@ export function describeP5Error(err: unknown, t: Translate, area?: 'dispatch'): 
     if (rule && RULES.has(rule)) return refusalText(rule, detail, t)
     if (area === 'dispatch' && RULES.has(err.code) && err.code !== 'forbidden') return refusalText(err.code, detail, t)
     if (PROMISE_RULE_CODES.has(err.code)) return t(`p10.promise.err.${err.code}`)
+    if (err.code === 'too_many_accounts') return t('p11.notes.err.too_many_accounts') // 0081, note on all accounts
     if (P8_CALLING_ERROR_CODES.has(err.code)) {
         const values = flat(detail)
         if (err.code === 'release_not_allowed' && values.state === 'uncertain') return t('p8.calling.err.release_uncertain')

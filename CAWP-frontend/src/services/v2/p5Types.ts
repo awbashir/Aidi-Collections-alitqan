@@ -85,6 +85,8 @@ export type CallWrapup = {
     review_reason: 'case_locked' | 'case_archived' | 'case_deleted' | 'case_reassigned' | null
     deferred_actions: Record<string, unknown> | null
     note_text?: string | null
+    /** 0081: the copies of the note on the debtor's other accounts (noteSiblingsApi.ts) */
+    applied_to?: Array<{ case_id: string; account_number: string | null; comment_id: string }>
 }
 
 export type CallReservation = {
@@ -347,11 +349,13 @@ export type WrapupBody = {
     note?: WrapupNote
     callback_at?: string
     /** 0079: `agreed` is needed only for an optional promise (outcome connected, no promise-to-pay status);
-     *  `{ promise_id }` links an open promise of the case. */
+     *  `{ promise_id }` links an open promise of the case. Optional in every case since 2026-10-21. */
     promise?: { agreed?: true; amount: string; due_date: string } | { promise_id: string }
     replacement_default_id?: string
     wrong_number_reason?: string
     do_not_call_reason?: string
+    /** 0081: write the note (with a status) on every active account of the same debtor too */
+    apply_to_all_accounts?: boolean
 }
 
 export type ManualCallBody = Omit<WrapupBody, 'expected_revision'> & {
@@ -609,6 +613,18 @@ export type CampaignPool = {
     contract_ids: string[]
     portfolio_ids: string[]
     filter: Record<string, unknown>
+    /** 2026-10-21: only cases with no collector (saved only when true) */
+    unassigned_only?: boolean
+}
+
+/** 2026-10-21: the number a campaign call dialled (`number` needs clints_details) and its place
+ *  in the debtor's callable numbers (the rotation). */
+export type CampaignDialed = {
+    contact_id: string | null
+    choice: string | null
+    number: string | null
+    position: number | null
+    of: number | null
 }
 
 export type Campaign = {
@@ -655,6 +671,8 @@ export type DayCounts = {
     uncertain: number
     live: number
     outcomes: Partial<Record<Outcome, number>>
+    /** 2026-10-21: unassigned cases a promise on this campaign's calls assigned to the caller */
+    assigned_by_promise?: number
 }
 
 export type CampaignMemberView = {
@@ -686,6 +704,7 @@ export type CampaignMemberView = {
         bridged_at: Iso | null
         ended_at: Iso | null
         this_campaign?: boolean
+        dialed?: CampaignDialed | null
     } | null
     today: DayCounts
 }
@@ -752,6 +771,8 @@ export type PoolItem = {
     attempts_today: number
     last_tried_at: Iso | null
     last_excluded_reason: string | null
+    last_dialed?: (CampaignDialed & { at: Iso; call_state: string | null }) | null
+    assigned_by_campaign?: { user: UserRef; at: Iso; cause: 'outcome' | 'status' | 'promise'; promise_id: string | null } | null
 }
 
 export type PoolListing = Paged<PoolItem> & { summary: PoolSummary }

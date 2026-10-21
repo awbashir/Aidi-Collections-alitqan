@@ -530,3 +530,161 @@ def test_case_level_refusals_are_remembered_and_the_next_case_is_taken(cp_app, c
     monkeypatch.setattr(P, "candidates", real)
     items = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(w.supervisor)).get_json()["data"]["items"]
     assert {i["case"]["id"]: i["reason"] for i in items}[paid] == "case_paid"
+
+
+# --------------------------------------------------------------------------- 2026-10-21 (0080)
+def _status(pgc, name, *, stops=False, blocks=False):
+    import uuid
+
+    from test_calling_campaign_helpers import CL
+    sid = str(uuid.uuid4())
+    run(pgc, """INSERT INTO "CommentStatuses" (id, name, "CommentReachability_id", is_active, stops_campaigns,
+                                               blocks_dialed_number) VALUES (%s, %s, %s, true, %s, %s)""",
+        sid, f"{name} {sid[:6]}", CL.reach, stops, blocks)
+    return sid
+
+
+def _tomorrow():
+    import datetime as dt
+    return (dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).date() + dt.timedelta(days=1)).isoformat()
+
+
+def _call_and_wrap(cp_app, client, auth, pgc, cid, w, user, **body):
+    """One campaign call for `user`: dispatched, bridged, ended and wrapped up (no_answer unless
+    `body` says otherwise). -> the dispatch result."""
+    from test_calling_campaign_helpers import note_body
+    got = dispatched(tick(cp_app, cid, w))
+    assert len(got) == 1 and got[0]["user_id"] == user, got
+    a = got[0]["attempt_id"]
+    bridge(pgc, a)
+    end_call(pgc, a)
+    payload = {"expected_revision": q1(pgc, "SELECT revision FROM call_attempts WHERE id = %s", a)[0],
+               "outcome": "no_answer", "note": note_body("campaign call")}
+    payload.update(body)
+    r = client.post(f"/v2/calls/{a}/wrapup", headers=auth(user, key()), json=payload)
+    assert r.status_code == 200, r.get_json()
+    return got[0]
+
+
+def test_campaign_rotates_through_every_callable_number(cp_app, client, auth, world, pgc):
+    """A 3-number client: each number is dialled before any is retried (default first, then the
+    newest; in the next round the last successful one after the default); a blocked number is
+    never dialled. Max attempts and the cooldown stay per case."""
+    from test_calling_campaign_helpers import add_contact, number
+    w = world
+    case, default = case_for(pgc, w.c1, w.portfolio)
+    older = add_contact(pgc, case, number(4))
+    newer = add_contact(pgc, case, number(4))
+    run(pgc, "UPDATE \"ClintContacts\" SET create_at = now() - interval '2 days' WHERE id = %s", older)
+    run(pgc, "UPDATE \"ClintContacts\" SET create_at = now() - interval '1 day' WHERE id = %s", newer)
+    blocked = add_contact(pgc, case, number(4), blocked=True)
+    cid = new_campaign(client, auth, w, members=[w.c1],
+                       settings={"max_attempts_per_day": 10, "cooldown_minutes": 0, "wrapup_delay_seconds": 0})
+    ready(pgc, cid, w.c1, lease_seconds=300)
+    for _ in range(4):
+        _call_and_wrap(cp_app, client, auth, pgc, cid, w, w.c1)
+    rows = qall(pgc, """SELECT contact_id::text, contact_choice, contact_position, contact_count FROM campaign_attempts
+                         WHERE campaign_id = %s ORDER BY created_at""", cid)
+    assert [r[0] for r in rows] == [default, newer, older, default]
+    assert [r[1] for r in rows] == ["default", "fallback", "fallback", "default"]
+    assert [(r[2], r[3]) for r in rows] == [(1, 3), (2, 3), (3, 3), (1, 3)]
+    assert blocked not in {r[0] for r in rows}
+    ev = q1(pgc, """SELECT after -> 'contact_rotation' FROM audit_events WHERE action = 'campaign.dispatch'
+                     AND entity_id = %s ORDER BY occurred_at DESC LIMIT 1""", cid)[0]
+    assert ev == {"position": 1, "of": 3, "round_tried": 0}
+    # round 2 goes on with the number that last answered after the default (older, bridged last)
+    got = dispatched(tick(cp_app, cid, w))
+    live = client.get(f"/v2/campaigns/{cid}/live", headers=auth(w.supervisor)).get_json()["data"]
+    dialed = live["members"][0]["current_attempt"]["dialed"]
+    assert dialed["contact_id"] == older and (dialed["position"], dialed["of"]) == (2, 3)
+    assert dialed["number"] == q1(pgc, 'SELECT contact FROM "ClintContacts" WHERE id = %s', older)[0]
+    items = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(w.supervisor)).get_json()["data"]["items"]
+    last = items[0]["last_dialed"]
+    assert items[0]["case"]["id"] == case and last["contact_id"] == older and last["of"] == 3
+    assert got[0]["contact_id"] == older
+
+
+def test_status_that_blocks_the_dialed_number(cp_app, client, auth, world, pgc):
+    """A note status with blocks_dialed_number blocks the attempt's number like wrong_number,
+    without asking for the replacement default; the next call dials the other number."""
+    from test_calling_campaign_helpers import add_contact, note_body, number
+    w = world
+    case, default = case_for(pgc, w.c1, w.portfolio)
+    other = add_contact(pgc, case, number(4))
+    wrong = _status(pgc, "cp wrong number", blocks=True)
+    cid = new_campaign(client, auth, w, members=[w.c1],
+                       settings={"max_attempts_per_day": 10, "cooldown_minutes": 0, "wrapup_delay_seconds": 0})
+    ready(pgc, cid, w.c1, lease_seconds=300)
+    first = _call_and_wrap(cp_app, client, auth, pgc, cid, w, w.c1,
+                           note=note_body("wrong number", comment_status_id=wrong))
+    assert first["contact_id"] == default
+    assert q1(pgc, 'SELECT is_blocked, is_default FROM "ClintContacts" WHERE id = %s', default) == (True, False)
+    assert q1(pgc, "SELECT after->>'contact_blocked_by_status' FROM audit_events WHERE action = 'call.wrapup' "
+                   "AND entity_id = %s", first["attempt_id"]) == ("true",)
+    assert q1(pgc, 'SELECT is_blocked FROM "ClintContacts" WHERE id = %s', other) == (False,)
+    second = _call_and_wrap(cp_app, client, auth, pgc, cid, w, w.c1)
+    assert second["contact_id"] == other
+    assert q1(pgc, 'SELECT is_blocked FROM "ClintContacts" WHERE id = %s', other) == (False,)   # a plain status
+
+
+def test_stopping_status_is_rechecked_before_the_originate(cp_app, client, auth, world, pgc):
+    from services.calling import campaign_dispatch as CD
+    w = world
+    case, _ = case_for(pgc, w.c1, w.portfolio)
+    cid = new_campaign(client, auth, w, members=[w.c1])
+    ready(pgc, cid, w.c1)
+    a = dispatched(tick(cp_app, cid, w))[0]["attempt_id"]
+    attempt = {"campaign_id": cid, "collector_user_id": w.c1, "case_id": case}
+    assert in_app(cp_app, lambda s: CD.claim_recheck(s, attempt)) is None
+    from test_calling_campaign_helpers import CL
+    run(pgc, """INSERT INTO "Comments" (clint_id, user_id, "contactMethod_id", comment, comment_status_id)
+                VALUES (%s, %s, %s, 'paid', %s)""", case, w.c1, CL.method, _status(pgc, "cp paid", stops=True))
+    assert in_app(cp_app, lambda s: CD.claim_recheck(s, attempt)) == "status_stops_campaigns"
+    assert a
+
+
+def test_promise_on_an_unassigned_campaign_case_assigns_it_to_the_caller(cp_app, client, auth, world, pgc):
+    """Unassigned + promise -> the case goes to the agent who made the call, in the wrap-up's
+    transaction (clints.user_id, "SepcifyUsers", campaign_case_assignments, audit). A case that
+    has a collector is never taken from them."""
+    from test_calling_campaign_helpers import add_contact, make_case, note_body, number
+    from test_calling_c2c_helpers import new_supervisor
+    w = world
+    agent = new_supervisor(pgc, role=CP.collector_role, contracts=[w.contract], name="CP Contract agent")
+    own_extension(pgc, agent)
+    free = make_case(pgc, None, w.portfolio)
+    add_contact(pgc, free, number(4), default=True)
+    owned, _ = case_for(pgc, w.c1, w.portfolio)
+    settings = {"max_attempts_per_day": 10, "cooldown_minutes": 0, "wrapup_delay_seconds": 0}
+    cu = new_campaign(client, auth, w, owner=CP.super, members=[agent], settings=settings,
+                      pool={"contract_ids": [w.contract], "unassigned_only": True})
+    ready(pgc, cu, agent, lease_seconds=300)
+    got = _call_and_wrap(cp_app, client, auth, pgc, cu, w, agent, outcome="promise_discussed",
+                         note=note_body("will pay"), promise={"amount": "100", "due_date": _tomorrow()})
+    assert got["case_id"] == free
+    assert q1(pgc, "SELECT user_id::text FROM clints WHERE id = %s", free) == (agent,)
+    assert q1(pgc, 'SELECT count(*), min(create_by::text) FROM "SepcifyUsers" WHERE clint_id = %s AND user_id = %s',
+              free, agent) == (1, agent)
+    row = q1(pgc, """SELECT user_id::text, assigned_by::text, cause, promise_id IS NOT NULL FROM campaign_case_assignments
+                      WHERE attempt_id = %s""", got["attempt_id"])
+    assert row == (agent, agent, "outcome", True)
+    ev = q1(pgc, "SELECT reason, after->>'user_id', after->>'campaign_id' FROM audit_events WHERE action = 'case.assign' "
+                 "AND case_id = %s", free)
+    assert ev == ("assigned by campaign promise", agent, cu)
+    items = client.get(f"/v2/campaigns/{cu}/pool", headers=auth(CP.super)).get_json()["data"]["items"]
+    assert items == []                                       # it has a collector now: out of the unassigned pool
+    live = client.get(f"/v2/campaigns/{cu}/live", headers=auth(CP.super)).get_json()["data"]
+    assert live["members"][0]["today"]["assigned_by_promise"] == 1 and live["today"]["assigned_by_promise"] == 1
+    act(client, auth, CP.super, cu, "stop")
+    # a case WITH a collector: the promise never moves it
+    cid = new_campaign(client, auth, w, owner=CP.super, members=[agent], settings=settings,
+                       pool={"contract_ids": [w.contract]})
+    ready(pgc, cid, agent, lease_seconds=300)
+    got = _call_and_wrap(cp_app, client, auth, pgc, cid, w, agent, outcome="connected", note=note_body("ok"),
+                         promise={"amount": "50", "due_date": _tomorrow(), "agreed": True})
+    assert got["case_id"] == owned
+    assert q1(pgc, "SELECT user_id::text FROM clints WHERE id = %s", owned) == (w.c1,)
+    assert q1(pgc, "SELECT count(*) FROM campaign_case_assignments WHERE case_id = %s", owned) == (0,)
+    pool = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(CP.super)).get_json()["data"]["items"]
+    by_case = {i["case"]["id"]: i for i in pool}
+    assert by_case[owned]["assigned_by_campaign"] is None and by_case[free]["assigned_by_campaign"] is None

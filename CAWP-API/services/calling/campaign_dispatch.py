@@ -19,7 +19,9 @@ One dispatch (one database transaction, committed or not at all):
        clicked "next" since), and in manual mode an unexpired "next" request
     -> member-level checks (calls_make, active, extension, calling window) once
     -> candidates in dispatch order (campaign_pool.candidates), for each (at most 20):
-         pg_try_advisory_xact_lock on the case (another loop has it: skip), choose the contact,
+         pg_try_advisory_xact_lock on the case (another loop has it: skip), re-check that its
+         latest note does not stop campaigns (0080), choose the contact (the next number of the
+         campaign's rotation over the debtor's callable numbers, campaign_pool.choose_contact),
          then in a SAVEPOINT the SAME code as POST /v2/calls: dispatch.authorize() (every rule,
          attempt mode=campaign, reservation, dispatch queue row, audit).
          A case-level refusal -> campaign_pool_state exclusion with a re-check time, next case.
@@ -28,8 +30,8 @@ One dispatch (one database transaction, committed or not at all):
        "next" consumed), audit campaign.dispatch.
 
 Then the click-to-call Dispatcher claims the queue row exactly as for a click-to-call and rechecks
-every rule plus `claim_recheck()` (campaign still running, member still ready with a live lease)
-right before the token and the Originate.
+every rule plus `claim_recheck()` (campaign still running, member still ready with a live lease,
+the case's latest note does not stop campaigns) right before the token and the Originate.
 
 Guarantees:
 * never more than one outstanding attempt per collector: every campaign call holds a
@@ -80,13 +82,19 @@ LIVE_STATES = ("prepared", "authorized", "dispatched", "agent_ringing", "agent_a
                "customer_answered", "bridged")
 # how long a case-level refusal keeps the case out of this campaign's candidates (it is always
 # re-evaluated by the rules when offered again)
-RECHECK_MINUTES = {"case_paid": 30, "destination_invalid": 30, "no_callable_contact": 30, "contact_not_found": 5,
+RECHECK_MINUTES = {"case_paid": 30, "status_stops_campaigns": 30, "destination_invalid": 30, "no_callable_contact": 30, "contact_not_found": 5,
                    "contact_deleted": 5, "contact_blocked": 5, "case_archived": 1, "case_locked": 1,
                    "do_not_call": 1, "calling_review_pending": 1}
 
 
 # audit fields of what the calling service does by itself (no request, no person)
 SYSTEM_AUDIT = {"actor_user_id": None, "request_id": None, "idempotency_key": None, "source": "campaign"}
+
+
+def _stops(session, case_id) -> bool:
+    """0080: the case's latest note stops campaigns (services/calling/campaign_rules.py)."""
+    from services.calling.campaign_rules import case_stops_campaigns
+    return case_stops_campaigns(session, case_id)
 
 
 def fence_key(campaign_id) -> str:
@@ -117,6 +125,8 @@ def claim_recheck(session, attempt) -> str | None:
         return "member_not_ready"
     if not r["lease_live"]:
         return "lease_expired"
+    if _stops(session, attempt["case_id"]):
+        return "status_stops_campaigns"             # 0080: a stopping status recorded after the dispatch
     return None
 
 
@@ -224,7 +234,10 @@ def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatc
         tried.add(case_id)
         if not _try_case_lock(session, case_id):
             continue                                       # another loop is on this case right now
-        contact, choice = P.choose_contact(cand["idn"])
+        if _stops(session, case_id):                 # 0080: a stopping status recorded since the read
+            _exclude(session, cid, case_id, "status_stops_campaigns")
+            continue
+        contact, choice = P.choose_contact(cand["idn"], campaign_id=cid, case_id=case_id)
         if contact is None:
             _exclude(session, cid, case_id, "no_callable_contact")
             continue
@@ -234,7 +247,7 @@ def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatc
                 attempt_id = D.authorize(
                     uid, case_id, contact["id"], transport=transport, mode="campaign", campaign_id=cid,
                     audit_after={"campaign_id": cid, "contact_choice": choice, "priority": priority,
-                                 "dispatched_by": dispatched_by},
+                                 "dispatched_by": dispatched_by, "contact_rotation": contact["rotation"]},
                     audit_kw=SYSTEM_AUDIT if audit_kw is None else audit_kw)
         except R.RuleRefused as refused:
             rc = refused.code
@@ -257,22 +270,23 @@ def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatc
                 continue
             raise
         _record_dispatch(session, campaign, uid, attempt_id, case_id, contact["id"], choice, priority,
-                         dispatched_by, audit_kw)
-        return {"attempt_id": attempt_id, "case_id": case_id, "contact_choice": choice, "priority": priority}
+                         dispatched_by, audit_kw, rotation=contact["rotation"])
+        return {"attempt_id": attempt_id, "case_id": case_id, "contact_choice": choice, "priority": priority,
+                "contact_id": contact["id"], "contact_rotation": contact["rotation"]}
     _block(session, cid, uid, "no_eligible_case", {"candidates_checked": len(tried)})
     return {"blocked": "no_eligible_case", "detail": {"candidates_checked": len(tried)}}
 
 
 def _record_dispatch(session, campaign, uid, attempt_id, case_id, contact_id, choice, priority, dispatched_by,
-                     audit_kw):
+                     audit_kw, rotation=None):
     cid = str(campaign["id"])
     session.execute(text("""
         INSERT INTO campaign_attempts (attempt_id, campaign_id, user_id, case_id, contact_id, contact_choice,
-                                       priority, dispatched_by)
+                                       priority, dispatched_by, contact_position, contact_count)
         VALUES (CAST(:a AS uuid), CAST(:c AS uuid), CAST(:u AS uuid), CAST(:k AS uuid), CAST(:ct AS uuid),
-                :ch, :pr, :by)"""),
+                :ch, :pr, :by, :pos, :cnt)"""),
         {"a": attempt_id, "c": cid, "u": uid, "k": case_id, "ct": contact_id, "ch": choice, "pr": priority,
-         "by": dispatched_by[:200]})
+         "by": dispatched_by[:200], "pos": (rotation or {}).get("position"), "cnt": (rotation or {}).get("of")})
     day = _day(session)
     session.execute(text("""
         INSERT INTO campaign_pool_state (campaign_id, case_id, last_tried_at, last_attempt_id, attempts_day,
@@ -296,7 +310,8 @@ def _record_dispatch(session, campaign, uid, attempt_id, case_id, contact_id, ch
     kw = dict(SYSTEM_AUDIT if audit_kw is None else audit_kw)
     audit.record("campaign.dispatch", "campaign", cid, case_id=case_id, after={
         "attempt_id": attempt_id, "user_id": uid, "contact_choice": choice, "priority": priority,
-        "dispatched_by": dispatched_by}, session=session, **kw)
+        "dispatched_by": dispatched_by, "contact_id": contact_id, "contact_rotation": rotation},
+        session=session, **kw)
 
 
 # --------------------------------------------------------------------------- housekeeping

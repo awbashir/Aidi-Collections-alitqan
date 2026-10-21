@@ -64,6 +64,7 @@ from services import excel
 from services import sessions, sessions_admin_gates
 from services import comment_status_tree
 from services import promise_required
+from services import note_siblings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1577,6 +1578,12 @@ def getclint(id):
         elif is_super is  None:
             #get clints by user_id
             clint = Clints.query.filter_by(id=id,user_id=current_user).first()
+            if clint is None:
+                # campaign grant: the unassigned case this collector is calling from an
+                # unassigned-only campaign, or wrapped up < 30 min ago (campaign_rules)
+                from services.calling import campaign_rules
+                if campaign_rules.campaign_grant(current_user, id):
+                    clint = Clints.query.filter_by(id=id).first()
         else:
             #get all clints
             clint = getClintBySupervisor(clint_id=id,supervisor_id=is_super.id)
@@ -1904,8 +1911,10 @@ def createComment():
         data = request.get_json()
         # 0068: refuse a deleted status or a sub-status as the main one; optional sub-status
         sub_status_id = data.pop('comment_sub_status_id', None) or None
-        # 0079: a promise-to-pay status needs promise_amount + promise_date (or promise_id)
+        # 0079: a promise-to-pay status offers promise_amount + promise_date (or promise_id)
         promise_fields = promise_required.pop_legacy(data)
+        # 0081: the same note on every active account of the same debtor (services/note_siblings.py)
+        apply_all = note_siblings.parse_legacy(data.pop(note_siblings.FIELD, None))
         problem = comment_status_tree.legacy_note_problem(data.get('comment_status_id'), sub_status_id)
         # status vs the case's contract and the chosen reachability (the wrap-up's checks)
         problem = problem or comment_status_tree.legacy_note_case_problem(
@@ -1916,11 +1925,14 @@ def createComment():
             data.get('comment_status_id'), sub_status_id, promise_fields)
         if promise_problem:
             return jsonify(promise_problem), 201
+        # 0080: a status with blocks_dialed_number blocks the note's number (committed with the note)
+        from services.calling import campaign_rules
+        campaign_rules.block_legacy_note_number(data, sub_status_id)
         comment = Comments(**data)
-        if promise_spec is not None:
-            # the note and the promise in one transaction (services/promise_required.py)
+        if promise_spec is not None or apply_all:
+            # the note, the promise and the copies in one transaction (services/promise_required.py)
             body, code = promise_required.save_legacy_note(comment, sub_status_id, promise_spec,
-                                                           str(get_jwt_identity()))
+                                                           str(get_jwt_identity()), apply_all=apply_all)
             return jsonify(body), code
         if sub_status_id is not None:
             return jsonify(comment_status_tree.insert_legacy_note(comment, sub_status_id)), 200

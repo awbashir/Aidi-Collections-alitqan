@@ -1,9 +1,11 @@
 /**
- * The required promise of the wrap-up / call result and the manual call log (customer decision
- * 2026-10-20, migration 0079): the outcome "promise discussed", or a note status that records a
- * promise to pay («وعد بالسداد», `requires_promise`), needs the amount and the due date (or an
- * open promise of the case, linked). Such a status needs the outcome connected or promise
- * discussed (the API answers 422 promise_needs_conversation otherwise).
+ * The offered promise of the wrap-up / call result and the manual call log (migration 0079):
+ * the outcome "promise discussed", or a note status that records a promise to pay («وعد
+ * بالسداد», `requires_promise`), shows the amount and the due date (or an open promise of the
+ * case, linked). Customer feedback 2026-10-21: OPTIONAL; empty = the result is saved without a
+ * promise. Such a status needs the outcome connected or promise discussed (the API answers 422
+ * promise_needs_conversation otherwise). `required` keeps its 0079 name: "the offered section is
+ * shown" (instead of the optional "agreed" promise of an ordinary connected call).
  */
 import { useCallback, useState } from 'react'
 import type { Outcome, WrapupBody } from '@/services/v2'
