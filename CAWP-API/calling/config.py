@@ -35,6 +35,9 @@ never contacted by default, from development, tests or a mis-set variable.
     CALLING_CAMPAIGN_POLL_MS     campaign dispatcher poll interval (default 500)
   (API side, read by services/calling/dispatch.py: CALLING_CONTEXT, CALLING_DRIVER,
    CALLING_AGENT_RING_SECONDS, CALLING_MAX_CALL_SECONDS, CALLING_DISPATCH_TTL_SECONDS)
+  CALLING_DRIVER is ALSO read by this service (services/calling/common.channel_driver: the live
+  channel snapshot's agent channels and the call-control worker's Originates/tags): set the same
+  PJSIP | SIP value for the API and this service.
 """
 from __future__ import annotations
 

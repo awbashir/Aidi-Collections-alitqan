@@ -14,7 +14,8 @@ snapshot that is old or failed is reported as such, never as "no calls".
 
 Calls by user come from the PBX call records (asteriskcdrdb.cdr, read-only), classified per
 agent extension: outbound (PJSIP/<ext> -> trunk), inbound (-> PJSIP/<ext>), internal (agent to
-agent). A ring-group call rings several extensions: each rung extension that did not answer
+agent). Agent channels follow CALLING_DRIVER (common.channel_driver): `PJSIP/<ext>-...`, or with
+chan_sip `SIP/<ext>-<8 hex>` (then a trunk is a SIP/ channel that is not an agent's). A ring-group call rings several extensions: each rung extension that did not answer
 counts one missed inbound. Extensions map to users through their CURRENT owner
 (`user_extensions`): calls are attributed to today's owner of the extension.
 
@@ -61,7 +62,7 @@ the call detail, the calls page and both downloads use the same classification):
   bridged, ring = bridged (or ended) - customer leg dialled (0 when the customer leg never
   started). Without that row the CDR rule above applies;
 * the answer macro an answering agent's channel runs in a ring-group call (dcontext macro-*,
-  PJSIP/<ext> -> Local/...) is not a call the agent placed: ignored (the ring group's Dial row
+  PJSIP/<ext> or SIP/<ext> -> Local/...) is not a call the agent placed: ignored (the ring group's Dial row
   to that agent counts it).
 """
 from __future__ import annotations
@@ -75,9 +76,10 @@ from sqlalchemy import text
 from core import riyadh
 from core.api_response import VALIDATION_FAILED, ApiError
 from services.calling import number_search as numsearch
-from services.calling.common import USER_NAME_SQL, iso, me, sess
+from services.calling.common import USER_NAME_SQL, channel_driver, iso, me, sess
 
 AGENT_RE = re.compile(r"^PJSIP/([0-9]{2,6})-")
+AGENT_RES = {"PJSIP": AGENT_RE, "SIP": re.compile(r"^SIP/([0-9]{2,6})-[0-9a-f]{8}")}
 AGENT_EXT_RE = re.compile(r"^[0-9]{2,6}$")
 CAWP_ID_RE = re.compile(r"^cawp[-:]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 MAX_DAYS = 31
@@ -133,6 +135,75 @@ def _agent(ext, owners):
     return {"extension": ext, "user_id": o.get("id"), "name": o.get("name")}
 
 
+def _agent_re():
+    """The agent-channel pattern of the configured driver (group 1 = the extension)."""
+    return AGENT_RES[channel_driver()]
+
+
+def _trunk_leg(r, driver) -> bool:
+    """A trunk leg of the live snapshot: a SIP/ channel (with chan_sip: one that is not an agent's)."""
+    return (r["channel"] or "").startswith("SIP/") and not (driver == "SIP" and r["extension"])
+
+
+INBOUND_CONTEXT_RE = re.compile(r"^(?:from-trunk|from-pstn|from-did|ext-did)")
+LOCAL_HALF_RE = re.compile(r"^(Local/([^@;]+)@[^;]+);[12]$")
+
+
+def _dialing(r) -> bool:
+    """A channel the PBX is dialing out on (no dialplan application yet, not answered)."""
+    return not (r["application"] or "") and (r["state"] or "") in ("Down", "Ringing")
+
+
+def _sip_groups(rows) -> dict[str, list[dict]]:
+    """chan_sip / Asterisk 11 grouping (the live snapshot has no Linkedid there, only two-party
+    bridges): pseudo channels without a technology ("OutgoingSpoolFailed": the Issabel dialer's
+    failed originates) are not calls, and the two halves of a Local/...;1 / ;2 channel (queues,
+    the dialer, follow-me) join the groups on either side into one call; a Local/<ext>@... pair
+    not bridged yet (a queue still ringing the agent) joins that extension's channel when there is
+    exactly one. A group of Local/ channels only is plumbing, not a call. The call's id is the
+    trunk leg's group when there is one, else the oldest group."""
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        if "/" not in (r["channel"] or ""):
+            continue
+        groups.setdefault(r["linkedid"] or r["uniqueid"], []).append(r)
+    parent = {k: k for k in groups}
+
+    def find(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+    def union(x, y):
+        a, b = find(x), find(y)
+        if a != b:
+            parent[b] = a
+    halves: dict[str, str] = {}
+    local_exts: dict[str, str] = {}
+    agent_groups: dict[str, list[str]] = {}
+    for key, legs in groups.items():
+        for r in legs:
+            m = LOCAL_HALF_RE.match(r["channel"] or "")
+            if m:
+                union(halves.setdefault(m.group(1), key), key)
+                local_exts.setdefault(key, m.group(2))
+            elif r["extension"]:
+                agent_groups.setdefault(r["extension"], []).append(key)
+    for key, ext in local_exts.items():
+        if len(agent_groups.get(ext, [])) == 1:
+            union(key, agent_groups[ext][0])
+    merged: dict[str, list[dict]] = {}
+    for key in groups:
+        merged.setdefault(find(key), []).extend(groups[key])
+    out = {}
+    for legs in merged.values():
+        if all((r["channel"] or "").startswith("Local/") for r in legs):
+            continue
+        trunk_keys = [r["linkedid"] or r["uniqueid"] for r in legs if _trunk_leg(r, "SIP")]
+        out[min(trunk_keys) if trunk_keys else min(r["linkedid"] or r["uniqueid"] for r in legs)] = legs
+    return out
+
+
 # --------------------------------------------------------------------------- live
 def live(user_id=None, extension=None) -> dict:
     full = scope(user_id)
@@ -141,18 +212,27 @@ def live(user_id=None, extension=None) -> dict:
         SELECT captured_at, ok, error, channel_count, extract(epoch FROM now() - captured_at) AS age
           FROM pbx_live_snapshot WHERE id = 1""")).mappings().first()
     rows = [dict(r) for r in sess().execute(text("SELECT * FROM pbx_live_channels ORDER BY linkedid, uniqueid")).mappings()]
-    groups: dict[str, list[dict]] = {}
-    for r in rows:
-        groups.setdefault(r["linkedid"] or r["uniqueid"], []).append(r)
     allowed = sc["extensions"]
+    driver = channel_driver()
+    if driver == "SIP":
+        groups = _sip_groups(rows)
+    else:
+        groups = {}
+        for r in rows:
+            groups.setdefault(r["linkedid"] or r["uniqueid"], []).append(r)
     calls = []
     for linkedid, legs in groups.items():
         agents = [r for r in legs if r["extension"]]
-        trunks = [r for r in legs if (r["channel"] or "").startswith("SIP/")]
+        trunks = [r for r in legs if _trunk_leg(r, driver)]
         if allowed is not None and not any(r["extension"] in allowed for r in agents):
             continue                                   # IVR-only calls are SuperAdmin's
         first = next((r for r in legs if r["uniqueid"] == linkedid), legs[0])
-        if (first["channel"] or "").startswith("SIP/"):
+        if driver == "SIP" and _trunk_leg(first, driver) and (
+                _dialing(first) or not INBOUND_CONTEXT_RE.match(first["context"] or "")):
+            # chan_sip: a trunk leg being dialed out, or one the dialer originated into its own
+            # context (Issabel inbound trunk channels sit in from-trunk-... / from-pstn / from-did)
+            direction = "outbound"
+        elif _trunk_leg(first, driver):
             direction = "inbound"
         elif trunks:
             direction = "outbound"
@@ -207,8 +287,9 @@ def live(user_id=None, extension=None) -> dict:
 # --------------------------------------------------------------------------- calls by user over time
 def classify(row) -> list[tuple[str, str, bool]]:
     """One CDR row -> [(extension, direction, answered)] for the agent extensions it involves."""
-    src = AGENT_RE.match(row.get("channel") or "")
-    dst = AGENT_RE.match(row.get("dstchannel") or "")
+    agent_re = _agent_re()
+    src = agent_re.match(row.get("channel") or "")
+    dst = agent_re.match(row.get("dstchannel") or "")
     answered = (row.get("disposition") or "").upper() == "ANSWERED"
     if src and dst:
         return [(src.group(1), "internal", answered)]
@@ -228,12 +309,26 @@ def _date(value, field, default):
         raise ApiError(422, VALIDATION_FAILED, f"{field} must be YYYY-MM-DD", {field: "invalid"}) from None
 
 
+def _agent_filter(ext=None, driver="PJSIP") -> tuple[str, tuple]:
+    """The CDR WHERE fragment (mysql-connector `%s` style) that keeps the agent rows: those of one
+    already validated extension, or of any agent extension. chan_sip trunks are SIP/ too, so
+    without `ext` the SIP form matches the agent channel pattern (REGEXP), not the prefix."""
+    if driver == "SIP":
+        if ext:
+            return "(channel LIKE %s OR dstchannel LIKE %s)", (f"SIP/{ext}-%", f"SIP/{ext}-%")
+        return "(channel REGEXP %s OR dstchannel REGEXP %s)", ("^SIP/[0-9]{2,6}-", "^SIP/[0-9]{2,6}-")
+    if ext:
+        return "(channel LIKE %s OR dstchannel LIKE %s)", (f"PJSIP/{ext}-%", f"PJSIP/{ext}-%")
+    return "(channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')", ()
+
+
 def _cdr_rows(lo, hi, ext=None, number=None):
     """The agent CDR rows of the period; `ext` (an already validated extension) narrows them to the
     rows that involve it (the same calls: classify() only counts the extensions on a row);
     `number` (number_search.needle) to the rows whose src or dst carries it (refined after the
     merge by number_search.matches)."""
     from services import reports_v2_cdr as cdrsrc
+    agent, params = _agent_filter(ext, channel_driver())
     try:
         conn = cdrsrc._connect()
     except cdrsrc.CdrUnavailable as e:
@@ -241,10 +336,6 @@ def _cdr_rows(lo, hi, ext=None, number=None):
     try:
         cur = conn.cursor(dictionary=True)
         try:
-            if ext:
-                agent, params = "(channel LIKE %s OR dstchannel LIKE %s)", (f"PJSIP/{ext}-%", f"PJSIP/{ext}-%")
-            else:
-                agent, params = "(channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')", ()
             if number:
                 like = f"%{number}" if len(number) >= numsearch.KEY_DIGITS else f"%{number}%"
                 agent, params = f"{agent} AND (src LIKE %s OR dst LIKE %s)", (*params, like, like)
@@ -421,7 +512,7 @@ def _other_party(r, direction):
         uf = (r.get("userfield") or "").strip()
         did = uf.split(":")[1] if uf.startswith("ivr:") and uf.count(":") >= 1 else ""
         return src, did
-    peer = AGENT_RE.match(r.get("dstchannel") or "")
+    peer = _agent_re().match(r.get("dstchannel") or "")
     return (peer.group(1) if peer else dst), ""
 
 
@@ -435,7 +526,7 @@ def _secs(r, field) -> int:
 
 def _ignored(r) -> bool:
     """The answer macro an answering agent's channel runs in a ring-group call (dcontext macro-*,
-    PJSIP/<ext> -> Local/FMGL-...): not a call the agent placed."""
+    PJSIP/<ext> (or SIP/<ext>) -> Local/FMGL-...): not a call the agent placed."""
     return (r.get("dcontext") or "").startswith("macro-") and (r.get("dstchannel") or "").startswith("Local/")
 
 

@@ -574,3 +574,226 @@ def test_transfer_target_sees_the_case_link(client, ctl_app, pgc, c2c, call):
     me = client.get("/v2/me/call-controls", headers=hdr(ctl_app, c2c.c1, k=False)).get_json()["data"]
     assert me["capabilities"]["transfer"] is True and me["capabilities"]["listen"] is False
     assert any(i["id"] == cid for i in me["items"])
+
+
+# --------------------------------------------------------------------------- chan_sip (CALLING_DRIVER=SIP)
+def a11(uid, channel, *, bridged_uid="", bridged="", state="Up", app="Dial", data="", context="from-internal",
+        exten="s", caller="", connected=""):
+    """An Asterisk 11 CoreShowChannel frame: UniqueID / Extension / CallerIDnum / BridgedUniqueID,
+    no Linkedid, no BridgeId (as an AMI Frame: case-insensitive keys)."""
+    return Frame([("Event", "CoreShowChannel"), ("Channel", channel), ("UniqueID", uid), ("Context", context),
+                  ("Extension", exten), ("Priority", "1"), ("ChannelState", "6"), ("ChannelStateDesc", state),
+                  ("Application", app), ("ApplicationData", data), ("CallerIDnum", caller), ("CallerIDname", ""),
+                  ("ConnectedLineNum", connected), ("ConnectedLineName", ""), ("Duration", "00:00:40"),
+                  ("AccountCode", ""), ("BridgedChannel", bridged), ("BridgedUniqueID", bridged_uid)])
+
+
+def a11_dict(frame):
+    """The same frame as a FakeSession channel dict (FakeSession.list_channels turns it into a Frame)."""
+    return dict(frame.fields)
+
+
+def test_channel_driver_env(monkeypatch):
+    from services.calling.common import channel_driver
+    monkeypatch.delenv("CALLING_DRIVER", raising=False)
+    assert channel_driver() == "PJSIP"
+    for raw, want in (("", "PJSIP"), ("  ", "PJSIP"), ("PJSIP", "PJSIP"), (" sip ", "SIP"), ("SIP", "SIP")):
+        monkeypatch.setenv("CALLING_DRIVER", raw)
+        assert channel_driver() == want
+    monkeypatch.setenv("CALLING_DRIVER", "IAX2")
+    with pytest.raises(ValueError):
+        channel_driver()
+    cid = str(uuid.uuid4())                                     # invalid driver: the plan is refused, nothing sent
+    with pytest.raises(cc.Refused) as e:
+        cc.plan({"id": cid, "kind": "spy", "target_uniqueid": None}, {"op": "start"}, {})
+    assert e.value.code == "calling_driver_invalid"
+    assert cc.sweep_decisions({"id": cid, "kind": "spy", "state": "active", "agent_uniqueid": "a",
+                               "customer_uniqueid": None, "target_uniqueid": "s", "room": None}, {}, {}, 1) == []
+
+
+def test_asterisk11_channel_list_pairs_the_bridged_legs():
+    agent, cust = "1760000000.20", "1760000000.21"
+    chans = cc.channel_map([a11(agent, "SIP/401-0000ab12", bridged_uid=cust, bridged="SIP/ITC-0000ab13", exten="0551"),
+                            a11(cust, "SIP/ITC-0000ab13", bridged_uid=agent, bridged="SIP/401-0000ab12", app="AppDial"),
+                            a11("1760000000.30", "SIP/402-0000ab14", app="Wait")])
+    assert chans[agent]["bridge_id"] == chans[cust]["bridge_id"] == f"{agent}|{cust}"
+    assert chans[agent]["linkedid"] == chans[cust]["linkedid"] == agent          # the older Uniqueid
+    assert chans["1760000000.30"]["bridge_id"] is None and chans["1760000000.30"]["linkedid"] == "1760000000.30"
+    assert chans[agent]["exten"] == "0551"
+    # Asterisk 12+ frames (Linkedid / BridgeId present) are read as before
+    new = cc.channel_map([chan("u", "PJSIP/101-0000000a", linked="l", bridge="b")])
+    assert (new["u"]["linkedid"], new["u"]["bridge_id"], new["u"]["exten"]) == ("l", "b", "s")
+
+
+def test_sip_plans_use_chan_sip_channels_tags_and_holder_name():
+    cid = str(uuid.uuid4())
+    hexc = uuid.UUID(cid).hex
+    agent, cust = "1760000000.20", "1760000000.21"
+    frames = [a11(agent, "SIP/401-0000ab12", bridged_uid=cust), a11(cust, "SIP/ITC-0000ab13", bridged_uid=agent)]
+    chans = cc.channel_map(frames)
+    spy = {"id": cid, "kind": "spy", "mode": "whisper", "from_extension": "450", "target_extension": "401",
+           "agent_uniqueid": agent, "customer_uniqueid": None, "target_uniqueid": cc.leg_id("spy", cid), "room": None}
+    (action, fields), = cc.plan(spy, {"op": "start"}, chans, driver="SIP")[0]
+    assert action == "Originate" and dict(fields)["Channel"] == "SIP/450" and dict(fields)["Exten"] == "whisper"
+    assert ("Variable", "CAWP_SPY_TARGET=SIP/401-0000ab12") in fields
+    assert ("Variable", f"SIPADDHEADER52=X-CAWP-Control: {hexc}") in fields
+    assert not any("PJSIP" in v for _k, v in fields)
+    with pytest.raises(cc.Refused) as e:                       # PJSIP plans never act on a chan_sip agent
+        cc.plan(spy, {"op": "start"}, chans, driver="PJSIP")
+    assert e.value.code == "call_changed"
+    base = {"id": cid, "from_extension": "401", "target_extension": "402", "agent_uniqueid": agent,
+            "customer_uniqueid": cust, "room": cc.room_of(cid), "target_uniqueid": cc.leg_id("conference", cid)}
+    actions, _ = cc.plan({**base, "kind": "transfer_attended"}, {"op": "start"}, chans, driver="SIP")
+    assert ("Setvar", [("Channel", "SIP/ITC-0000ab13"), ("Variable", "CAWP_CTL_HOLDER"),
+                       ("Value", "SIP/401-0000ab12")]) in actions
+    invite = dict(actions[-1][1])
+    assert actions[-1][0] == "Originate" and invite["Channel"] == "SIP/402"
+    assert ("Variable", f"SIPADDHEADER52=X-CAWP-Control: {hexc}") in actions[-1][1]
+    actions, _ = cc.plan({**base, "kind": "conference"}, {"op": "start"}, chans, driver="SIP")
+    assert dict(actions[-1][1])["Channel"] == "SIP/402"
+    actions, changes = cc.plan({**base, "kind": "transfer_blind", "target_uniqueid": None, "room": None},
+                               {"op": "start"}, chans, driver="SIP")
+    assert actions[-1] == ("Redirect", [("Channel", "SIP/ITC-0000ab13"), ("Context", "cawp-callctl-xfer"),
+                                        ("Exten", "402"), ("Priority", "1"), ("ExtraChannel", "SIP/401-0000ab12"),
+                                        ("ExtraContext", "cawp-callctl-done"), ("ExtraExten", "s"),
+                                        ("ExtraPriority", "1")])
+    for action, f in actions:
+        assert call_control_fields_ok(action, f), (action, f)
+    # the PJSIP holder stays the agent's Uniqueid
+    pj = cc.channel_map([chan("a", "PJSIP/401-0000000a", bridge="b"), chan("c", "SIP/t-1", bridge="b")])
+    actions, _ = cc.plan({**base, "kind": "transfer_attended", "agent_uniqueid": "a", "customer_uniqueid": "c"},
+                         {"op": "start"}, pj, driver="PJSIP")
+    assert ("Setvar", [("Channel", "SIP/t-1"), ("Variable", "CAWP_CTL_HOLDER"), ("Value", "a")]) in actions
+    assert ("Variable", f"PJSIP_HEADER(add,X-CAWP-Control)={hexc}") in actions[-1][1]
+
+
+def test_sip_resolve_legs_finds_masqueraded_and_originated_legs():
+    cid = str(uuid.uuid4())
+    room = cc.room_of(cid)
+    c = {"id": cid, "kind": "transfer_attended", "state": "active", "from_extension": "401", "target_extension": "402",
+         "agent_uniqueid": "1760000000.20", "agent_channel": "SIP/401-0000ab12",
+         "customer_uniqueid": "1760000000.21", "customer_channel": "SIP/ITC-0000ab13",
+         "target_uniqueid": cc.leg_id("transfer_attended", cid), "room": room}
+    # Asterisk 11: the redirected customer leg was masqueraded (new Uniqueid, same name); the invitee
+    # (ChannelId ignored) rings with the caller ID the Originate set
+    chans = cc.channel_map([
+        a11("1760000000.20", "SIP/401-0000ab12", app="ConfBridge", data=f"{room},cawp_room,cawp_member"),
+        a11("1760000000.40", "SIP/ITC-0000ab13", app="Wait", context="cawp-callctl-hold"),
+        a11("1760000000.41", "SIP/402-0000ab15", app="", state="Ringing", caller="401", connected="401")])
+    got = cc.resolve_legs(c, chans, "SIP")
+    assert got["1760000000.21"]["uniqueid"] == "1760000000.40"
+    assert got[c["target_uniqueid"]]["channel"] == "SIP/402-0000ab15"
+    assert cc.resolve_legs(c, chans, "PJSIP") is chans                     # PJSIP: unchanged
+    absent = {}
+    assert cc.sweep_decisions(c, chans, absent, 10, driver="SIP") == []    # the target rings: no auto-cancel
+    assert cc.sweep_decisions(c, chans, absent, 13, driver="SIP") == []
+    absent = {}
+    cc.sweep_decisions(c, chans, absent, 10, driver="PJSIP")
+    assert cc.sweep_decisions(c, chans, absent, 13, driver="PJSIP") == [("set", "target_gone")]
+    # answered: in the room
+    answered = cc.channel_map([a11("1760000000.41", "SIP/402-0000ab15", app="ConfBridge",
+                                   data=f"{room},cawp_room,cawp_member")])
+    assert cc.resolve_legs(c, answered, "SIP")[c["target_uniqueid"]]["uniqueid"] == "1760000000.41"
+    # two candidates: ambiguous, the leg stays missing
+    two = cc.channel_map([a11("1760000000.41", "SIP/402-0000ab15", app="", state="Ringing", caller="401"),
+                          a11("1760000000.42", "SIP/402-0000ab16", app="", state="Ringing", caller="401")])
+    assert c["target_uniqueid"] not in cc.resolve_legs(c, two, "SIP")
+    # the listening leg: the supervisor's channel running ChanSpy on exactly the agent channel
+    spy = {"id": cid, "kind": "spy", "state": "active", "from_extension": "450", "target_extension": "401",
+           "agent_uniqueid": "1760000000.20", "agent_channel": "SIP/401-0000ab12", "customer_uniqueid": None,
+           "target_uniqueid": cc.leg_id("spy", cid), "room": None}
+    listening = cc.channel_map([a11("1760000000.20", "SIP/401-0000ab12", bridged_uid="1760000000.21"),
+                                a11("1760000000.50", "SIP/450-0000ab20", app="ChanSpy", data="SIP/401-0000ab12,qdE"),
+                                a11("1760000000.51", "SIP/450-0000ab21", app="ChanSpy", data="SIP/499-0000ab99,qdE")])
+    assert cc.resolve_legs(spy, listening, "SIP")[spy["target_uniqueid"]]["uniqueid"] == "1760000000.50"
+    (action, fields), = cc.plan(spy, {"op": "mode", "mode": "barge"}, listening, driver="SIP")[0]
+    assert (action, fields) == ("Redirect", [("Channel", "SIP/450-0000ab20"), ("Context", "cawp-callctl-spy"),
+                                             ("Exten", "barge"), ("Priority", "1")])
+    assert call_control_fields_ok(action, fields)
+    absent = {}
+    assert cc.sweep_decisions(spy, listening, absent, 10, driver="SIP") == []
+    assert cc.sweep_decisions(spy, listening, absent, 13, driver="SIP") == []
+    (action, _f), = cc.plan(spy, {"op": "stop"}, listening, driver="SIP")[0]
+    assert action == "Hangup" and _f[0] == ("Channel", "SIP/450-0000ab20")
+
+
+def test_sip_dialplan_render():
+    from services.calling import callctl_dialplan as D
+    out = D.render({"driver": "SIP", "post_call_context": "cawp-survey"})
+    for ctx in ("[cawp-callctl-xfer]", "[cawp-callctl-done]", "[cawp-callctl-hold]", "[cawp-callctl-room]",
+                "[cawp-callctl-spy]", "[cawp-callctl-post]", "[cawp-callctl-tag]"):
+        assert ctx in out
+    assert " same => n,Dial(SIP/${EXTEN},30,ib(cawp-callctl-tag^s^1(${CAWP_CTL_ID})))" in out
+    assert " same => n,Dial(SIP/${CAWP_CTL_FROM},20,ib(cawp-callctl-tag^s^1(${CAWP_CTL_ID})))" in out
+    assert " same => n,SIPAddHeader(X-CAWP-Control: ${ARG1})" in out
+    assert 'REGEX("^SIP/[0-9]{2,6}-[0-9a-f]{8}$" ${CAWP_SPY_TARGET})' in out
+    assert "CAWP_SPY_OPTS=qdE)" in out and "CAWP_SPY_OPTS=qdEw)" in out and "CAWP_SPY_OPTS=qdEB)" in out
+    assert "${CHANNELS(^${CAWP_CTL_HOLDER}$)}" in out
+    assert "PJSIP" not in out and "CHANNEL_EXISTS" not in out and "qdEu" not in out
+    assert D.render({"driver": "PJSIP"}) == D.render({})                    # PJSIP: unchanged
+    assert "SIPAddHeader" not in D.render({}) and "Dial(PJSIP/${EXTEN}" in D.render({})
+    with pytest.raises(D.CallControlPolicyError):
+        D.render({"driver": "sip"})
+
+
+@pytest.fixture
+def sip_call(pgc, c2c, ctl_app, monkeypatch):
+    """CALLING_DRIVER=SIP and an Asterisk 11 channel list: c1 (ext1) bridged with a customer
+    (no Linkedid / BridgeId, no app ChannelId: plain Uniqueids)."""
+    monkeypatch.setenv("CALLING_DRIVER", "SIP")
+    agent, cust = "1760000100.20", "1760000100.21"
+    frames = [a11(agent, f"SIP/{c2c.ext1}-0000ab12", bridged_uid=cust, bridged="SIP/ITC_SIP_Trunk-0000ab13",
+                  context="from-internal", exten="0500000004", caller=c2c.ext1, connected="0500000004"),
+              a11(cust, "SIP/ITC_SIP_Trunk-0000ab13", bridged_uid=agent, bridged=f"SIP/{c2c.ext1}-0000ab12",
+                  app="AppDial", caller="0500000004", connected=c2c.ext1)]
+    snapshot(ctl_app, frames)
+    return types.SimpleNamespace(agent=agent, customer=cust, frames=[a11_dict(f) for f in frames])
+
+
+def test_sip_supervisor_listens_on_asterisk11(client, ctl_app, pgc, c2c, sip_call, sup_ext):
+    r = client.post("/v2/calling/control/spy", headers=hdr(ctl_app, c2c.supervisor),
+                    json={"call_id": sip_call.agent, "extension": c2c.ext1, "mode": "listen"})
+    assert r.status_code == 202, r.get_json()
+    cid = r.get_json()["data"]["id"]
+    session = ScriptedSession(sip_call.frames)
+    w, _ = worker(ctl_app, c2c.transport, session)
+    drain(w)
+    (action, fields), = session.sent
+    f = dict(fields)
+    assert action == "Originate" and f["Channel"] == f"SIP/{sup_ext}" and f["Exten"] == "listen"
+    assert ("Variable", f"CAWP_SPY_TARGET=SIP/{c2c.ext1}-0000ab12") in fields
+    assert ("Variable", f"SIPADDHEADER52=X-CAWP-Control: {uuid.UUID(cid).hex}") in fields
+    assert control(pgc, cid)[:3] == ("active", None, "listen")
+    # the listening leg as Asterisk 11 lists it: its own Uniqueid (the ChannelId is ignored)
+    spy_leg = a11_dict(a11("1760000100.30", f"SIP/{sup_ext}-0000ab14", app="ChanSpy",
+                           data=f"SIP/{c2c.ext1}-0000ab12,qdE", caller=c2c.ext1))
+    session.channels = sip_call.frames + [spy_leg]
+    run(pgc, "UPDATE call_controls SET started_at = now() - interval '1 minute' WHERE id = %s", cid)
+    for _ in range(3):                                       # the sweep finds the leg: not "listener gone"
+        w.sweep()
+    assert control(pgc, cid)[0] == "active"
+    session.sent.clear()
+    r = client.post(f"/v2/calling/control/{cid}/mode", headers=hdr(ctl_app, c2c.supervisor), json={"mode": "barge"})
+    assert r.status_code == 202
+    drain(w)
+    assert session.sent == [("Redirect", [("Channel", f"SIP/{sup_ext}-0000ab14"), ("Context", "cawp-callctl-spy"),
+                                          ("Exten", "barge"), ("Priority", "1")])]
+    assert control(pgc, cid)[2] == "barge"
+    session.sent.clear()
+    assert client.post(f"/v2/calling/control/{cid}/stop", headers=hdr(ctl_app, c2c.supervisor), json={}).status_code == 202
+    drain(w)
+    assert session.sent == [("Hangup", [("Channel", f"SIP/{sup_ext}-0000ab14"), ("Cause", "16")])]
+    assert control(pgc, cid)[0] == "ended"
+
+
+def test_sip_transfer_finds_my_call_on_asterisk11(client, ctl_app, pgc, c2c, sip_call):
+    r = client.post("/v2/calling/control/transfers", headers=hdr(ctl_app, c2c.c1),
+                    json={"mode": "blind", "target_extension": c2c.ext2})
+    assert r.status_code == 202, r.get_json()
+    cid = r.get_json()["data"]["id"]
+    session = ScriptedSession(sip_call.frames)
+    w, _ = worker(ctl_app, c2c.transport, session)
+    drain(w)
+    assert [a for a, _f in session.sent] == ["Setvar", "Setvar", "Setvar", "Redirect"]
+    assert dict(session.sent[-1][1])["ExtraChannel"] == f"SIP/{c2c.ext1}-0000ab12"
+    assert control(pgc, cid)[:2] == ("completed", "submitted")

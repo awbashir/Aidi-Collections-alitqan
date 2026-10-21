@@ -672,3 +672,133 @@ def test_stats_chart_fields_are_additive_and_consistent(mon_app, pgc, monkeypatc
                                                                      "number": "0559998888"}, headers=token(mon_app, CL.super))
     sheet = openpyxl.load_workbook(io.BytesIO(r.data)).worksheets[0]
     assert sum(sheet.cell(i, 3).value for i in range(2, sheet.max_row)) == 9   # handled, every call
+
+
+# --------------------------------------------------------------------------- chan_sip (CALLING_DRIVER=SIP)
+def a11(uid, channel, *, bridged_uid="", state="Up", app="Dial", caller="", connected="", exten="s",
+        context="from-internal"):
+    """An Asterisk 11 CoreShowChannel frame (no Linkedid / BridgeId; UniqueID, Extension, BridgedUniqueID)."""
+    from services.calling.ami import Frame
+    return Frame([("Channel", channel), ("UniqueID", uid), ("Context", context), ("Extension", exten),
+                  ("ChannelStateDesc", state), ("Application", app), ("ApplicationData", ""),
+                  ("CallerIDnum", caller), ("ConnectedLineNum", connected), ("Duration", "00:01:05"),
+                  ("BridgedChannel", ""), ("BridgedUniqueID", bridged_uid)])
+
+
+def test_parse_sip_driver_and_asterisk11_frames():
+    rows = live_monitor.parse([a11("1760000000.7", "SIP/7401-0000ab1a", bridged_uid="1760000000.8"),
+                               a11("1760000000.8", "SIP/ITC_SIP_Trunk-0000ab1b", bridged_uid="1760000000.7", exten="0551"),
+                               a11("1760000000.9", "SIP/7402-0000ab1c", state="Ringing", app="")], driver="SIP")
+    agent, trunk, ringing = rows
+    assert agent["extension"] == "7401" and trunk["extension"] is None and ringing["extension"] == "7402"
+    assert agent["bridge_id"] == trunk["bridge_id"] == "1760000000.7|1760000000.8"
+    assert agent["linkedid"] == trunk["linkedid"] == "1760000000.7"
+    assert ringing["bridge_id"] is None and ringing["linkedid"] == "1760000000.9" and trunk["exten"] == "0551"
+    # PJSIP driver: a SIP/<digits> channel is not an agent; Asterisk 12+ frames unchanged
+    assert live_monitor.parse([frame("u1", "SIP/7401-0000ab1a")], driver="PJSIP")[0]["extension"] is None
+    assert live_monitor.parse([frame("u1", "PJSIP/7401-0000ab1a")], driver="SIP")[0]["extension"] is None
+    pj = live_monitor.parse([frame("u1", "PJSIP/7401-0000001a", linked="L", bridge="B")], driver="PJSIP")[0]
+    assert (pj["extension"], pj["linkedid"], pj["bridge_id"]) == ("7401", "L", "B")
+
+
+def test_classify_and_cdr_filter_follow_the_driver(monkeypatch):
+    sip_out = {"channel": "SIP/7401-0000ab1a", "dstchannel": "SIP/ITC_SIP_Trunk-0000ab1b", "disposition": "ANSWERED"}
+    sip_in = {"channel": "SIP/ITC_SIP_Trunk-0000ab1c", "dstchannel": "SIP/7402-0000ab1d", "disposition": "NO ANSWER"}
+    pj_out = {"channel": "PJSIP/7401-0000001a", "dstchannel": "SIP/ITC-1", "disposition": "ANSWERED"}
+    monkeypatch.delenv("CALLING_DRIVER", raising=False)
+    assert monitor.classify(pj_out) == [("7401", "outbound", True)] and monitor.classify(sip_out) == []
+    assert monitor._agent_filter() == ("(channel LIKE 'PJSIP/%%' OR dstchannel LIKE 'PJSIP/%%')", ())
+    assert monitor._agent_filter("7401") == ("(channel LIKE %s OR dstchannel LIKE %s)", ("PJSIP/7401-%", "PJSIP/7401-%"))
+    monkeypatch.setenv("CALLING_DRIVER", "SIP")
+    assert monitor.classify(sip_out) == [("7401", "outbound", True)]
+    assert monitor.classify(sip_in) == [("7402", "inbound", False)]
+    assert monitor.classify({"channel": "SIP/7401-0000ab1a", "dstchannel": "SIP/7402-0000ab1d"})[0][1] == "internal"
+    assert monitor.classify(pj_out) == []
+    assert monitor._agent_filter("7401", "SIP") == ("(channel LIKE %s OR dstchannel LIKE %s)", ("SIP/7401-%", "SIP/7401-%"))
+    sql, params = monitor._agent_filter(None, "SIP")
+    assert "REGEXP" in sql and params == ("^SIP/[0-9]{2,6}-", "^SIP/[0-9]{2,6}-")
+    assert monitor._other_party({"dstchannel": "SIP/7402-0000ab1d", "dst": "7402"}, "internal") == ("7402", "")
+
+
+def test_live_calls_with_chan_sip_on_asterisk11(mon_app, pgc, monkeypatch):
+    monkeypatch.setenv("CALLING_DRIVER", "SIP")
+    member, other = new_user(pgc), new_user(pgc)
+    e1, e2 = f"7{uuid.uuid4().int % 900 + 100}", f"8{uuid.uuid4().int % 900 + 100}"
+    own(pgc, member, e1)
+    own(pgc, other, e2)
+    n = uuid.uuid4().int % 10**6
+    a, a2, b, b2, c, d = (f"17600{n:06d}.{i}" for i in range(1, 7))
+    write_snapshot(mon_app, [
+        a11(a, "SIP/ITC_SIP_Trunk-0000ab0a", bridged_uid=a2, caller="0551112222",              # inbound, answered by e1
+            context="from-trunk-sip-ITC_SIP_Trunk"),
+        a11(a2, f"SIP/{e1}-0000ab0b", bridged_uid=a, app="AppDial"),
+        a11(b, f"SIP/{e2}-0000ab0c", bridged_uid=b2),                                           # outbound by e2
+        a11(b2, "SIP/ITC_SIP_Trunk-0000ab0d", bridged_uid=b, connected="0503334444", app="AppDial"),
+        a11(c, "SIP/ITC_SIP_Trunk-0000ab0e", app="Read", caller="0559990000",                  # still in the IVR
+            context="from-trunk-sip-ITC_SIP_Trunk"),
+        a11(d, f"SIP/{e1}-0000ab0f", state="Ringing", app=""),                                  # e1 rung (unbridged)
+    ])
+    from extensions import db
+    with mon_app.app_context():
+        everything = monitor.live(user_id=CL.super)
+        db.session.remove()
+    by_id = {x["id"]: x for x in everything["calls"]}
+    assert {a, b, c, d} <= set(by_id) and a2 not in by_id and b2 not in by_id
+    assert by_id[a]["direction"] == "inbound" and by_id[a]["state"] == "talking"
+    assert by_id[a]["external_number"] == "0551112222" and by_id[a]["agents"][0]["user_id"] == member
+    assert by_id[b]["direction"] == "outbound" and by_id[b]["state"] == "talking"
+    assert by_id[b]["external_number"] == "0503334444" and by_id[b]["agents"][0]["extension"] == e2
+    assert by_id[c]["state"] == "ivr" and by_id[c]["agents"] == []
+    assert by_id[d]["state"] == "ringing" and by_id[d]["ringing"] == [e1]
+
+
+def test_live_issabel_dialer_and_queue_topology_on_chan_sip(mon_app, pgc, monkeypatch):
+    """The Alitqan Issabel (Asterisk 11): the predictive dialer's legs, its failed-originate pseudo
+    channels, and a queue call through a Local/...;1/;2 pair (two two-party bridges)."""
+    monkeypatch.setenv("CALLING_DRIVER", "SIP")
+    member, member2 = new_user(pgc), new_user(pgc)
+    e1 = f"4{uuid.uuid4().int % 90 + 10}"
+    e2 = f"5{uuid.uuid4().int % 90 + 10}"
+    own(pgc, member, e1)
+    own(pgc, member2, e2)
+    n = uuid.uuid4().int % 10**6
+    t1, l2, l1, ag, dial1, dial2, fail, msg, qt, ql1, ql2, qa, o1, o2 = (f"17700{n:06d}.{i:02d}" for i in range(1, 15))
+    loc = f"Local/{e1}@from-queue-0000ab3c"
+    write_snapshot(mon_app, [
+        # dialer call answered and queued to e1: trunk <-> Local;2, Local;1 <-> agent
+        a11(t1, "SIP/Mobily39-0000ab31", bridged_uid=l2, connected="0551112222", app="Queue", context="from-internal"),
+        a11(l2, f"{loc};2", bridged_uid=t1, app="Queue", context="from-queue"),
+        a11(l1, f"{loc};1", bridged_uid=ag, app="AppQueue", context="from-queue"),
+        a11(ag, f"SIP/{e1}-0000ab32", bridged_uid=l1, app="AppQueue", context="from-internal"),
+        # dialer legs still being dialed (no application yet), and a failed originate
+        a11(dial1, "SIP/Mobily39-0000ab33", state="Ringing", app="", context="from-trunk-sip-Mobily39"),
+        a11(dial2, "SIP/Mobily63-0000ab34", state="Down", app="", context="from-trunk-sip-Mobily63"),
+        a11(fail, "OutgoingSpoolFailed", state="Busy", app="Congestion", context="macro-outisbusy"),
+        # an answered dialer call playing its message, no agent yet
+        a11(msg, "SIP/Mobily63-0000ab35", app="Playback", context="from-internal", exten="2000"),
+        # a queue still ringing e2 through an unbridged Local pair; and an orphan Local pair
+        a11(qt, "SIP/Mobily63-0000ab36", app="Queue", context="from-internal"),
+        a11(ql1, f"Local/{e2}@from-queue-0000ab37;1", app="AppQueue", state="Ringing", context="from-queue"),
+        a11(ql2, f"Local/{e2}@from-queue-0000ab37;2", app="Dial", context="from-queue"),
+        a11(qa, f"SIP/{e2}-0000ab38", state="Ringing", app="", context="from-internal"),
+        a11(o1, "Local/999@from-queue-0000ab39;1", app="AppQueue", context="from-queue"),
+        a11(o2, "Local/999@from-queue-0000ab39;2", app="Dial", context="from-queue"),
+    ])
+    from extensions import db
+    with mon_app.app_context():
+        everything = monitor.live(user_id=CL.super)
+        db.session.remove()
+    by_id = {x["id"]: x for x in everything["calls"]}
+    assert fail not in by_id and l1 not in by_id and l2 not in by_id and ag not in by_id
+    queued = by_id[t1]
+    assert (queued["direction"], queued["state"]) == ("outbound", "talking")
+    assert [a["extension"] for a in queued["agents"]] == [e1] and queued["agents"][0]["user_id"] == member
+    assert queued["external_number"] == "0551112222"
+    assert (by_id[dial1]["direction"], by_id[dial1]["state"]) == ("outbound", "connecting")
+    assert (by_id[dial2]["direction"], by_id[dial2]["state"]) == ("outbound", "connecting")
+    assert (by_id[msg]["direction"], by_id[msg]["state"]) == ("outbound", "connecting") and by_id[msg]["agents"] == []
+    ringing = next(x for x in everything["calls"] if x["ringing"] == [e2])
+    assert ringing["state"] == "ringing" and {ql1, ql2, qa} & {ringing["id"]}
+    assert o1 not in by_id and o2 not in by_id                      # Local-only plumbing is not a call
+    assert by_id[qt]["state"] == "connecting"                       # the caller waits in the queue
+    assert everything["summary"]["active_calls"] == 6 and everything["summary"]["talking"] == 1

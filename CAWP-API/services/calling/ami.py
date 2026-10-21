@@ -64,6 +64,10 @@ MAX_LINE = 8192
 MAX_FIELDS = 256
 MAX_CHUNK = 1048576
 KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
+# Asterisk <= 11 writes manager.conf `channelvars` as "ChanVariable(<channel>): NAME=value" (the
+# Alitqan Issabel: channelvars=DIALERID,DIALERVAR); 12+ writes "ChanVariable: NAME=value". Only
+# this exact shape is accepted, and the key is normalised to "ChanVariable".
+LEGACY_CHANVAR_RE = re.compile(r"^ChanVariable\([A-Za-z0-9_./+@;=-]{1,150}\)$")
 GREETING_RE = re.compile(r"^Asterisk Call Manager/\d+\.\d+(?:\.\d+)?$")
 CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 ROUTING_KEYS = ("ActionID", "Event", "Response", "Action")
@@ -188,13 +192,17 @@ def _parse_frame(raw: bytes) -> Frame:
     fields = []
     for line in lines:
         colon = line.find(":")
-        if colon < 1 or not KEY_RE.match(line[:colon]):
-            raise _invalid()
+        key = line[:colon] if colon >= 1 else ""
+        if not KEY_RE.match(key):
+            # "ChanVariable(SIP/401-0000ab12): DIALERID=..." (Asterisk 11)
+            if not LEGACY_CHANVAR_RE.match(key):
+                raise _invalid()
+            key = "ChanVariable"
         rest = line[colon + 1:]
         value = rest[1:] if rest.startswith(" ") else rest       # "Key:" and "Key:value" occur too
         if CONTROL_RE.search(value):
             raise _invalid()
-        fields.append((line[:colon], value))
+        fields.append((key, value))
     frame = Frame(fields)
     for key in ROUTING_KEYS:
         frame.get(key)                                             # raises on duplicates

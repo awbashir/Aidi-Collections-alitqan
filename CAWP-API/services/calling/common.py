@@ -6,6 +6,7 @@ notes and contacts: out-of-scope rows answer 404, never 403, so an id never reve
 """
 from __future__ import annotations
 
+import os
 import re
 import uuid
 
@@ -26,6 +27,7 @@ IN_FLIGHT = ("authorized", "dispatched", "agent_ringing", "agent_answered", "cus
 TERMINAL = ("ended", "failed", "cancelled")
 MODES = ("manual", "click_to_call", "campaign")
 EXTENSION_RE = re.compile(r"^[0-9]{2,6}$")
+CHANNEL_DRIVERS = ("PJSIP", "SIP")
 E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 
 # Permission keys (registered in core/permissions.py by the lead)
@@ -36,6 +38,22 @@ CALLS_MANAGE = "calls_manage"    # calling admin: extensions, windows, blocks, o
 # review (uncertain calls, flags, release a stuck call), others' wrap-ups. calls_manage keeps it all.
 CALLS_SUPERVISE = "calls_supervise"
 SUPERVISE_KEYS = (CALLS_SUPERVISE, CALLS_MANAGE)
+
+
+def channel_driver() -> str:
+    """The channel driver of the agents' extensions: env CALLING_DRIVER, `PJSIP` (default) or `SIP`
+    (chan_sip, e.g. the Alitqan Issabel on Asterisk 11: agent channels `SIP/<ext>-<8 hex>`).
+
+    Read on every call (no cache) by the API (dispatch, monitor, call control) and by the calling
+    service (live snapshot, call-control worker); both must see the same value. Surrounding
+    blanks and case are ignored; unset or blank = PJSIP. Fail-safe: any other value raises
+    ValueError. A misconfigured driver is never guessed: nothing is originated, and the live
+    snapshot is not written, so the monitor reports the snapshot as stale ("unknown"), never as
+    "no calls"."""
+    value = (os.environ.get("CALLING_DRIVER") or "").strip().upper() or "PJSIP"
+    if value not in CHANNEL_DRIVERS:
+        raise ValueError("CALLING_DRIVER must be PJSIP or SIP")
+    return value
 
 
 def can_supervise() -> bool:

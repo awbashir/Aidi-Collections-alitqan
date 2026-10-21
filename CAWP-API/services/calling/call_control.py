@@ -54,6 +54,18 @@ PBX mechanics (Asterisk 18; docs/issabel-commissioning.md §3b):
                header: the softphone auto-answers its own listen call). mode: PlayDTMF Receive
                4/5/6 on the supervisor's channel (ChanSpy's d option). stop: Hangup that channel.
 
+chan_sip (CALLING_DRIVER=SIP, e.g. the Alitqan Issabel on Asterisk 11; common.channel_driver):
+    agent channels are SIP/<ext>-<8 hex>; Originates ring SIP/<ext>; the control tag is the
+    Originate Variable SIPADDHEADER52=X-CAWP-Control: <tag> (51 is the attempt tag, sip_tag.py);
+    the consultation holder (CAWP_CTL_HOLDER) is the agent's channel NAME, not its Uniqueid (the
+    SIP dialplan checks it with CHANNELS(); Asterisk 11 has no CHANNEL_EXISTS); a spy mode change
+    is a Redirect of the listening channel to cawp-callctl-spy,<mode> (Asterisk 11's PlayDTMF has
+    no Receive). Asterisk 11 also ignores the Originate ChannelId and changes a Uniqueid when it
+    masquerades a redirected bridged leg, so resolve_legs() finds a missing leg by what the PBX
+    shows: the agent / customer by the channel name stored on the control, the originated leg by
+    its extension and what it runs (ChanSpy of the agent channel, the control's room) or, while it
+    rings, by the caller ID the Originate set. PJSIP behaviour is unchanged.
+
 Click-to-call attempts: the ORIGINAL collector keeps the attempt and its wrap-up. The dialplan
 emits CollectionsCall UserEvents on the attempt (transfer_blind, transferred, customer_on_hold,
 conference); the projection ends the attempt (`transferred` / `agent_hung_up`) once the agent's
@@ -81,8 +93,9 @@ from sqlalchemy.exc import IntegrityError
 
 from core import audit
 from core.api_response import NOT_FOUND, VALIDATION_FAILED, ApiError
-from services.calling.common import (CALLS_MAKE, SUPERVISE_KEYS, USER_NAME_SQL, iso, me, parse_uuid, sess,
-                                     valid_uuid)
+from services.calling.common import (CALLS_MAKE, SUPERVISE_KEYS, USER_NAME_SQL, channel_driver, iso, me,
+                                     parse_uuid, sess, valid_uuid)
+from services.calling.live_monitor import legacy_link
 
 log = logging.getLogger("cawp.calling.control")
 
@@ -104,6 +117,8 @@ SNAPSHOT_FRESH_SECONDS = 15
 EXT_RE = re.compile(r"^[0-9]{2,6}$")
 HEX_RE = re.compile(r"^[0-9a-f]{32}$")
 AGENT_CHANNEL_RE = re.compile(r"^PJSIP/([0-9]{2,6})-[0-9a-f]{8}$")
+AGENT_CHANNEL_RES = {"PJSIP": AGENT_CHANNEL_RE, "SIP": re.compile(r"^SIP/([0-9]{2,6})-[0-9a-f]{8}$")}
+SIP_TAG_VARIABLE = "SIPADDHEADER52"        # chan_sip: 51 carries X-CAWP-Attempt (services/calling/sip_tag.py)
 CTX = {"xfer": "cawp-callctl-xfer", "done": "cawp-callctl-done", "hold": "cawp-callctl-hold",
        "room": "cawp-callctl-room", "spy": "cawp-callctl-spy", "post": "cawp-callctl-post"}
 
@@ -139,8 +154,28 @@ def leg_id(kind: str, control_id) -> str:
     return f"{'cawps' if kind == 'spy' else 'cawpt'}-{hexid(control_id)}"
 
 
-def tag_field(control_id) -> tuple[str, str]:
+def tag_field(control_id, driver: str = "PJSIP") -> tuple[str, str]:
+    """The Originate Variable that puts X-CAWP-Control on the originated leg's INVITE."""
+    if driver == "SIP":
+        return ("Variable", f"{SIP_TAG_VARIABLE}={HEADER}: {hexid(control_id)}")
     return ("Variable", f"PJSIP_HEADER(add,{HEADER})={hexid(control_id)}")
+
+
+def _driver_or_none():
+    try:
+        return channel_driver()
+    except ValueError:
+        return None
+
+
+def _driver(driver):
+    """The plan's driver: the given one, else CALLING_DRIVER (invalid: refused, nothing is sent)."""
+    if driver is not None:
+        return driver
+    try:
+        return channel_driver()
+    except ValueError:
+        raise Refused("calling_driver_invalid") from None
 
 
 # --------------------------------------------------------------------------- channel lists
@@ -152,11 +187,66 @@ def channel_map(frames) -> dict[str, dict]:
         uid = (get("Uniqueid") or "").strip()
         if not uid or uid in out:
             continue
+        legacy = legacy_link(get, uid)            # Asterisk <= 11: no Linkedid / BridgeId (live_monitor)
         out[uid] = {
-            "uniqueid": uid, "channel": get("Channel") or "", "linkedid": get("Linkedid") or uid,
-            "bridge_id": get("BridgeId") or None, "application": get("Application") or "",
+            "uniqueid": uid, "channel": get("Channel") or "",
+            "linkedid": (legacy[0] if legacy else get("Linkedid")) or uid,
+            "bridge_id": (legacy[1] if legacy else get("BridgeId")) or None, "application": get("Application") or "",
             "appdata": get("ApplicationData") or "", "state": get("ChannelStateDesc") or "",
-            "context": get("Context") or "", "exten": get("Exten") or ""}
+            "context": get("Context") or "", "exten": (get("Exten") if get("Exten") is not None
+                                                       else get("Extension")) or "",
+            "caller_num": get("CallerIDNum") or "", "connected_num": get("ConnectedLineNum") or ""}
+    return out
+
+
+def resolve_legs(c: dict, chans: dict, driver: str = "PJSIP") -> dict:
+    """chan_sip / Asterisk 11 only (PJSIP: `chans` unchanged): the control's legs that are missing
+    by Uniqueid, found by what the PBX shows, added under the Uniqueid the control expects.
+
+    * agent / customer: the live channel with exactly the name stored on the control (a masquerade
+      on Redirect keeps the name, not the Uniqueid);
+    * the originated leg (the Originate ChannelId is ignored): the extension's own channel that
+      runs ChanSpy on the control's agent channel (spy) or is in the control's room (invitee), or
+      that rings with no application and the caller ID the Originate set.
+    Only an unambiguous single match is used; otherwise the leg stays missing (unknown)."""
+    if driver != "SIP" or not c:
+        return chans
+    out = dict(chans)
+    for uid_key, name_key in (("agent_uniqueid", "agent_channel"), ("customer_uniqueid", "customer_channel")):
+        uid, name = c.get(uid_key), c.get(name_key)
+        if uid and name and uid not in out:
+            hits = [x for x in chans.values() if x.get("channel") == name]
+            if len(hits) == 1:
+                out[uid] = hits[0]
+    uid = c.get("target_uniqueid")
+    if not uid or uid in out:
+        return out
+    if c.get("kind") == "spy":
+        ext, cid = c.get("from_extension"), c.get("target_extension")
+
+        def doing(x):          # the API's snapshot rows carry no ApplicationData: ChanSpy is enough there
+            return x.get("application") == "ChanSpy" and (
+                x.get("appdata") is None or x["appdata"].split(",")[0] == (c.get("agent_channel") or ""))
+    else:
+        ext, cid = c.get("target_extension"), c.get("from_extension")
+
+        def doing(x):          # snapshot rows: no ApplicationData, ConfBridge is enough there
+            if x.get("appdata") is None:
+                return x.get("application") == "ConfBridge"
+            return in_room(x, c.get("room"))
+    agent_re = AGENT_CHANNEL_RES["SIP"]
+    claimed = {c.get("agent_uniqueid"), c.get("customer_uniqueid")}
+
+    def own(x):
+        m = agent_re.match(x.get("channel") or "")
+        return bool(m and m.group(1) == ext and x.get("uniqueid") not in claimed)
+    hits = [x for x in chans.values() if own(x) and doing(x)]
+    if not hits:
+        hits = [x for x in chans.values() if own(x) and not x.get("application")
+                and (x.get("state") or "") in ("Ring", "Ringing")
+                and cid and cid in (x.get("caller_num"), x.get("connected_num"))]
+    if len(hits) == 1:
+        out[uid] = hits[0]
     return out
 
 
@@ -181,22 +271,22 @@ def _hangup(channel):
     return ("Hangup", [("Channel", channel), ("Cause", "16")])
 
 
-def _invite(c: dict):
+def _invite(c: dict, driver: str = "PJSIP"):
     """Originate the target's own extension into the control's room."""
     return ("Originate", [
-        ("Channel", f"PJSIP/{c['target_extension']}"), ("Context", CTX["room"]), ("Exten", "invitee"),
+        ("Channel", f"{driver}/{c['target_extension']}"), ("Context", CTX["room"]), ("Exten", "invitee"),
         ("Priority", "1"), ("Async", "true"), ("Timeout", str(INVITE_RING_SECONDS * 1000)),
         ("ChannelId", c["target_uniqueid"]), ("CallerID", f"\"{c['from_extension']}\" <{c['from_extension']}>"),
         ("Variable", f"CAWP_CTL_ROOM={c['room']}"), ("Variable", f"CAWP_CTL_ID={hexid(c['id'])}"),
-        tag_field(c["id"])])
+        tag_field(c["id"], driver)])
 
 
-def _call_legs(c: dict, chans: dict) -> tuple[dict, dict]:
+def _call_legs(c: dict, chans: dict, driver: str = "PJSIP") -> tuple[dict, dict]:
     """The agent's channel and its peer, still as the API saw them (same bridge)."""
     agent, peer = chans.get(c["agent_uniqueid"] or ""), chans.get(c["customer_uniqueid"] or "")
     if agent is None:
         raise Refused("agent_gone")
-    m = AGENT_CHANNEL_RE.match(agent["channel"])
+    m = AGENT_CHANNEL_RES[driver].match(agent["channel"])
     if not m or m.group(1) != c["from_extension"]:
         raise Refused("call_changed")
     if peer is None:
@@ -206,27 +296,30 @@ def _call_legs(c: dict, chans: dict) -> tuple[dict, dict]:
     return agent, peer
 
 
-def plan(c: dict, op: dict, chans: dict) -> tuple[list, dict]:
-    """(AMI actions, control changes on success) for one op; Refused when the call changed."""
+def plan(c: dict, op: dict, chans: dict, driver: str | None = None) -> tuple[list, dict]:
+    """(AMI actions, control changes on success) for one op; Refused when the call changed.
+    `driver` (PJSIP | SIP) defaults to CALLING_DRIVER."""
+    driver = _driver(driver)
+    chans = resolve_legs(c, chans, driver)
     kind, name, cid = c["kind"], op["op"], hexid(c["id"])
     target = chans.get(c["target_uniqueid"] or "")
     if name == "start" and kind == "spy":
         agent = chans.get(c["agent_uniqueid"] or "")
         if agent is None:
             raise Refused("agent_gone")
-        m = AGENT_CHANNEL_RE.match(agent["channel"])
+        m = AGENT_CHANNEL_RES[driver].match(agent["channel"])
         if not m or m.group(1) != c["target_extension"]:
             raise Refused("call_changed")
         if not agent["bridge_id"]:
             raise Refused("call_not_connected")
         return [("Originate", [
-            ("Channel", f"PJSIP/{c['from_extension']}"), ("Context", CTX["spy"]), ("Exten", c["mode"]),
+            ("Channel", f"{driver}/{c['from_extension']}"), ("Context", CTX["spy"]), ("Exten", c["mode"]),
             ("Priority", "1"), ("Async", "true"), ("Timeout", str(INVITE_RING_SECONDS * 1000)),
             ("ChannelId", c["target_uniqueid"]), ("CallerID", f"\"{c['target_extension']}\" <{c['target_extension']}>"),
             ("Variable", f"CAWP_SPY_TARGET={agent['channel']}"), ("Variable", f"CAWP_CTL_ID={cid}"),
-            tag_field(c["id"])])], {"state": "active", "agent_channel": agent["channel"]}
+            tag_field(c["id"], driver)])], {"state": "active", "agent_channel": agent["channel"]}
     if name == "start":
-        agent, peer = _call_legs(c, chans)
+        agent, peer = _call_legs(c, chans, driver)
         names = {"agent_channel": agent["channel"], "customer_channel": peer["channel"]}
         if kind == "transfer_blind":
             return [_setvar(peer["channel"], "CAWP_CTL_ID", cid),
@@ -238,18 +331,19 @@ def plan(c: dict, op: dict, chans: dict) -> tuple[list, dict]:
         if kind == "transfer_attended":
             return [_setvar(peer["channel"], "CAWP_CTL_ID", cid),
                     _setvar(peer["channel"], "CAWP_CTL_ROOM", c["room"]),
-                    _setvar(peer["channel"], "CAWP_CTL_HOLDER", agent["uniqueid"]),
+                    # chan_sip: the channel NAME (Asterisk 11 dialplan: CHANNELS(), no CHANNEL_EXISTS)
+                    _setvar(peer["channel"], "CAWP_CTL_HOLDER", agent["channel"] if driver == "SIP" else agent["uniqueid"]),
                     _setvar(agent["channel"], "CAWP_CTL_ID", cid),
                     _setvar(agent["channel"], "CAWP_CTL_ROOM", c["room"]),
                     _redirect(peer["channel"], CTX["hold"], "s", (agent["channel"], CTX["room"], "agent")),
-                    _invite(c)], {"state": "active", **names}
+                    _invite(c, driver)], {"state": "active", **names}
         if kind == "conference":
             return [_setvar(peer["channel"], "CAWP_CTL_ID", cid),
                     _setvar(peer["channel"], "CAWP_CTL_ROOM", c["room"]),
                     _setvar(agent["channel"], "CAWP_CTL_ID", cid),
                     _setvar(agent["channel"], "CAWP_CTL_ROOM", c["room"]),
                     _redirect(peer["channel"], CTX["room"], "customer", (agent["channel"], CTX["room"], "agent")),
-                    _invite(c)], {"state": "active", **names}
+                    _invite(c, driver)], {"state": "active", **names}
     agent = chans.get(c["agent_uniqueid"] or "")
     peer = chans.get(c["customer_uniqueid"] or "")
     if kind == "transfer_attended" and name == "complete":
@@ -276,6 +370,8 @@ def plan(c: dict, op: dict, chans: dict) -> tuple[list, dict]:
             raise Refused("listener_gone")
         if target["application"] != "ChanSpy":
             raise Refused("not_listening_yet")
+        if driver == "SIP":                    # Asterisk 11 PlayDTMF has no Receive: restart ChanSpy in the mode
+            return [_redirect(target["channel"], CTX["spy"], op["mode"])], {"mode": op["mode"]}
         return [("PlayDTMF", [("Channel", target["channel"]), ("Digit", SPY_DIGIT[op["mode"]]), ("Receive", "yes")])], \
             {"mode": op["mode"]}
     if kind == "spy" and name == "stop":
@@ -288,9 +384,12 @@ def plan(c: dict, op: dict, chans: dict) -> tuple[list, dict]:
     raise Refused("op_not_applicable")
 
 
-def sweep_decisions(c: dict, chans: dict, absent: dict, age: float) -> list[tuple[str, str | None]]:
+def sweep_decisions(c: dict, chans: dict, absent: dict, age: float,
+                    driver: str | None = None) -> list[tuple[str, str | None]]:
     """Pure: what the sweep does for one open control. `absent` counts consecutive sweeps a leg
-    was missing (key -> n, updated here). Returns [("op", name) | ("set", result) | ("ended", None)]."""
+    was missing (key -> n, updated here). Returns [("op", name) | ("set", result) | ("ended", None)].
+    `driver` defaults to CALLING_DRIVER (chan_sip: resolve_legs first)."""
+    chans = resolve_legs(c, chans, driver if driver is not None else _driver_or_none())
     out = []
     agent = chans.get(c["agent_uniqueid"] or "")
     peer = chans.get(c["customer_uniqueid"] or "")
@@ -421,8 +520,9 @@ def _digits(v) -> str:
 
 def find_my_call(ext: str, rows: list[dict], *, attempt_id=None, remote=None) -> tuple[dict, dict]:
     """The caller's own connected call: (agent channel row, peer row). One peer only."""
+    agent_re = AGENT_CHANNEL_RES[channel_driver()]
     mine = [r for r in rows if r.get("extension") == ext and r.get("bridge_id")
-            and AGENT_CHANNEL_RE.match(r.get("channel") or "")]
+            and agent_re.match(r.get("channel") or "")]
     if attempt_id:
         mine = [r for r in mine if r["uniqueid"] == f"cawp-{attempt_id}"]
     if len(mine) > 1 and remote:
@@ -564,8 +664,9 @@ def request_spy(body: dict) -> str:
     owner = _user_ext_owner(ext)
     status = _transport()
     rows = _require_snapshot()
+    agent_re = AGENT_CHANNEL_RES[channel_driver()]
     agent = next((r for r in rows if r.get("extension") == ext and (r.get("linkedid") or r["uniqueid"]) == call_id
-                  and AGENT_CHANNEL_RE.match(r.get("channel") or "")), None)
+                  and agent_re.match(r.get("channel") or "")), None)
     if agent is None:
         raise ApiError(409, "call_not_live", "this call is no longer live on that extension")
     if not agent.get("bridge_id"):
@@ -624,7 +725,7 @@ def _phase(c: dict, rows: list[dict] | None) -> dict:
     """What the PBX shows now for the control's legs (unknown without a current snapshot)."""
     if rows is None:
         return {"known": False}
-    by = {r["uniqueid"]: r for r in rows}
+    by = resolve_legs(c, {r["uniqueid"]: r for r in rows}, _driver_or_none())
 
     def leg(uid):
         r = by.get(uid or "")

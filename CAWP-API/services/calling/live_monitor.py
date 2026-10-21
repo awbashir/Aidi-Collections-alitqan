@@ -6,6 +6,15 @@ action) and replaces `pbx_live_channels` with them in one transaction, then stam
 `pbx_live_snapshot`. Without a connected session it records ok=false and no channels, so the
 API can say "unknown" instead of "no calls". It never writes call evidence and never acts on
 a channel.
+
+Agent channels follow CALLING_DRIVER (services/calling/common.channel_driver): `PJSIP/<ext>-...`
+or, with chan_sip, `SIP/<ext>-<8 hex>` (then a trunk is a SIP/ channel that is not an agent's).
+
+Asterisk 11 and older (CoreShowChannel without Linkedid / BridgeId / Exten, with Extension,
+BridgedChannel and BridgedUniqueID instead; legacy_link()): both legs of a two-party bridge get
+the same bridge id (`<uid>|<uid>`, sorted) and the same linkedid (the app-issued `cawp-` channel,
+else the older Uniqueid of the pair). An unbridged leg is its own call (linkedid = its Uniqueid).
+Frames that carry Linkedid or BridgeId (Asterisk 12+) are read exactly as before.
 """
 from __future__ import annotations
 
@@ -19,6 +28,8 @@ from sqlalchemy import text
 log = logging.getLogger("cawp.calling.live")
 
 AGENT_RE = re.compile(r"^PJSIP/([0-9]{2,6})-")
+AGENT_RES = {"PJSIP": AGENT_RE, "SIP": re.compile(r"^SIP/([0-9]{2,6})-[0-9a-f]{8}")}
+_UID_ORDER_RE = re.compile(r"(\d+)\.(\d+)$")
 FIELDS = ("uniqueid", "linkedid", "channel", "extension", "state", "caller_num", "caller_name", "connected_num",
           "connected_name", "context", "exten", "application", "bridge_id", "duration_s")
 
@@ -38,8 +49,34 @@ def _seconds(value) -> int | None:
     return h * 3600 + mi * 60 + s
 
 
-def parse(frames) -> list[dict]:
-    """CoreShowChannel frames (or plain dicts) -> pbx_live_channels rows."""
+def _uid_order(uid: str):
+    """Sort key: the app-issued `cawp-` channel first, then the older `<epoch>.<sequence>` Uniqueid."""
+    if uid.startswith("cawp"):
+        return (0, 0, 0, uid)
+    m = _UID_ORDER_RE.search(uid)
+    return (1, int(m.group(1)), int(m.group(2)), uid) if m else (2, 0, 0, uid)
+
+
+def legacy_link(get, uid: str) -> tuple[str, str | None] | None:
+    """(linkedid, bridge_id) of an Asterisk <= 11 CoreShowChannel frame (no Linkedid and no BridgeId
+    field at all; BridgedUniqueID names the other leg of a two-party bridge), else None (Asterisk
+    12+: the frame's own Linkedid / BridgeId are used, unchanged)."""
+    if get("Linkedid") is not None or get("BridgeId") is not None:
+        return None
+    other = (get("BridgedUniqueID") or "").strip()
+    if not other or other == uid:
+        return uid, None
+    pair = sorted((uid, other), key=_uid_order)
+    return pair[0], "|".join(sorted(pair))
+
+
+def parse(frames, driver: str | None = None) -> list[dict]:
+    """CoreShowChannel frames (or plain dicts) -> pbx_live_channels rows. `driver` (PJSIP | SIP)
+    defaults to CALLING_DRIVER (ValueError when that is invalid: the snapshot is not written)."""
+    if driver is None:
+        from services.calling.common import channel_driver
+        driver = channel_driver()
+    agent_re = AGENT_RES[driver]
     rows, seen = [], set()
     for f in frames or ():
         get = f.get
@@ -48,14 +85,18 @@ def parse(frames) -> list[dict]:
         if not uid or not channel or uid in seen:
             continue
         seen.add(uid)
-        m = AGENT_RE.match(channel)
+        m = agent_re.match(channel)
+        legacy = legacy_link(get, uid)
+        linkedid, bridge = (legacy if legacy is not None
+                            else (_clip(get("Linkedid"), 150) or uid, _clip(get("BridgeId"), 80)))
         rows.append({
-            "uniqueid": uid, "linkedid": _clip(get("Linkedid"), 150) or uid, "channel": channel,
+            "uniqueid": uid, "linkedid": _clip(linkedid, 150) or uid, "channel": channel,
             "extension": m.group(1) if m else None, "state": _clip(get("ChannelStateDesc"), 40),
             "caller_num": _clip(get("CallerIDNum"), 40), "caller_name": _clip(get("CallerIDName"), 80),
             "connected_num": _clip(get("ConnectedLineNum"), 40), "connected_name": _clip(get("ConnectedLineName"), 80),
-            "context": _clip(get("Context"), 80), "exten": _clip(get("Exten"), 80),
-            "application": _clip(get("Application"), 40), "bridge_id": _clip(get("BridgeId"), 80),
+            "context": _clip(get("Context"), 80),
+            "exten": _clip(get("Exten") if get("Exten") is not None else get("Extension"), 80),
+            "application": _clip(get("Application"), 40), "bridge_id": _clip(bridge, 80),
             "duration_s": _seconds(get("Duration"))})
     return rows
 

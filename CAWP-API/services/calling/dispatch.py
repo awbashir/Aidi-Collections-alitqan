@@ -46,7 +46,7 @@ from core.api_response import VALIDATION_FAILED, ApiError
 from core.revisions import RevisionConflict, parse_revision
 from services.calling import attempts as A
 from services.calling import rules as R
-from services.calling.common import CALLS_MANAGE, advisory_lock, me, parse_uuid, sess
+from services.calling.common import CALLS_MANAGE, advisory_lock, channel_driver, me, parse_uuid, sess
 
 log = logging.getLogger("cawp.calling.dispatch")
 
@@ -64,7 +64,7 @@ def settings() -> dict:
     queue row). The maximum must not exceed the installed dialplan's max_call_seconds."""
     return {
         "context": (os.environ.get("CALLING_CONTEXT") or "collections-human-outbound").strip(),
-        "driver": (os.environ.get("CALLING_DRIVER") or "PJSIP").strip(),
+        "driver": channel_driver(),                       # CALLING_DRIVER (ValueError when invalid)
         "agent_ring_seconds": _env_int("CALLING_AGENT_RING_SECONDS", 30, 5, 60),
         "max_call_seconds": _env_int("CALLING_MAX_CALL_SECONDS", 600, 30, 14400),
         "dispatch_ttl_seconds": _env_int("CALLING_DISPATCH_TTL_SECONDS", 30, 5, 300),

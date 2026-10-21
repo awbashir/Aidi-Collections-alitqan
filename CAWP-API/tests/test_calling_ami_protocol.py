@@ -36,6 +36,25 @@ def test_repeated_fields_and_empty_values_are_kept():
         f.get("Variable")                                               # single-value read refuses duplicates
 
 
+def test_asterisk11_channel_variables_are_normalised():
+    _, out = decode(GREET, b"Event: Newchannel\r\nChannel: SIP/401-0000ab12\r\n"
+                           b"ChanVariable(SIP/401-0000ab12): DIALERID=\r\n"
+                           b"ChanVariable(Local/123@from-queue-0000ab12;2): DIALERVAR=x\r\n"
+                           b"ChanVariable(OutgoingSpoolFailed): DIALERID=\r\n\r\n")
+    f = out[1]
+    assert f.event == "Newchannel" and f.values("ChanVariable") == ["DIALERID=", "DIALERVAR=x", "DIALERID="]
+    assert not [k for k, _ in f.fields if "(" in k]
+
+
+@pytest.mark.parametrize("key", [b"ChanVariable()", b"ChanVariable(a b)", b"ChanVariable(x)(y)", b"chanvariable(x)",
+                                 b"ChanVariable(" + b"a" * 151 + b")", b"Event(x)"])
+def test_other_parenthesised_keys_still_poison(key):
+    d = AmiDecoder()
+    d.feed(GREET)
+    with pytest.raises(AmiError):
+        d.feed(b"Event: X\r\n" + key + b": v\r\n\r\n")
+
+
 def test_unicode_split_inside_a_character():
     arabic = "عميل".encode()
     data = GREET + b"Event: X\r\nName: " + arabic + b"\r\n\r\n"
