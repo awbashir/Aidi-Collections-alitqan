@@ -147,8 +147,9 @@ def seeded(rp_app, client, auth, world, pgc):
     """c1 owns cases A, B; c2 owns C, D (all callable); E (c1) has no contact (never called,
     nothing recorded: pending); F (c2) has an exclusion recorded by the dispatcher (excluded).
     Round 1: c1 reaches a case (90 s, promise 300), c2 does not (no answer). Round 2: c1 reaches
-    the other (30 s, connected), c2 does not (busy). Round 3: both get a call that is still queued
-    when the campaign is stopped (cancelled, never sent)."""
+    the other (30 s, connected), c2 does not (busy). Round 3: c2 gets a call that is still queued
+    when the campaign is stopped (cancelled, never sent); c1 gets none: both of c1's customers
+    answered, and a customer who answered is never called again by the campaign (2026-10-24)."""
     w = world
     main, sub = statuses(pgc)
     for owner in (w.c1, w.c1, w.c2, w.c2):
@@ -182,7 +183,7 @@ def seeded(rp_app, client, auth, world, pgc):
     wrap(client, auth, pgc, w.c2, r2[w.c2]["attempt_id"], "busy", CL.status)
 
     r3 = by_user(tick(rp_app, cid, w))
-    assert set(r3) == {w.c1, w.c2}, r3
+    assert set(r3) == {w.c2}, r3
     return {"cid": cid, "w": w, "main": main, "sub": sub, "due": due, "pending": pending, "excluded": excluded,
             "promise_case": r1[w.c1]["case_id"], "promise_attempt": r1[w.c1]["attempt_id"],
             "unreached_case": r1[w.c2]["case_id"]}
@@ -214,7 +215,7 @@ def test_report_aggregates_a_stopped_campaign(client, auth, pgc, seeded):
     assert st == 200, body
     assert sorted(x[0] for x in qall(pgc, "SELECT a.state FROM campaign_attempts ca JOIN call_attempts a "
                                           "ON a.id = ca.attempt_id WHERE ca.campaign_id = %s", cid)) == \
-        ["cancelled", "cancelled", "ended", "ended", "ended", "ended"]
+        ["cancelled", "ended", "ended", "ended", "ended"]
 
     st, body = get_report(client, auth, w.supervisor, cid)
     assert st == 200, body
@@ -225,7 +226,7 @@ def test_report_aggregates_a_stopped_campaign(client, auth, pgc, seeded):
     assert d["clients"] == {"total": 6, "pool_now": 6, "called": 4, "reached": 2, "not_reached": 2, "excluded": 1,
                             "pending": 1, "excluded_by_reason": {"case_locked": 1}}
     a = d["attempts"]
-    assert (a["total"], a["sent"], a["not_sent"], a["reached"], a["pending_wrapup"]) == (6, 4, 2, 2, 0)
+    assert (a["total"], a["sent"], a["not_sent"], a["reached"], a["pending_wrapup"]) == (5, 4, 1, 2, 0)
     assert a["answer_rate"] == 0.5
     assert (a["talk_seconds"], a["talk_known"], a["talk_unknown"], a["avg_talk_seconds"]) == (120, 2, 0, 60)
     assert d["outcomes"] == {"connected": 1, "promise_discussed": 1, "dispute": 0, "no_answer": 1, "busy": 1,
@@ -246,7 +247,7 @@ def test_report_aggregates_a_stopped_campaign(client, auth, pgc, seeded):
     ag = {x["user"]["id"]: x for x in d["agents"]}
     assert set(ag) == {w.c1, w.c2}
     c1, c2 = ag[w.c1], ag[w.c2]
-    assert (c1["attempts"], c1["sent"], c1["reached"], c1["talk_seconds"], c1["avg_talk_seconds"]) == (3, 2, 2, 120, 60)
+    assert (c1["attempts"], c1["sent"], c1["reached"], c1["talk_seconds"], c1["avg_talk_seconds"]) == (2, 2, 2, 120, 60)
     assert (c1["promises"], c1["promises_amount"], c1["answer_rate"]) == (1, "300.00", 1.0)
     assert c1["outcomes"] == {"promise_discussed": 1, "connected": 1}
     assert c1["statuses"] == {s["main"]: 1, f"{s['main']}/{s['sub']}": 1}

@@ -74,6 +74,7 @@ db/
 | 0083 | `migrations/0083_sip_static_secrets.sql` | `sip_static_secrets`: the browser (WebRTC) SIP password per extension on a chan_sip PBX, AES-256-GCM (key `SIP_STATIC_SECRET_KEY` in the server env only), for `SIP_CREDENTIAL_MODE=static` | new table, instant | Yes |
 | 0084 | `migrations/0084_legacy_pbx_correlation.sql` | Asterisk 11 (`CALLING_PBX_EVENTS=legacy`): `call_dispatch_queue.ami_action_id` (the Originate ActionID, recorded by the claim before sending, set once, unique), `call_dispatch_tokens.bound_uniqueid` (the agent channel the FastAGI hook allowed) | nullable columns, CHECKs added `NOT VALID` then validated, unique partial index on the small dispatch queue, set-once trigger; brief lock on the two dispatch tables only, instant | Yes |
 | 0085 | `migrations/0085_call_legs_agent_uniqueid_index.sql` | partial index on agent `call_legs.uniqueid` (agent leg -> attempt lookups on Asterisk 11) | `CREATE INDEX CONCURRENTLY` (no-transaction), online | Yes |
+| 0086 | `migrations/0086_campaign_case_lists.sql` | campaign customer lists (`campaign_list_cases`, from Excel / pasted national ids or account numbers), hand removals (`campaign_removed_cases`), `campaigns.cases_changed_at` (bumps the revision) | two new tables + one nullable column, instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

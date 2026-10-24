@@ -84,7 +84,7 @@ LIVE_STATES = ("prepared", "authorized", "dispatched", "agent_ringing", "agent_a
 # re-evaluated by the rules when offered again)
 RECHECK_MINUTES = {"case_paid": 30, "status_stops_campaigns": 30, "destination_invalid": 30, "no_callable_contact": 30, "contact_not_found": 5,
                    "contact_deleted": 5, "contact_blocked": 5, "case_archived": 1, "case_locked": 1,
-                   "do_not_call": 1, "calling_review_pending": 1}
+                   "do_not_call": 1, "calling_review_pending": 1, "customer_in_call": 1}
 
 
 # audit fields of what the calling service does by itself (no request, no person)
@@ -213,6 +213,38 @@ def _try_case_lock(session, case_id) -> bool:
                                 {"k": f"calling_dispatch:case:{case_id}"}).scalar())
 
 
+def _identity_key(session, identity_number) -> str | None:
+    from services.same_identity import IDENTITY_KEY_SQL
+    return session.execute(text(f"SELECT {IDENTITY_KEY_SQL.format(col='CAST(:v AS text)')}"),
+                           {"v": identity_number}).scalar()
+
+
+def _try_identity_lock(session, identity_number) -> bool:
+    """2026-10-24: one dispatch per CUSTOMER at a time (every account with the same identity key),
+    held to the end of the dispatch transaction, after which the reservation exists."""
+    key = _identity_key(session, identity_number)
+    if not key:
+        return True
+    return bool(session.execute(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:k, 0))"),
+                                {"k": f"calling_dispatch:identity:{key}"}).scalar())
+
+
+def _customer_answered(session, identity_number, case_id, answered: dict) -> bool:
+    """The customer already answered a call of this campaign (this case or the same identity key).
+    Re-read under the customer's lock: a call may have been answered since `answered` was read."""
+    if case_id in answered["cases"]:
+        return True
+    key = _identity_key(session, identity_number)
+    if key and key in answered["keys"]:
+        return True
+    return False
+
+
+def _customer_in_call(session, identity_number) -> bool:
+    key = _identity_key(session, identity_number)
+    return bool(key) and key in P.live_identity_keys(session)
+
+
 def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatched_by: str,
                     audit_kw: dict | None = None) -> dict:
     """Dispatch the member's next case. The member row must be locked by the caller.
@@ -229,17 +261,32 @@ def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatc
         return {"blocked": code, "detail": detail}
     clock = P._clock()
     tried = set()
+    answered = None
     for cand in P.candidates(campaign, uid, limit=CANDIDATES_PER_DISPATCH, clock=clock):
         case_id = str(cand["case_id"])
         tried.add(case_id)
         if not _try_case_lock(session, case_id):
             continue                                       # another loop is on this case right now
+        if not _try_identity_lock(session, cand["idn"]):
+            continue                                       # another loop is on this customer right now
         if _stops(session, case_id):                 # 0080: a stopping status recorded since the read
             _exclude(session, cid, case_id, "status_stops_campaigns")
             continue
-        contact, choice = P.choose_contact(cand["idn"], campaign_id=cid, case_id=case_id)
+        # 2026-10-24, under the customer's lock: answered in this campaign / in a call right now
+        answered = answered if answered is not None else P.answered_facts(cid)
+        if _customer_answered(session, cand["idn"], case_id, answered):
+            _exclude(session, cid, case_id, "answered_in_campaign", until="infinity")
+            continue
+        if _customer_in_call(session, cand["idn"]):
+            _exclude(session, cid, case_id, "customer_in_call")
+            continue
+        contact, choice = P.choose_contact(cand["idn"], campaign_id=cid, case_id=case_id,
+                                           skip_numbers=answered["numbers"])
         if contact is None:
-            _exclude(session, cid, case_id, "no_callable_contact")
+            if choice == "answered":                       # every callable number was already reached
+                _exclude(session, cid, case_id, "answered_in_campaign", {"numbers": "answered"}, until="infinity")
+            else:
+                _exclude(session, cid, case_id, "no_callable_contact")
             continue
         priority = "callback_due" if cand["callback_due"] else "normal"
         try:

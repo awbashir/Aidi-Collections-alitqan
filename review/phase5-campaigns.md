@@ -401,3 +401,40 @@ Query timings on the full local copy (`cawp-db`, read-only; the calling tables d
 6. **A call being claimed at the instant of a pause is still sent** (it is already in the dispatcher's hands). It then behaves as a live call. This is documented, not a defect.
 7. **The campaign's creator is its scope owner:** if the creator is deactivated or loses scope, the pool shrinks accordingly. A "transfer ownership" action is not built.
 8. **Retention:** `campaign_pool_state` and readiness rows of stopped campaigns are kept. There is no purge yet (same as P1's open item for `call_events`).
+
+## 13. Customer lists, removals, answered customers, payments (customer feedback 2026-10-24, migration 0086)
+
+Requested: "it dials the same customer more than once even if the customer answered before; don't
+call the same number again if the customer answered, even on a different account; more control
+when creating a campaign, e.g. customer ids from Excel; see the list before the start and remove
+customers; don't call a customer with any payment; show who was called and how many are still in
+the queue." Implemented in `services/calling/campaign_pool.py`, `campaign_dispatch.py` and
+`campaign_cases.py` (tests: `tests/test_campaign_customer_lists.py`).
+
+| Rule | Pool reason | Where |
+| --- | --- | --- |
+| The customer answered a call of this campaign (customer leg answered or bridged): no call again on that account, any account with the same identity key, or the answered number (a case whose only callable numbers were answered is excluded for good) | `answered_in_campaign` (hard) | SQL pre-filter + dispatcher re-check under the customer lock; numbers in `choose_contact(skip_numbers=)` |
+| Another account of the same customer is in a call right now (any mode) | `customer_in_call` | SQL + identity advisory lock in the dispatcher |
+| `pool.skip_any_payment: true`: any approved, non-deleted, non-reversed payment | `case_has_payment` (hard) | SQL (`bal.approved > 0`) |
+| Removed by hand | `removed_by_user` (hard) | `campaign_removed_cases` |
+| `pool.case_list: true`: the pool is the campaign's customer list | — | `campaign_list_cases` |
+
+Endpoints (`campaigns_manage`; writes need the campaign's `expected_revision`, refuse a stopped
+campaign and bump the revision):
+
+* `POST /v2/campaigns/<id>/cases/import`: JSON `{"values": ["1012345678", ...], "match_by": "identity" | "account", "expected_revision": 3}`
+  or multipart (`file` .xlsx/.csv, `match_by`, `expected_revision`, optional `column` 1-based; a first
+  row without digits is a header). `match_by` is ONE of the two, never both (customer decision):
+  `identity` adds every account of the customer, `account` that account only, within the editor's
+  scope. -> `{match_by, values, matched_values, not_found_count, not_found (first 100), cases_matched, cases_added, cases_restored, revision}`.
+  409 `not_a_list_campaign` for a filter campaign.
+* `POST /v2/campaigns/<id>/cases/remove` / `restore`: `{"case_ids": [...] (<= 500), "reason"?, "expected_revision"}`.
+* `GET /v2/campaigns/<id>/called?answered=1|0`: the customers called (attempts, `answered`, last call
+  state / reason / outcome / agent) + `counts {called, answered}`.
+* The pool summary (live view, pool listing) adds `waiting` (in the pool, not excluded for good,
+  never dialled by this campaign: the queue), `called` and `answered`; the campaign view adds
+  `cases {listed, removed}`.
+
+UI: the campaign form's "Choose customers" (by filter / customer list) and "Skip customers with
+any approved payment" (on by default for a new campaign); the Pool tab's import card and
+Remove / Restore per row; the Called tab; the queue counts on the Live tab.

@@ -210,8 +210,14 @@ def campaign_view(c: dict) -> dict:
         "updated_at": iso(c["updated_at"]), "started_at": iso(c["started_at"]), "paused_at": iso(c["paused_at"]),
         "drain_requested_at": iso(c["drain_requested_at"]), "stopped_at": iso(c["stopped_at"]),
         "stop_reason": c["stop_reason"], "members": {"active": int(counts["active"]), "total": int(counts["total"])},
+        "cases": _case_counts(c["id"]),                 # 2026-10-24: customer list / hand removals (0086)
         "revision": int(c["revision"]),
     }
+
+
+def _case_counts(campaign_id) -> dict:
+    from services.calling.campaign_cases import list_counts
+    return list_counts(campaign_id)
 
 
 def detail(campaign_id) -> dict:
@@ -819,7 +825,7 @@ def _pool_summary(camp, active_ids) -> dict:
     now = time.monotonic()
     if hit is not None and hit[0] > now and hit[1] == k:
         return {**hit[2], "cached": True}
-    out = P.summary(camp, active_ids)
+    out = _with_progress(camp, P.summary(camp, active_ids))
     if len(_summary_cache) > 500:
         _summary_cache.clear()
     _summary_cache[str(camp["id"])] = (now + SUMMARY_TTL_SECONDS, k, out)
@@ -834,6 +840,13 @@ def pool_view(campaign_id, args, page, size, offset) -> dict:
     reasons = [x for x in (args.get("reason") or "").split(",") if x]
     out = P.listing(camp, active_ids, reason=reasons or None, page=page, size=size, offset=offset,
                     show_numbers=has_permission("clints_details"))
-    out["summary"] = P.summary(camp, active_ids)
+    out["summary"] = _with_progress(camp, P.summary(camp, active_ids))
     return out
+
+
+def _with_progress(camp, summary: dict) -> dict:
+    """2026-10-24: + "called" / "answered" (customers this campaign dialled / that answered) and
+    "waiting" (in the pool, not excluded for good, never dialled by this campaign: the queue)."""
+    from services.calling.campaign_cases import called_counts
+    return {**summary, **called_counts(camp["id"])}
 

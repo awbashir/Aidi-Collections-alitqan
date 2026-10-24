@@ -265,7 +265,7 @@ def unassigned_dispatch_ok(campaign_id, user_id, case_id) -> bool:
          WHERE cp.id = CAST(:c AS uuid)"""), {"c": str(campaign_id), "u": str(user_id)}).mappings().first()
     if camp is None or not (camp["pool"] or {}).get(P.UNASSIGNED_KEY):
         return False
-    joins, where, params = P.definition_sql(camp["pool"])
+    joins, where, params = P.definition_sql(camp["pool"], campaign_id=campaign_id)
     own, own_params = P.scope_clause(camp["created_by"], "os")
     return sess().execute(text(f"""
         SELECT 1 FROM clints c JOIN portfolios p ON p.id = c.portfolios_id JOIN contracts k ON k.id = p.contract_id

@@ -229,8 +229,9 @@ def test_supervisor_live_view(cp_app, client, auth, world, pgc):
     assert members[w.c2]["state"] == "offline" and members[w.c2]["today"]["attempts"] == 0
     assert d["members_by_state"] == {"on_call": 1, "offline": 1}
     assert d["today"]["attempts"] == 2 and d["today"]["outcomes"] == {"connected": 1}
-    assert d["pool"]["size"] == 3 and d["pool"]["eligible_now"] == 1 and d["pool"]["excluded"] == {"in_call": 1,
-                                                                                                    "cooldown": 1}
+    # the case answered first is out for good (2026-10-24), not merely cooling down
+    assert d["pool"]["size"] == 3 and d["pool"]["eligible_now"] == 1 and d["pool"]["excluded"] == {
+        "in_call": 1, "answered_in_campaign": 1}
     assert d["outstanding_calls"] == 1 and d["all_time"] == {"attempts": 2, "uncertain": 0, "awaiting_wrapup": 0}
     assert d["poll_after_ms"] == 2000
 

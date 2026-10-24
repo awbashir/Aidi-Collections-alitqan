@@ -323,7 +323,7 @@ def test_every_exclusion_is_reported_and_never_offered(cp_app, client, auth, wor
     summary = in_app(cp_app, lambda s: P.summary(camp, [w.c1, w.c2]))
     assert summary["size"] == len(c) and summary["eligible_now"] == 1
     assert summary["excluded"] == {r: 1 for r in c if r != "eligible"}
-    assert summary["remaining_today"] == len(c) - len(P.HARD_REASONS)
+    assert summary["remaining_today"] == len(c) - len([r for r in c if r in P.HARD_REASONS])
     items = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(CP.super), query_string={"page_size": 50}
                        ).get_json()["data"]
     assert {i["case"]["id"]: i["reason"] for i in items["items"]} == {v: k for k, v in c.items()}

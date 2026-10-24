@@ -29,6 +29,13 @@ Members (the collector's side)
 Supervisor
   GET  /v2/campaigns/<id>/live             live view                   campaigns_manage
   GET  /v2/campaigns/<id>/pool             pool in dispatch order      campaigns_manage
+Customers (2026-10-24, services/calling/campaign_cases.py)
+  POST /v2/campaigns/<id>/cases/import     customer list from Excel    campaigns_manage
+                                           (multipart file + match_by + expected_revision [+ column])
+                                           or pasted ({values, match_by, expected_revision})
+  POST /v2/campaigns/<id>/cases/remove     take cases out by hand      campaigns_manage
+  POST /v2/campaigns/<id>/cases/restore    put them back               campaigns_manage
+  GET  /v2/campaigns/<id>/called           customers called (answered=) campaigns_manage
 
 No route talks to the PBX: a campaign call is authorized by the same code as POST /v2/calls and
 sent by the `calling` service.
@@ -38,10 +45,11 @@ from __future__ import annotations
 from flask import Blueprint, request
 from flask_jwt_extended import jwt_required
 
-from core.api_response import created, json_body, ok, register_api_errors
+from core.api_response import VALIDATION_FAILED, ApiError, created, json_body, ok, register_api_errors
 from core.idempotency import idempotent
-from core.revisions import expected_revision_from_request
+from core.revisions import expected_revision_from_request, parse_revision
 from services.calling import campaign as svc
+from services.calling import campaign_cases as cases_svc
 from services.calling.campaign import CAMPAIGNS, CAMPAIGNS_MANAGE
 from services.calling.common import page_args, permission_required
 
@@ -195,3 +203,56 @@ def live_view(campaign_id):
 def pool_view(campaign_id):
     page, size, offset = page_args()
     return ok(svc.pool_view(campaign_id, request.args, page, size, offset))
+
+
+# --------------------------------------------------------------------------- customers (2026-10-24)
+@bp.post("/v2/campaigns/<uuid:campaign_id>/cases/import")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+@idempotent()
+def import_cases(campaign_id):
+    upload = request.files.get("file")
+    if upload is not None:
+        try:
+            column = int(request.form.get("column") or 1)
+        except ValueError:
+            column = 0
+        values = cases_svc.values_from_file(upload, column)
+        match_by, source = request.form.get("match_by"), "excel"
+        # a multipart body has no JSON: the revision comes as a form field (or If-Match)
+        expected = request.form.get("expected_revision") or request.headers.get("If-Match")
+        try:
+            parse_revision(expected)
+        except ValueError:
+            raise ApiError(422, VALIDATION_FAILED, "expected_revision is required",
+                           {"expected_revision": "required" if expected is None else "invalid"}) from None
+    else:
+        body = json_body()
+        values, match_by, source = body.get("values"), body.get("match_by"), "paste"
+        expected = expected_revision_from_request()
+    out = cases_svc.import_cases(campaign_id, values=values, source=source, match_by=match_by, expected=expected)
+    return ok(out, "customers imported")
+
+
+@bp.post("/v2/campaigns/<uuid:campaign_id>/cases/remove")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+@idempotent()
+def remove_cases(campaign_id):
+    return ok(cases_svc.remove_cases(campaign_id, json_body(), expected_revision_from_request()), "customers removed")
+
+
+@bp.post("/v2/campaigns/<uuid:campaign_id>/cases/restore")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+@idempotent()
+def restore_cases(campaign_id):
+    return ok(cases_svc.restore_cases(campaign_id, json_body(), expected_revision_from_request()), "customers restored")
+
+
+@bp.get("/v2/campaigns/<uuid:campaign_id>/called")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+def called_customers(campaign_id):
+    page, size, offset = page_args()
+    return ok(cases_svc.called(campaign_id, request.args, page, size, offset))
