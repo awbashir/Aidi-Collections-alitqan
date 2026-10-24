@@ -6423,5 +6423,75 @@
         "too_many_accounts": "The client has too many accounts to apply the note to all of them; untick \"Apply to all the client's accounts\"."
       }
     }
+  },
+  "p12": {
+    "campcases": {
+      "source": {
+        "label": "Choose customers",
+        "filter": "By filter",
+        "list": "Customer list (Excel or pasted ids)",
+        "listHint": "After creating the campaign, open its Pool tab, upload an Excel file or paste national ids or account numbers, then review the list and remove anyone before you start."
+      },
+      "skipPaid": {
+        "label": "Skip customers with any approved payment",
+        "hint": "The campaign never calls an account with any approved payment, even a partial one. Pending, rejected and reversed payments do not count."
+      },
+      "import": {
+        "title": "Add customers to the campaign list",
+        "matchBy": "Match by",
+        "identity": "National ID",
+        "account": "Account number",
+        "identityHint": "Every account of the matching customer is added.",
+        "accountHint": "Only the matching account is added.",
+        "file": "Excel or CSV file",
+        "column": "Column",
+        "columnHint": "The column with the numbers (1 = first). A header row is ignored.",
+        "upload": "Upload file",
+        "paste": "Or paste numbers (one per line)",
+        "addPasted": "Add numbers",
+        "result": "{{matched}} of {{values}} values matched: {{added}} new accounts added.",
+        "restored": "{{count}} removed accounts were restored.",
+        "notFound": "Not found or outside your scope ({{count}}):",
+        "needOne": "Choose a file or paste at least one number",
+        "notList": "This campaign chooses its customers by filter. To add customers from a file, edit it and choose Customer list."
+      },
+      "remove": "Remove",
+      "restore": "Restore",
+      "removedOk": "Customer removed from the campaign",
+      "restoredOk": "Customer restored",
+      "counts": "List: {{listed}} accounts · removed by hand: {{removed}}",
+      "reason": {
+        "removed_by_user": "Removed by hand",
+        "customer_in_call": "Customer is in another call now",
+        "answered_in_campaign": "Answered in this campaign (not called again)",
+        "case_has_payment": "Has an approved payment"
+      },
+      "progress": {
+        "called": "Called",
+        "answered": "Answered",
+        "waiting": "In the queue",
+        "waitingHint": "Customers in the pool the campaign has not called yet and that are not excluded for good."
+      },
+      "calledTab": "Called",
+      "called": {
+        "all": "All",
+        "answered": "Answered",
+        "notAnswered": "Not answered",
+        "col": {
+          "attempts": "Attempts",
+          "answered": "Answered",
+          "lastCall": "Last call",
+          "lastResult": "Last result",
+          "agent": "Agent"
+        },
+        "yes": "Yes",
+        "no": "No",
+        "empty": "The campaign has not called anyone yet",
+        "rule": "A customer who answered is never called again by this campaign: not on their other accounts, not on the number that answered."
+      },
+      "col": {
+        "action": "Action"
+      }
+    }
   }
 }

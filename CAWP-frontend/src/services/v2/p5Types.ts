@@ -626,6 +626,10 @@ export type CampaignPool = {
     filter: Record<string, unknown>
     /** 2026-10-21: only cases with no collector (saved only when true) */
     unassigned_only?: boolean
+    /** 2026-10-24: the pool is the campaign's customer list (Excel / pasted ids) */
+    case_list?: boolean
+    /** 2026-10-24: no case with any approved payment */
+    skip_any_payment?: boolean
 }
 
 /** 2026-10-21: the number a campaign call dialled (`number` needs clints_details) and its place
@@ -653,6 +657,8 @@ export type Campaign = {
     stopped_at: Iso | null
     stop_reason: 'discarded' | 'stopped' | 'drained' | null
     members: { active: number; total: number }
+    /** 2026-10-24: customer-list size and hand removals */
+    cases?: { listed: number; removed: number }
     revision: number
     my_membership?: { active: boolean } | null
     my_readiness?: {
@@ -747,6 +753,10 @@ export type PoolSummary = {
     excluded: Record<string, number>
     evaluated_at: Iso
     cached?: boolean
+    /** 2026-10-24: the queue (never dialled, not excluded for good) and the customers called / that answered */
+    waiting?: number
+    called?: number
+    answered?: number
 }
 
 export type CampaignLive = {
@@ -787,6 +797,32 @@ export type PoolItem = {
 }
 
 export type PoolListing = Paged<PoolItem> & { summary: PoolSummary }
+
+/** 2026-10-24: POST /v2/campaigns/:id/cases/import */
+export type CaseImportResult = {
+    match_by: 'identity' | 'account'
+    values: number
+    matched_values: number
+    not_found_count: number
+    not_found: string[]
+    cases_matched: number
+    cases_added: number
+    cases_restored: number
+    revision: number
+}
+
+/** 2026-10-24: GET /v2/campaigns/:id/called */
+export type CalledItem = {
+    case: { id: string; name: string | null; account_number: string | null }
+    attempts: number
+    answered: boolean
+    last_call_at: Iso | null
+    last_state: string | null
+    last_reason: string | null
+    last_outcome: string | null
+    last_agent: UserRef | null
+}
+export type CalledListing = Paged<CalledItem> & { counts: { called: number; answered: number } }
 
 export type CampaignBody = {
     name?: string

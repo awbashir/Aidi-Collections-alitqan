@@ -11,8 +11,10 @@
  * authorizes and queues; the `calling` service sends it (AMI "Success" = submitted).
  */
 import BaseService from '../BaseService'
-import { V2Error, v2Get, v2Patch, v2Post, v2Put } from './http'
+import { V2Error, v2Get, v2Patch, v2Post, v2Put, v2Request } from './http'
 import type {
+    CalledListing,
+    CaseImportResult,
     CallDetail,
     CallList,
     CallQuery,
@@ -319,4 +321,30 @@ export const campaignsApi = {
 
     pool: (id: string, q: { reason?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
         v2Get<PoolListing>(`/v2/campaigns/${enc(id)}/pool`, q, signal),
+
+    /** 2026-10-24: add customers to a customer-list campaign, by national id OR account number. */
+    importCases: (
+        id: string,
+        body: { match_by: 'identity' | 'account'; expected_revision: number } & ({ values: string[] } | { file: File; column?: number }),
+        key: string
+    ) => {
+        if ('file' in body) {
+            const form = new FormData()
+            form.append('match_by', body.match_by)
+            form.append('expected_revision', String(body.expected_revision))
+            if (body.column) form.append('column', String(body.column))
+            form.append('file', body.file)
+            return v2Request<CaseImportResult>(`/v2/campaigns/${enc(id)}/cases/import`, { method: 'post', data: form, idempotencyKey: key })
+        }
+        return v2Post<CaseImportResult>(`/v2/campaigns/${enc(id)}/cases/import`, body, key)
+    },
+
+    removeCases: (id: string, body: { expected_revision: number; case_ids: string[]; reason?: string }, key: string) =>
+        v2Post<{ removed: string[]; revision: number }>(`/v2/campaigns/${enc(id)}/cases/remove`, body, key),
+
+    restoreCases: (id: string, body: { expected_revision: number; case_ids: string[]; reason?: string }, key: string) =>
+        v2Post<{ restored: string[]; revision: number }>(`/v2/campaigns/${enc(id)}/cases/restore`, body, key),
+
+    called: (id: string, q: { answered?: '0' | '1'; page?: number; page_size?: number }, signal?: AbortSignal) =>
+        v2Get<CalledListing>(`/v2/campaigns/${enc(id)}/called`, q, signal),
 }

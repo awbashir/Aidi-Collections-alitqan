@@ -18,6 +18,11 @@
  * combinable with the status filters (e.g. last status «لم يتم الرد»), not with a collector
  * filter. It grants nothing: such a case only goes to a member whose own scope contains it. A
  * promise recorded on such a call assigns the case to the agent who made it.
+ *
+ * Customer feedback 2026-10-24: "Choose customers" = by filter (the above) OR a customer list
+ * (`pool.case_list`: filled after creation from Excel or pasted national ids / account numbers on
+ * the detail's Pool tab, where the list is reviewed and customers removed before the start), and
+ * `pool.skip_any_payment` (on by default for a new campaign): no case with any approved payment.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -72,6 +77,10 @@ type Draft = {
     grid: { field: string; op: string; value: string }
     /** only cases with no collector (2026-10-21) */
     unassigned: boolean
+    /** 2026-10-24: by filter, or the campaign's customer list */
+    source: 'filter' | 'list'
+    /** 2026-10-24: no case with any approved payment */
+    skipPaid: boolean
     settings: CampaignSettings
     members: string[]
 }
@@ -94,12 +103,16 @@ const draftFrom = (c: Campaign | null, filter?: Record<string, unknown>): Draft 
         subStatuses,
         grid,
         unassigned: c?.pool.unassigned_only === true,
+        source: c?.pool.case_list ? 'list' : 'filter',
+        skipPaid: c ? c.pool.skip_any_payment === true : true,
         settings: { ...DEFAULT_SETTINGS, ...(c?.settings || {}) },
         members: [],
     }
 }
 
 const poolOf = (d: Draft): CampaignPool => {
+    const skip = d.skipPaid ? { skip_any_payment: true } : {}
+    if (d.source === 'list') return { contract_ids: [], portfolio_ids: [], filter: {}, case_list: true, ...skip }
     const filter: Record<string, unknown> = { ...d.filter }
     if (d.statuses.length) filter[STATUS_KEY] = d.statuses
     if (d.subStatuses.length) filter[SUB_STATUS_KEY] = d.subStatuses
@@ -110,7 +123,7 @@ const poolOf = (d: Draft): CampaignPool => {
         filter.filterFieldType = type
         filter.filterValue = d.grid.value.trim()
     }
-    return { contract_ids: d.contracts, portfolio_ids: d.portfolios, filter, ...(d.unassigned ? { unassigned_only: true } : {}) }
+    return { contract_ids: d.contracts, portfolio_ids: d.portfolios, filter, ...(d.unassigned ? { unassigned_only: true } : {}), ...skip }
 }
 
 const USER_KEY = 'customeFilterUserValue[]'
@@ -221,10 +234,15 @@ const CampaignForm = ({
     })
     const pool = poolOf(d)
     const hasCriterion =
-        pool.contract_ids.length > 0 || pool.portfolio_ids.length > 0 || Object.keys(pool.filter).length > 0 || pool.unassigned_only === true
+        pool.case_list === true ||
+        pool.contract_ids.length > 0 ||
+        pool.portfolio_ids.length > 0 ||
+        Object.keys(pool.filter).length > 0 ||
+        pool.unassigned_only === true
     /* unassigned cases have no collector: the API refuses the two together */
-    const unassignedConflict = d.unassigned && Array.isArray(d.filter[USER_KEY]) && (d.filter[USER_KEY] as unknown[]).length > 0
-    const gridIncomplete = !!(d.grid.field || d.grid.op || d.grid.value) && !(d.grid.field && d.grid.op && d.grid.value.trim())
+    const unassignedConflict = d.source === 'filter' && d.unassigned && Array.isArray(d.filter[USER_KEY]) && (d.filter[USER_KEY] as unknown[]).length > 0
+    const gridIncomplete =
+        d.source === 'filter' && !!(d.grid.field || d.grid.op || d.grid.value) && !(d.grid.field && d.grid.op && d.grid.value.trim())
     const canSubmit =
         d.name.trim().length > 0 && d.name.trim().length <= 200 && hasCriterion && settingsOk && !gridIncomplete && !unassignedConflict
 
@@ -268,6 +286,30 @@ const CampaignForm = ({
             </DialogField>
 
             <div className="text-eyebrow mb-2">{t('p5.cf.pool')}</div>
+            <DialogField label={t('p12.campcases.source.label')}>
+                <Segmented<'filter' | 'list'>
+                    value={d.source}
+                    onChange={(v) => setD({ ...d, source: v })}
+                    testId="p12-cf-source"
+                    label={String(t('p12.campcases.source.label'))}
+                    options={[
+                        { value: 'filter', label: t('p12.campcases.source.filter') },
+                        { value: 'list', label: t('p12.campcases.source.list') },
+                    ]}
+                />
+            </DialogField>
+            <div className="mb-3" data-testid="p12-cf-skip-paid">
+                <Checkbox checked={d.skipPaid} onChange={(checked: boolean) => setD({ ...d, skipPaid: checked })}>
+                    <span className="text-[13.5px] font-bold text-navy-600 dark:text-gray-100">{t('p12.campcases.skipPaid.label')}</span>
+                </Checkbox>
+                <div className="mt-1 text-[12px] text-gray-600">{t('p12.campcases.skipPaid.hint')}</div>
+            </div>
+            {d.source === 'list' ? (
+                <Notice tone="info" className="mb-3" testId="p12-cf-list-hint">
+                    {t('p12.campcases.source.listHint')}
+                </Notice>
+            ) : (
+            <>
             <div className="mb-3 text-[12.5px] text-gray-600">{t('p5.cf.poolHint')}</div>
             <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
                 <DialogField label={t('p5.cf.contracts')}>
@@ -398,6 +440,8 @@ const CampaignForm = ({
                     <Input size="sm" dir="auto" value={d.grid.value} onChange={(e) => setD({ ...d, grid: { ...d.grid, value: e.target.value } })} data-testid="p5-cf-grid-value" />
                 </DialogField>
             </div>
+            </>
+            )}
             {!hasCriterion && <Notice tone="warning" className="mb-3">{t('p5.cf.needCriterion')}</Notice>}
             <Notice tone="info" className="mb-4">
                 {t('p5.cf.scopeRule')}
