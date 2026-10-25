@@ -663,6 +663,9 @@ export type Campaign = {
     ends_at?: Iso | null
     /** 2026-10-25 (0087): an agent with no callable client of their own gets random pool clients of any owner */
     fill_random?: boolean
+    /** 2026-10-25 (0088): 'message' = the PBX dials the client and plays the uploaded message */
+    kind?: CampaignKind
+    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null } | null
     revision: number
     my_membership?: { active: boolean } | null
     my_readiness?: {
@@ -740,6 +743,8 @@ export type MyCampaignStatus = {
     attempt: LiveCall | null
     heartbeat_after_ms: number
     poll_after_ms: number
+    /** 2026-10-25 (0088): the client a message campaign transferred to me (key 1) */
+    message_transfer?: MessageTransfer | null
     dispatch?: {
         attempt_id?: string
         case_id?: string
@@ -773,6 +778,8 @@ export type CampaignLive = {
     all_time: { attempts: number; uncertain: number; awaiting_wrapup: number }
     outstanding_calls: number
     poll_after_ms: number
+    /** 2026-10-25 (0088): message campaigns only */
+    messages?: MessageSummary | null
 }
 
 export type RosterItem = {
@@ -828,6 +835,64 @@ export type CalledItem = {
 }
 export type CalledListing = Paged<CalledItem> & { counts: { called: number; answered: number } }
 
+/* ------------------------------------------------------------------ message campaigns (0088) */
+export type CampaignKind = 'agent' | 'message'
+export type MessageNoteResult = 'no_agent' | 'closed' | 'no_choice'
+export type MessageNotes = Partial<Record<MessageNoteResult, { status_id: string; sub_status_id: string | null }>> & {
+    contact_method_id?: string
+}
+export type SoundKind = 'message' | 'callback' | 'goodbye'
+export type CampaignSound = {
+    kind: SoundKind
+    name: string | null
+    duration_seconds: number
+    size: number
+    uploaded_at: Iso | null
+    installed_at: Iso | null
+    installed: boolean
+    pbx_error?: string | null
+}
+export type MessageCallResult =
+    | 'no_answer' | 'busy' | 'unavailable' | 'congestion' | 'failed' | 'denied' | 'no_trunk' | 'hung_up'
+    | 'no_choice' | 'closed' | 'no_agent' | 'transferred' | 'unknown'
+export type MessageCallState = 'sending' | 'dialing' | 'answered' | 'transferring' | 'talking' | 'ended' | 'failed' | 'uncertain'
+export type MessageCall = {
+    id: string
+    case: { id: string; name: string | null; account_number: string | null }
+    state: MessageCallState
+    result: MessageCallResult | null
+    key: string | null
+    dial_status: string | null
+    member: UserRef | null
+    recording: string | null
+    note_id: string | null
+    reason_code: string | null
+    created_at: Iso
+    answered_at: Iso | null
+    member_answered_at: Iso | null
+    ended_at: Iso | null
+}
+export type MessageSummary = {
+    now: { dialing: number; listening: number; transferring: number; talking: number }
+    uncertain: number
+    calls: number
+    clients_called: number
+    clients_answered: number
+    results: Partial<Record<MessageCallResult, number>>
+    waiting: number
+    max_concurrent: number
+    sounds: CampaignSound[]
+}
+export type MessageTransfer = {
+    call_id: string
+    case: { id: string; name: string | null; account_number: string | null }
+    state: MessageCallState
+    result: MessageCallResult | null
+    transferred_at: Iso | null
+    answered_at: Iso | null
+    ended_at: Iso | null
+}
+
 export type CampaignBody = {
     name?: string
     pool?: CampaignPool
@@ -835,6 +900,10 @@ export type CampaignBody = {
     member_ids?: string[]
     ends_at?: string | null
     fill_random?: boolean
+    kind?: CampaignKind
+    max_concurrent?: number
+    message_transfer?: boolean
+    message_notes?: MessageNotes | null
 }
 
 /* ------------------------------------------------------------------ PBX evidence (P4) */

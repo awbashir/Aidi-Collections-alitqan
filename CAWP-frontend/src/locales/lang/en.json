@@ -6503,6 +6503,122 @@
         "hint": "An agent with no client of their own left gets random clients from the campaign's list, even if assigned to another collector. A promise to pay moves that client to them.",
         "short": "Random fill"
       }
+    },
+    "msg": {
+      "kind": {
+        "label": "Campaign type",
+        "agent": "Agents call",
+        "message": "Automatic voice message",
+        "badge": "Message campaign",
+        "hint": {
+          "agent": "The agent's phone rings first, then the client is dialled (as usual).",
+          "message": "The system dials the client and plays the recorded message when they answer: 1 = an agent, 2 = close. Upload the messages after creating the campaign."
+        }
+      },
+      "maxConcurrent": "Calls at the same time",
+      "maxConcurrentHint": "1 to 20 (the lines are shared with the agents; start small).",
+      "transfer": "Pressing 1 transfers the client to a free agent",
+      "transferHint": "A ready member's phone rings, with hold music for up to 60 s; if nobody is free the callback message plays and it is recorded.",
+      "notes": "Note recorded on the client for each result",
+      "notesHint": "Pick a status per result; a result without a status records no note.",
+      "noteFor": {
+        "no_agent": "Asked for an agent, none free",
+        "closed": "Chose to close (2)",
+        "no_choice": "Listened, no choice"
+      },
+      "contactMethod": "Contact method for the notes",
+      "sound": {
+        "title": "Voice messages",
+        "uploaded": "Message uploaded",
+        "required": "required",
+        "seconds": "{{n}} s",
+        "none": "Not uploaded",
+        "installed": "Installed on the PBX",
+        "notInstalled": "Not installed on the PBX",
+        "replace": "Replace",
+        "upload": "Upload",
+        "listen": "Listen",
+        "remove": "Remove",
+        "pauseFirst": "Pause the campaign to change its messages.",
+        "formats": "WAV or MP3, up to 2 minutes. Converted to the PBX format automatically.",
+        "col": {
+          "kind": "Message",
+          "file": "File",
+          "pbx": "PBX"
+        },
+        "kind": {
+          "message": "Message",
+          "callback": "Call-back",
+          "goodbye": "Goodbye"
+        },
+        "hint": {
+          "message": "Played when the client answers (twice at most)",
+          "callback": "When no agent is free after 1",
+          "goodbye": "After 2 (optional)"
+        }
+      },
+      "live": {
+        "title": "Message calls",
+        "dialing": "Dialling now",
+        "listening": "Listening",
+        "transferring": "Transferring",
+        "talking": "Talking to an agent",
+        "calls": "All calls",
+        "results": "Results",
+        "uncertain": "Uncertain calls: {{n}}",
+        "soundsMissing": "Some messages are not installed on the PBX; calls will not start."
+      },
+      "result": {
+        "no_answer": "No answer",
+        "busy": "Busy",
+        "unavailable": "Unavailable",
+        "congestion": "Phone off or unreachable",
+        "failed": "Could not call",
+        "denied": "Refused before dialling",
+        "no_trunk": "No line available",
+        "hung_up": "Client hung up",
+        "no_choice": "Listened, no choice",
+        "closed": "Chose to close (2)",
+        "no_agent": "Asked for an agent, none free",
+        "transferred": "Transferred to an agent",
+        "unknown": "Unknown"
+      },
+      "state": {
+        "sending": "Sending",
+        "dialing": "Dialling",
+        "answered": "Listening",
+        "transferring": "Transferring",
+        "talking": "Talking to an agent",
+        "ended": "Ended",
+        "failed": "Failed",
+        "uncertain": "Uncertain"
+      },
+      "calls": {
+        "result": "Result",
+        "when": "Time",
+        "state": "State",
+        "key": "Key",
+        "member": "Agent",
+        "empty": "The campaign has not called anyone yet",
+        "rule": "A client who answered is not called again by this campaign."
+      },
+      "part": {
+        "title": "Client transferred to you",
+        "rule": "Message campaign: the system dials the clients itself. Stay Ready so your phone rings when a client presses 1.",
+        "state": {
+          "ringing": "Ringing now",
+          "talking": "In a call",
+          "ended": "Call ended"
+        },
+        "open": "Open the client's page",
+        "waiting": "Ready to take transferred clients",
+        "notRunning": "The campaign is not running"
+      },
+      "err": {
+        "sounds_missing": "Upload the required messages and install them on the PBX before starting (the message, and the callback message when transfer is on).",
+        "message_campaign": "A message campaign dials the clients itself; stay ready to take a transferred client.",
+        "not_a_message_campaign": "This is not a message campaign."
+      }
     }
   }
 }

@@ -13,6 +13,9 @@
 import BaseService from '../BaseService'
 import { V2Error, v2Get, v2Patch, v2Post, v2Put, v2Request } from './http'
 import type {
+    CampaignSound,
+    MessageCall,
+    SoundKind,
     CalledListing,
     CaseImportResult,
     CallDetail,
@@ -347,4 +350,26 @@ export const campaignsApi = {
 
     called: (id: string, q: { answered?: '0' | '1'; page?: number; page_size?: number }, signal?: AbortSignal) =>
         v2Get<CalledListing>(`/v2/campaigns/${enc(id)}/called`, q, signal),
+
+    /* 2026-10-25 (0088): message campaigns */
+    sounds: (id: string, signal?: AbortSignal) =>
+        v2Get<{ items: CampaignSound[] }>(`/v2/campaigns/${enc(id)}/sounds`, undefined, signal),
+
+    uploadSound: (id: string, kind: SoundKind, file: File, key: string) => {
+        const form = new FormData()
+        form.append('file', file)
+        return v2Request<CampaignSound>(`/v2/campaigns/${enc(id)}/sounds/${enc(kind)}`, { method: 'post', data: form, idempotencyKey: key })
+    },
+
+    deleteSound: (id: string, kind: SoundKind, key: string) =>
+        v2Request<{ kind: SoundKind; deleted: boolean }>(`/v2/campaigns/${enc(id)}/sounds/${enc(kind)}`, { method: 'delete', idempotencyKey: key }),
+
+    /** The converted WAV as an object URL for an <audio> preview (the caller revokes it). */
+    soundUrl: async (id: string, kind: SoundKind) => {
+        const res = await BaseService({ url: `/v2/campaigns/${enc(id)}/sounds/${enc(kind)}/audio`, method: 'get', responseType: 'blob' })
+        return URL.createObjectURL(res.data as Blob)
+    },
+
+    messageCalls: (id: string, q: { result?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+        v2Get<Paged<MessageCall>>(`/v2/campaigns/${enc(id)}/message-calls`, q, signal),
 }

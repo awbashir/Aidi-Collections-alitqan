@@ -26,6 +26,9 @@
  * 2026-10-25 (0087): an end date and time (Asia/Riyadh; the campaign drains and stops by itself
  * then) and random fill (an agent with no callable client of their own gets random clients of the
  * campaign, any owner; a promise moves such a client to them).
+ * 2026-10-25 (0088): the campaign kind (create only): agent, or message (the PBX dials the client and
+ * plays the uploaded message; 1 = a free member, 2 = close): calls at once, key 1 on/off, and the
+ * note status recorded for each result (no agent free, closed, no choice) with its contact method.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -35,7 +38,17 @@ import Select from '@/components/ui/Select'
 import ActionDialog, { DialogField } from '@/components/v2/ActionDialog'
 import { Segmented } from '@/views/phase1/followUps/parts'
 import { campaignsApi, describeP5Error, isV2Error, lookups } from '@/services/v2'
-import type { Campaign, CampaignPool, CampaignSettings, CommentStatusOption, Option, Translate } from '@/services/v2'
+import type {
+    Campaign,
+    CampaignKind,
+    CampaignPool,
+    CampaignSettings,
+    CommentStatusOption,
+    MessageNoteResult,
+    MessageNotes,
+    Option,
+    Translate,
+} from '@/services/v2'
 import { Notice } from '../parts'
 import PoolFilterChips, { usePoolNames } from './PoolFilterChips'
 import {
@@ -87,6 +100,12 @@ type Draft = {
     /** 2026-10-25: end date-time in Riyadh wall clock ("YYYY-MM-DDTHH:mm"), '' = no limit */
     endsAt: string
     fillRandom: boolean
+    /** 2026-10-25 (0088) */
+    kind: CampaignKind
+    maxConcurrent: number
+    transfer: boolean
+    notes: Record<MessageNoteResult, { status: string; sub: string }>
+    contactMethod: string
     settings: CampaignSettings
     members: string[]
 }
@@ -113,9 +132,28 @@ const draftFrom = (c: Campaign | null, filter?: Record<string, unknown>): Draft 
         skipPaid: c ? c.pool.skip_any_payment === true : true,
         endsAt: c?.ends_at ? toRiyadhLocal(c.ends_at) : '',
         fillRandom: c?.fill_random === true,
+        kind: c?.kind || 'agent',
+        maxConcurrent: c?.message?.max_concurrent ?? 5,
+        transfer: c?.message?.transfer ?? true,
+        notes: Object.fromEntries(
+            NOTE_RESULTS.map((r) => [r, { status: c?.message?.notes?.[r]?.status_id || '', sub: c?.message?.notes?.[r]?.sub_status_id || '' }])
+        ) as Draft['notes'],
+        contactMethod: c?.message?.notes?.contact_method_id || '',
         settings: { ...DEFAULT_SETTINGS, ...(c?.settings || {}) },
         members: [],
     }
+}
+
+const NOTE_RESULTS: MessageNoteResult[] = ['no_agent', 'closed', 'no_choice']
+
+/** The message_notes the API takes (a result without a status records no note). */
+const notesOf = (d: Draft): MessageNotes | null => {
+    const out: MessageNotes = {}
+    NOTE_RESULTS.forEach((r) => {
+        if (d.notes[r].status) out[r] = { status_id: d.notes[r].status, sub_status_id: d.notes[r].sub || null }
+    })
+    if (Object.keys(out).length === 0) return null
+    return { ...out, contact_method_id: d.contactMethod || undefined }
 }
 
 /** ISO instant -> "YYYY-MM-DDTHH:mm" on the Riyadh wall clock (UTC+3, no DST). */
@@ -203,6 +241,7 @@ const CampaignForm = ({
     const portfolios = useOptions(lookups.portfolios as () => Promise<Option[]>, isOpen)
     const users = useOptions(lookups.users, isOpen && !campaign)
     const noteStatuses = useOptions(lookups.commentStatuses as () => Promise<Option[]>, isOpen)
+    const contactMethods = useOptions(lookups.contactMethods, isOpen)
     const statusList = noteStatuses.options as CommentStatusOption[]
     const names = usePoolNames(isOpen)
     /* my scope's contracts: null = every contract (also while unknown: the API is the authority) */
@@ -241,10 +280,16 @@ const CampaignForm = ({
         d.statuses.length > 1 && o.parent_id ? `${statusLabel(o.parent_id)} › ${o.label}` : o.label
     const picked = (list: string[], label: (id: string) => string) => list.map((id) => ({ value: id, label: label(id) }))
     const gridType = GRID_FIELDS.find((g) => g.value === d.grid.field)?.type
+    const isMessage = d.kind === 'message'
     const settingsOk = (Object.keys(LIMITS) as Array<keyof typeof LIMITS>).every((k) => {
         const v = d.settings[k]
         return Number.isInteger(v) && v >= LIMITS[k][0] && v <= LIMITS[k][1]
     })
+    const notes = notesOf(d)
+    const messageOk =
+        !isMessage ||
+        (Number.isInteger(d.maxConcurrent) && d.maxConcurrent >= 1 && d.maxConcurrent <= 20 && (!notes || !!d.contactMethod))
+    const mainStatuses = statusList.filter((o) => !o.parent_id)
     const pool = poolOf(d)
     const hasCriterion =
         pool.case_list === true ||
@@ -264,7 +309,8 @@ const CampaignForm = ({
         settingsOk &&
         !gridIncomplete &&
         !unassignedConflict &&
-        !endsAtPast
+        !endsAtPast &&
+        messageOk
 
     const setSetting = <K extends keyof CampaignSettings>(k: K, v: CampaignSettings[K]) => setD((x) => ({ ...x, settings: { ...x.settings, [k]: v } }))
     const numberField = (k: keyof typeof LIMITS, label: string, hint: string) => (
@@ -295,10 +341,11 @@ const CampaignForm = ({
             onClose={onClose}
             onSubmit={async (key) => {
                 const settings = { ...d.settings }
-                const extra = { ends_at: d.endsAt ? fromRiyadhLocal(d.endsAt) : null, fill_random: d.fillRandom }
+                const msg = isMessage ? { max_concurrent: d.maxConcurrent, message_transfer: d.transfer, message_notes: notes } : {}
+                const extra = { ends_at: d.endsAt ? fromRiyadhLocal(d.endsAt) : null, ...(isMessage ? {} : { fill_random: d.fillRandom }), ...msg }
                 const res = campaign
                     ? await campaignsApi.update(campaign.id, { expected_revision: campaign.revision, name: d.name.trim(), pool, settings, ...extra }, key)
-                    : await campaignsApi.create({ name: d.name.trim(), pool, settings, member_ids: d.members, ...extra }, key)
+                    : await campaignsApi.create({ name: d.name.trim(), pool, settings, member_ids: d.members, kind: d.kind, ...extra }, key)
                 onSaved(res)
             }}
         >
@@ -306,6 +353,20 @@ const CampaignForm = ({
                 <Input size="sm" value={d.name} maxLength={200} onChange={(e) => setD({ ...d, name: e.target.value })} data-testid="p5-cf-name" />
             </DialogField>
 
+            {!campaign && (
+                <DialogField label={t('p12.msg.kind.label')} hint={t(`p12.msg.kind.hint.${d.kind}`)}>
+                    <Segmented<CampaignKind>
+                        value={d.kind}
+                        onChange={(v) => setD({ ...d, kind: v, fillRandom: v === 'message' ? false : d.fillRandom })}
+                        testId="p12-cf-kind"
+                        label={String(t('p12.msg.kind.label'))}
+                        options={[
+                            { value: 'agent', label: t('p12.msg.kind.agent') },
+                            { value: 'message', label: t('p12.msg.kind.message') },
+                        ]}
+                    />
+                </DialogField>
+            )}
             <div className="text-eyebrow mb-2">{t('p5.cf.pool')}</div>
             <DialogField label={t('p12.campcases.source.label')}>
                 <Segmented<'filter' | 'list'>
@@ -331,12 +392,14 @@ const CampaignForm = ({
                     />
                     {endsAtPast && <div className="mt-1 text-[12px] text-danger">{t('p12.campcases.endsAt.past')}</div>}
                 </DialogField>
+                {!isMessage && (
                 <div className="mb-3 pt-6" data-testid="p12-cf-fill">
                     <Checkbox checked={d.fillRandom} onChange={(checked: boolean) => setD({ ...d, fillRandom: checked })}>
                         <span className="text-[13.5px] font-bold text-navy-600 dark:text-gray-100">{t('p12.campcases.fill.label')}</span>
                     </Checkbox>
                     <div className="mt-1 text-[12px] text-gray-600">{t('p12.campcases.fill.hint')}</div>
                 </div>
+                )}
             </div>
             <div className="mb-3" data-testid="p12-cf-skip-paid">
                 <Checkbox checked={d.skipPaid} onChange={(checked: boolean) => setD({ ...d, skipPaid: checked })}>
@@ -488,6 +551,80 @@ const CampaignForm = ({
             </Notice>
 
             <div className="text-eyebrow mb-2">{t('p5.cf.settings')}</div>
+            {isMessage ? (
+                <div data-testid="p12-cf-message">
+                    <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
+                        <DialogField label={t('p12.msg.maxConcurrent')} required hint={t('p12.msg.maxConcurrentHint')}>
+                            <Input
+                                size="sm"
+                                dir="ltr"
+                                inputMode="numeric"
+                                value={Number.isNaN(d.maxConcurrent) ? '' : String(d.maxConcurrent)}
+                                onChange={(e) => {
+                                    const raw = e.target.value.replace(/[^0-9]/g, '').slice(0, 2)
+                                    setD({ ...d, maxConcurrent: raw === '' ? NaN : Number(raw) })
+                                }}
+                                data-testid="p12-cf-max-concurrent"
+                            />
+                        </DialogField>
+                        <div className="mb-3 pt-6" data-testid="p12-cf-transfer">
+                            <Checkbox checked={d.transfer} onChange={(checked: boolean) => setD({ ...d, transfer: checked })}>
+                                <span className="text-[13.5px] font-bold text-navy-600 dark:text-gray-100">{t('p12.msg.transfer')}</span>
+                            </Checkbox>
+                            <div className="mt-1 text-[12px] text-gray-600">{t('p12.msg.transferHint')}</div>
+                        </div>
+                        {numberField('max_attempts_per_day', String(t('p5.cf.maxAttempts')), String(t('p5.cf.maxAttemptsHint')))}
+                        {numberField('cooldown_minutes', String(t('p5.cf.cooldown')), String(t('p5.cf.cooldownHint')))}
+                    </div>
+                    <div className="mb-1 text-[12.5px] font-extrabold text-navy-600 dark:text-gray-100">{t('p12.msg.notes')}</div>
+                    <div className="mb-2 text-[12px] text-gray-600">{t('p12.msg.notesHint')}</div>
+                    {NOTE_RESULTS.map((r) => {
+                        const subs = statusList.filter((o) => o.parent_id && o.parent_id === d.notes[r].status)
+                        const setNote = (patch: Partial<{ status: string; sub: string }>) =>
+                            setD({ ...d, notes: { ...d.notes, [r]: { ...d.notes[r], ...patch } } })
+                        return (
+                            <div key={r} className="grid grid-cols-1 gap-x-3 sm:grid-cols-2" data-testid={`p12-cf-note-${r}`}>
+                                <DialogField label={t(`p12.msg.noteFor.${r}`)}>
+                                    <Select
+                                        size="sm"
+                                        menuPosition="fixed"
+                                        isClearable
+                                        isLoading={noteStatuses.loading}
+                                        options={mainStatuses}
+                                        value={mainStatuses.find((o) => o.value === d.notes[r].status) || null}
+                                        onChange={(o) => setNote({ status: (o as Option | null)?.value || '', sub: '' })}
+                                    />
+                                </DialogField>
+                                <DialogField label={t('p9.campaign.subStatus')}>
+                                    <Select
+                                        size="sm"
+                                        menuPosition="fixed"
+                                        isClearable
+                                        isDisabled={subs.length === 0}
+                                        options={subs}
+                                        value={subs.find((o) => o.value === d.notes[r].sub) || null}
+                                        onChange={(o) => setNote({ sub: (o as Option | null)?.value || '' })}
+                                    />
+                                </DialogField>
+                            </div>
+                        )
+                    })}
+                    <DialogField label={t('p12.msg.contactMethod')} required={!!notes}>
+                        <div data-testid="p12-cf-contact-method">
+                            <Select
+                                size="sm"
+                                menuPosition="fixed"
+                                isClearable
+                                isLoading={contactMethods.loading}
+                                options={contactMethods.options}
+                                value={contactMethods.options.find((o) => o.value === d.contactMethod) || null}
+                                onChange={(o) => setD({ ...d, contactMethod: (o as Option | null)?.value || '' })}
+                            />
+                        </div>
+                    </DialogField>
+                </div>
+            ) : (
+            <>
             <DialogField label={t('p5.cf.nextMode')} hint={t(`p5.cf.nextModeHint.${d.settings.next_mode}`)}>
                 <Segmented<'auto' | 'manual'>
                     value={d.settings.next_mode}
@@ -506,6 +643,8 @@ const CampaignForm = ({
                 {numberField('lease_seconds', String(t('p5.cf.lease')), String(t('p5.cf.leaseHint')))}
             </div>
             <div className="mb-3 text-[12px] text-gray-600">{t('p5.cf.progressive')}</div>
+            </>
+            )}
 
             {!campaign && (
                 <>

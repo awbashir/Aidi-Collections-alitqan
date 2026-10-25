@@ -42,6 +42,7 @@ import { formatCount } from '@/utils/v2/format'
 import { CallStateBadge, CampaignStatusBadge, Card, CaseCell, Fact, MemberStateBadge, Notice, OutcomeBadge } from '../parts'
 import { memberReason, poolReason } from '../labels'
 import { CalledTab, CaseImport } from './CampaignCustomers'
+import { MessageCallsTab, MessageSummaryCard, SoundsCard } from './CampaignMessages'
 import CampaignForm from './CampaignForm'
 import CampaignReport from './CampaignReport'
 import PoolFilterChips, { usePoolNames } from './PoolFilterChips'
@@ -281,6 +282,7 @@ const LiveTab = ({ campaignId, onCampaign }: { campaignId: string; onCampaign: (
                 </div>
             </Card>
 
+            {live.messages && <MessageSummaryCard summary={live.messages} />}
             <Card title={t('p5.cd.pool')} testId="p5-cd-pool-summary">
                 <div className="grid grid-cols-3 gap-3">
                     <Fact label={t('p5.cd.poolSize')} testId="p5-cd-pool-size">{formatCount(live.pool.size)}</Fact>
@@ -394,6 +396,7 @@ const PoolTab = ({
     }
     return (
         <div data-testid="p5-cd-pool">
+            {campaign.kind === 'message' && <SoundsCard campaign={campaign} onChanged={onChanged} />}
             {campaign.pool.case_list && editable && <CaseImport campaign={campaign} onImported={onChanged} />}
             {campaign.cases && (campaign.pool.case_list || campaign.cases.removed > 0) && (
                 <div className="mb-2 text-[12.5px] text-gray-600" data-testid="p12-cd-case-counts">
@@ -736,6 +739,14 @@ const CampaignDetail = () => {
                     <h3 className="mb-0 flex flex-wrap items-center gap-2 text-[20px] font-extrabold text-navy-600 dark:text-gray-100">
                         <span dir="auto">{campaign.name}</span>
                         <CampaignStatusBadge status={status} />
+                        {campaign.kind === 'message' && (
+                            <span
+                                className="rounded-md bg-azure-50 px-2 py-0.5 text-[12px] font-extrabold text-azure-600 dark:bg-night-panel"
+                                data-testid="p12-cd-kind-message"
+                            >
+                                {t('p12.msg.kind.badge')}
+                            </span>
+                        )}
                     </h3>
                     <div className="mt-1 text-[12.5px] text-gray-600">
                         {t(`p5.campaign.mode.${campaign.settings.next_mode}`)} · {t('p5.cd.membersN', { active: campaign.members.active, total: campaign.members.total })}
@@ -798,7 +809,12 @@ const CampaignDetail = () => {
             {state.tab === 'pool' && (
                 <PoolTab campaign={campaign} reason={state.reason} page={state.page} onState={(p) => setState(p)} onChanged={q.reload} />
             )}
-            {state.tab === 'called' && <CalledTab campaignId={campaign.id} page={state.page} onState={(p) => setState(p)} />}
+            {state.tab === 'called' &&
+                (campaign.kind === 'message' ? (
+                    <MessageCallsTab campaignId={campaign.id} page={state.page} onState={(p) => setState(p)} />
+                ) : (
+                    <CalledTab campaignId={campaign.id} page={state.page} onState={(p) => setState(p)} />
+                ))}
             {state.tab === 'roster' && <RosterTab campaign={campaign} onChanged={q.reload} />}
             {state.tab === 'settings' && <SettingsTab campaign={campaign} />}
             {state.tab === 'report' && <CampaignReport campaign={campaign} />}
