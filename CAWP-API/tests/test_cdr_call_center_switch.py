@@ -41,7 +41,7 @@ def _read(monkeypatch, call_center: bool):
     monkeypatch.setattr(cdr, "_connect", lambda: FakeConn(executed))
     lo = _dt.datetime(2026, 10, 1, tzinfo=_dt.timezone.utc)
     cdr.fetch(lo, lo + _dt.timedelta(days=1), fresh=True)
-    return executed
+    return [q for q in executed if not q.lstrip().startswith("SHOW")]       # the cached CDR schema check
 
 
 def test_call_center_query_skipped_when_off(monkeypatch):
@@ -52,3 +52,29 @@ def test_call_center_query_skipped_when_off(monkeypatch):
 def test_call_center_query_kept_by_default(monkeypatch):
     sql = _read(monkeypatch, call_center=True)
     assert len(sql) == 2 and "call_center.calls" in sql[1]
+
+
+def test_asterisk11_cdr_window_is_bounded_by_the_indexed_uniqueid(monkeypatch):
+    """2026-10-25 (PBX CPU): Issabel's cdr has no calldate index; without a linkedid column the
+    window is also bounded by uniqueid (epoch seconds, an hour wider each side), joined
+    recordings go through the indexed id_call_outgoing and keep the uniqueid equality."""
+    calls = []
+
+    class Cur(FakeCursor):
+        def execute(self, sql, params=None):
+            calls.append((sql, params))
+
+    class Conn(FakeConn):
+        def cursor(self, dictionary=False):
+            return Cur(self.log)
+
+    monkeypatch.setattr(Config, "CDR_CALL_CENTER", True)
+    monkeypatch.setattr(cdr, "_connect", lambda: Conn([]))
+    monkeypatch.setattr(cdr, "_EPOCH_UNIQUEID", {})
+    lo = _dt.datetime(2026, 10, 1, tzinfo=_dt.timezone.utc)
+    cdr.fetch(lo, lo + _dt.timedelta(days=1), fresh=True)
+    select = [c for c in calls if "asteriskcdrdb.cdr" in c[0] and c[0].lstrip().startswith("SELECT")][0]
+    assert "uniqueid >= %s AND uniqueid < %s AND calldate >= %s" in select[0]
+    assert select[1][:2] == (str(int(lo.timestamp()) - 3600), str(int(lo.timestamp()) + 86400 + 3600))
+    cc = [c for c in calls if "call_center.calls" in c[0]][0][0]
+    assert "cr.id_call_outgoing = c.id AND cr.uniqueid = c.uniqueid" in cc
