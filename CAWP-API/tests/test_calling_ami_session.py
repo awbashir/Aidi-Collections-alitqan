@@ -383,6 +383,20 @@ def test_read_identity(fake):
         f2.close()
 
 
+def test_identity_refused_while_asterisk_is_still_booting():
+    """2026-10-25: before Asterisk is fully booted CoreStatus reports a 1970 startup time; such a
+    session must not record the epoch `none@1970-...` (the supervisor reconnects instead)."""
+    f = FakeAmi(epoch="missing", startup=("1970-01-01", "03:00:00"))
+    try:
+        s = session(f)
+        with pytest.raises(AmiError) as e:
+            read_identity(s)
+        assert e.value.code == "pbx_not_booted"
+        s.close()
+    finally:
+        f.close()
+
+
 def test_identity_comparison():
     a = PbxIdentity("11111111-1111-4111-8111-111111111111", "2026-09-24T05:00:00")
     assert a.same_process(PbxIdentity("11111111-1111-4111-8111-111111111111", "2026-09-24T05:00:00", "later"))

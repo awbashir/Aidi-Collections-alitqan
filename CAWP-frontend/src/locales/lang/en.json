@@ -3203,7 +3203,7 @@
       "agent_hung_up": "You hung up",
       "customer_busy": "The customer's line was busy",
       "customer_no_answer": "The customer did not answer",
-      "customer_congestion": "The network was congested",
+      "customer_congestion": "Customer's phone is off or unreachable",
       "customer_unavailable": "The customer's number was unavailable",
       "agent_hung_up_while_ringing": "You hung up while the customer's phone rang",
       "not_bridged": "The legs were never bridged: no conversation",

@@ -3501,7 +3501,7 @@
       "agent_hung_up": "أنهيت المكالمة",
       "customer_busy": "كان خط العميل مشغولاً",
       "customer_no_answer": "لم يرد العميل",
-      "customer_congestion": "الشبكة مزدحمة",
+      "customer_congestion": "هاتف العميل مغلق أو غير متاح",
       "customer_unavailable": "رقم العميل غير متاح",
       "agent_hung_up_while_ringing": "أنهيت المكالمة بينما كان هاتف العميل يرن",
       "not_bridged": "لم يُربط الطرفان: لا توجد محادثة",

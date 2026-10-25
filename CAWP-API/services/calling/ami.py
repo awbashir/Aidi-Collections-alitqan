@@ -788,9 +788,18 @@ class PbxIdentity:
         return other is not None and self.epoch == other.epoch and self.strength != "unknown"
 
 
+MIN_STARTUP_YEAR = 2000
+
+
 def read_identity(session: AmiSession) -> PbxIdentity:
     """Getvar of the epoch global + CoreStatus. A missing/malformed epoch UUID is recorded
-    as missing (strength `startup_only`), never invented."""
+    as missing (strength `startup_only`), never invented.
+
+    2026-10-25: Asterisk sets its startup time only when it is FULLY BOOTED (it reports
+    1970-01-01 before that, and the dialplan globals are not loaded yet). A session opened while
+    the PBX is still booting (the calling service reconnected a minute before Asterisk was ready
+    after a reboot and kept the epoch `none@1970-01-01T03:00:00` for the day) is refused with
+    `pbx_not_booted`, so the supervisor reconnects with backoff until the PBX is ready."""
     epoch_uuid = None
     frame = session.send("Getvar", [("Variable", f"GLOBAL({EPOCH_VARIABLE})")])
     if frame.response == "Success":
@@ -803,6 +812,8 @@ def read_identity(session: AmiSession) -> PbxIdentity:
         d, t = status.get("CoreStartupDate"), status.get("CoreStartupTime")
         if d and t and re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) and re.fullmatch(r"\d{2}:\d{2}:\d{2}", t):
             startup = f"{d}T{t}"
+            if int(d[:4]) < MIN_STARTUP_YEAR:
+                raise AmiError("pbx_not_booted", "The PBX is still starting")
         rd, rt = status.get("CoreReloadDate"), status.get("CoreReloadTime")
         if rd and rt:
             reload = f"{rd}T{rt}"
