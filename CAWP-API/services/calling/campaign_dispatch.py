@@ -399,8 +399,13 @@ def outstanding_calls(session, campaign_id) -> int:
 
 
 def finish_drain(session, campaign_id, *, audit_kw=None) -> bool:
-    """draining -> stopped once every campaign call ended and was wrapped up (or released)."""
+    """draining -> stopped once every campaign call ended and was wrapped up (or released), and
+    (message campaigns, 0088) no message call is live."""
     if outstanding_calls(session, campaign_id):
+        return False
+    if session.execute(text("""SELECT EXISTS (SELECT 1 FROM message_calls WHERE campaign_id = CAST(:c AS uuid)
+                                  AND state IN ('sending', 'dialing', 'answered', 'transferring', 'talking'))"""),
+                       {"c": str(campaign_id)}).scalar():
         return False
     row = session.execute(text("""
         UPDATE campaigns SET status = 'stopped', stopped_at = now(), stop_reason = 'drained'
@@ -528,10 +533,10 @@ class CampaignDispatcher(threading.Thread):
         self.last_tick_at = time.time()
         for cid in self._tx(expire_campaigns):
             log.info("campaign %s reached its end time -> draining", cid)
-        ids = self._tx(lambda s: [str(r[0]) for r in s.execute(text(
-            "SELECT id FROM campaigns WHERE status IN ('running', 'draining') ORDER BY created_at, id")).all()])
+        rows = self._tx(lambda s: [(str(r[0]), r[1]) for r in s.execute(text(
+            "SELECT id, kind FROM campaigns WHERE status IN ('running', 'draining') ORDER BY created_at, id")).all()])
         dispatched = 0
-        for cid in ids:
+        for cid, kind in rows:
             if self.stopping.is_set():
                 break
             hk = self._tx(lambda s: housekeeping(s, cid, respect_fence=self.respect_fence))
@@ -539,6 +544,8 @@ class CampaignDispatcher(threading.Thread):
             if hk.get("drained"):
                 self.stats["drained"] += 1
                 log.info("campaign %s drained -> stopped", cid)
+            if kind == "message":
+                continue                              # 2026-10-25: services/calling/message_campaign.py dials those
             if self.transport() is None:
                 continue                              # never authorize a call without a connected PBX session
             for _ in range(self.max_per_tick):

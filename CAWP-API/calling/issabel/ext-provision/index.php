@@ -11,6 +11,10 @@
  *   DELETE /v1/extensions/<ext>                                                  delete
  *   POST   /v1/extensions/<ext>/secret    {}  new SIP password, once (chan_sip script only)
  *   POST   /v1/extensions/<ext>/webrtc    {"enabled": true|false}  in-app softphone on/off (chan_sip script only)
+ *   PUT    /v1/sounds/<campaign>-<kind>   message-campaign audio (2026-10-25): an 8 kHz mono 16-bit PCM WAV
+ *                                       (<= 4 MB) written as /var/lib/asterisk/sounds/cawp/<name>.wav
+ *   DELETE /v1/sounds/<campaign>-<kind>   remove it. Checked and written here (the vhost runs as asterisk),
+ *                                       no root script and no sudo.
  *
  * Answers the script's JSON with the HTTP status it names. Install: /var/www/cawp-provision/index.php
  * (root:root 0644).
@@ -92,5 +96,36 @@ if ($path === '/v1/extensions') {
 } elseif (preg_match('#^/v1/extensions/([0-9]{2,6})/rename$#', $path, $m) && $method === 'POST') {
     $b = body();
     run(['rename', $m[1], (string)($b['name'] ?? '')]);
+}
+if (preg_match('#^/v1/sounds/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(message|callback|goodbye))$#', $path, $m)) {
+    $dir = '/var/lib/asterisk/sounds/cawp';
+    $file = $dir . '/' . $m[1] . '.wav';
+    if ($method === 'DELETE') {
+        if (is_file($file) && !@unlink($file)) {
+            reply(500, array('ok' => false, 'code' => 'delete_failed', 'message' => 'cannot remove the sound'));
+        }
+        reply(200, array('ok' => true, 'deleted' => $m[1]));
+    }
+    if ($method === 'PUT') {
+        $raw = file_get_contents('php://input', false, null, 0, 4000001);
+        if ($raw === false || strlen($raw) > 4000000 || strlen($raw) < 1000) {
+            reply(413, array('ok' => false, 'code' => 'bad_size', 'message' => 'a WAV of 1 KB .. 4 MB'));
+        }
+        // RIFF/WAVE, a 16-byte PCM fmt chunk first: format 1, 1 channel, 8000 Hz, 16 bits
+        $h = unpack('a4riff/Vsize/a4wave/a4fmt/Vfmtlen/vformat/vchannels/Vrate/Vbyterate/vblock/vbits', substr($raw, 0, 36));
+        if (!$h || $h['riff'] !== 'RIFF' || $h['wave'] !== 'WAVE' || $h['fmt'] !== 'fmt ' || $h['format'] != 1
+            || $h['channels'] != 1 || $h['rate'] != 8000 || $h['bits'] != 16) {
+            reply(422, array('ok' => false, 'code' => 'bad_wav', 'message' => 'an 8 kHz mono 16-bit PCM WAV is required'));
+        }
+        if (!is_dir($dir)) {
+            reply(500, array('ok' => false, 'code' => 'no_sound_dir', 'message' => 'the sound directory is missing'));
+        }
+        $tmp = $file . '.tmp' . getmypid();
+        if (@file_put_contents($tmp, $raw) !== strlen($raw) || !@chmod($tmp, 0640) || !@rename($tmp, $file)) {
+            @unlink($tmp);
+            reply(500, array('ok' => false, 'code' => 'write_failed', 'message' => 'cannot write the sound'));
+        }
+        reply(200, array('ok' => true, 'installed' => $m[1], 'bytes' => strlen($raw)));
+    }
 }
 reply(404, ['ok' => false, 'code' => 'no_route', 'message' => 'unknown route']);

@@ -253,23 +253,37 @@ _GRANT_SQL = """
      LIMIT 1"""
 
 
+_MESSAGE_GRANT_SQL = """
+    SELECT 1 FROM message_calls m {join}
+     WHERE m.member_user_id = CAST(:u AS uuid) AND {case_pred}
+       AND (m.state IN ('transferring', 'talking') OR m.ended_at > clock_timestamp() - make_interval(mins => :mins))
+     LIMIT 1"""
+
+
 def campaign_grant(user_id, case_id) -> bool:
     """`user_id` has a campaign attempt on `case_id` (unassigned-only campaign) that holds its
-    reservation or was wrapped up less than GRANT_AFTER_WRAPUP_MINUTES ago."""
+    reservation or was wrapped up less than GRANT_AFTER_WRAPUP_MINUTES ago; or (2026-10-25, 0088) a
+    message campaign transferred that client to them (ringing, talking, or ended less than
+    GRANT_AFTER_WRAPUP_MINUTES ago)."""
     if not user_id or _uuid(case_id) is None:
         return False
-    return sess().execute(text(_GRANT_SQL.format(join="", case_pred="ca.case_id = CAST(:c AS uuid)")),
-                          {"u": str(user_id), "c": _uuid(case_id), "mins": GRANT_AFTER_WRAPUP_MINUTES}).first() is not None
+    params = {"u": str(user_id), "c": _uuid(case_id), "mins": GRANT_AFTER_WRAPUP_MINUTES}
+    if sess().execute(text(_GRANT_SQL.format(join="", case_pred="ca.case_id = CAST(:c AS uuid)")), params).first():
+        return True
+    return sess().execute(text(_MESSAGE_GRANT_SQL.format(join="", case_pred="m.case_id = CAST(:c AS uuid)")),
+                          params).first() is not None
 
 
 def campaign_grant_identity(user_id, identity_number) -> bool:
     """The same grant for the debtor of that case (its contacts)."""
     if not user_id or not identity_number:
         return False
-    return sess().execute(text(_GRANT_SQL.format(join="JOIN clints gc ON gc.id = ca.case_id",
-                                                 case_pred='gc."identityNumber" = :idn')),
-                          {"u": str(user_id), "idn": str(identity_number), "mins": GRANT_AFTER_WRAPUP_MINUTES}
-                          ).first() is not None
+    params = {"u": str(user_id), "idn": str(identity_number), "mins": GRANT_AFTER_WRAPUP_MINUTES}
+    if sess().execute(text(_GRANT_SQL.format(join="JOIN clints gc ON gc.id = ca.case_id",
+                                             case_pred='gc."identityNumber" = :idn')), params).first():
+        return True
+    return sess().execute(text(_MESSAGE_GRANT_SQL.format(join="JOIN clints gc ON gc.id = m.case_id",
+                                                         case_pred='gc."identityNumber" = :idn')), params).first() is not None
 
 
 def unassigned_dispatch_ok(campaign_id, user_id, case_id) -> bool:

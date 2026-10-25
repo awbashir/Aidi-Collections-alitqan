@@ -76,6 +76,7 @@ db/
 | 0085 | `migrations/0085_call_legs_agent_uniqueid_index.sql` | partial index on agent `call_legs.uniqueid` (agent leg -> attempt lookups on Asterisk 11) | `CREATE INDEX CONCURRENTLY` (no-transaction), online | Yes |
 | 0086 | `migrations/0086_campaign_case_lists.sql` | campaign customer lists (`campaign_list_cases`, from Excel / pasted national ids or account numbers), hand removals (`campaign_removed_cases`), `campaigns.cases_changed_at` (bumps the revision) | two new tables + one nullable column, instant | Yes |
 | 0087 | `migrations/0087_campaign_time_limit_fill.sql` | `campaigns.ends_at` (drains then stops by itself), `campaigns.fill_random` (random pool cases of any owner when an agent has none), `campaign_case_assignments.previous_user_id` (a promise moved the case from that collector) | catalog-only column additions, instant | Yes |
+| 0088 | `migrations/0088_message_campaigns.sql` | message campaigns: `campaigns.kind` (agent/message), `max_concurrent`, `message_transfer`, `message_notes`; `campaign_sounds` (converted audio); `message_calls` (one row per dial: token hash, PBX-reported state, key, member, result, note) | new tables + catalog-only columns, CHECKs NOT VALID then validated, instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

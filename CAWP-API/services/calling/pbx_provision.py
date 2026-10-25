@@ -73,14 +73,15 @@ def _timeout() -> float:
         return 60.0
 
 
-def _call(method: str, path: str, body: dict | None = None) -> dict:
+def _call(method: str, path: str, body: dict | None = None, *, raw_body: bytes | None = None,
+          content_type: str | None = None) -> dict:
     if not configured():
         raise ProvisionUnavailable("not_configured")
     url = _base().rstrip("/") + "/" + path.lstrip("/")
-    data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else raw_body
     headers = {"X-CAWP-Token": os.getenv("PBX_PROVISION_TOKEN") or "", "Accept": "application/json"}
     if data is not None:
-        headers["Content-Type"] = "application/json"
+        headers["Content-Type"] = content_type or "application/json"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
@@ -160,3 +161,21 @@ def sip_server() -> str | None:
         return explicit
     host = urllib.parse.urlsplit(_base()).hostname if _base() else None
     return host or None
+
+
+# --------------------------------------------------------------------------- message-campaign audio (0088)
+SOUND_NAME_RE = __import__("re").compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(message|callback|goodbye)$")
+
+
+def put_sound(name: str, wav: bytes) -> dict:
+    """Store one 8 kHz mono 16-bit WAV as /var/lib/asterisk/sounds/cawp/<name>.wav on the PBX
+    (vhost route PUT /v1/sounds/<name>; the PBX checks the header itself)."""
+    if not SOUND_NAME_RE.match(name):
+        raise ValueError("invalid sound name")
+    return _call("PUT", f"v1/sounds/{name}", raw_body=wav, content_type="audio/wav")
+
+
+def delete_sound(name: str) -> dict:
+    if not SOUND_NAME_RE.match(name):
+        raise ValueError("invalid sound name")
+    return _call("DELETE", f"v1/sounds/{name}")

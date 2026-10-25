@@ -54,6 +54,8 @@ log = logging.getLogger("cawp.calling.agi")
 
 SCRIPT = "collections-authorize"
 SURVEY_SCRIPTS = ("collections-survey-offer", "collections-survey-result")
+# 2026-10-25 (0088): message campaigns (services/calling/message_campaign.py)
+MESSAGE_SCRIPTS = ("collections-message-authorize", "collections-message-agent")
 MAX_LINE = 4096
 MAX_HEADERS = 64
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -425,6 +427,8 @@ class FastAgiServer(threading.Thread):
                 script = (env.get("agi_network_script") or "").strip("/")
                 if script in SURVEY_SCRIPTS:                     # post-call survey (services/calling/survey.py)
                     return self._survey(ch, env, peer, script)
+                if script in MESSAGE_SCRIPTS:                    # message campaigns (0088)
+                    return self._message(ch, env, peer, script)
                 validate_environment(env, req)
                 for name in GATE_VARS:                           # clear every output first
                     ch.set_var(name, "")
@@ -476,6 +480,64 @@ class FastAgiServer(threading.Thread):
                 return Decision(False, deny.reason)
             finally:
                 db.session.remove()
+
+    def _message(self, ch: AgiChannel, env: dict, peer: str, script: str) -> Decision:
+        """collections-message-authorize: the one-shot token of a message call -> COLLECTIONS_MSG_GATE
+        ALLOW (published only after the commit); collections-message-agent: a free member's
+        extension -> COLLECTIONS_MSG_AGENT. Same peer allowlist and shared key as the gate."""
+        from extensions import db
+        from services.calling import message_campaign as MC
+        call_id = None
+        try:
+            if env.get("agi_network") != "yes":
+                raise AgiDeny("not_fastagi")
+            out = "COLLECTIONS_MSG_GATE" if script == "collections-message-authorize" else "COLLECTIONS_MSG_AGENT"
+            ch.set_var(out, "")                                   # cleared first
+            if out == "COLLECTIONS_MSG_GATE":
+                ch.set_var("COLLECTIONS_MSG_DESTINATION", "")
+            key = ch.get_global("COLLECTIONS_AGI_KEY") or ""
+            if not hmac.compare_digest(key.encode(), self.secret.encode()):
+                raise AgiDeny("agi_key_mismatch")
+            call_id = (ch.get_var("COLLECTIONS_MSG_CALL") or "").strip().lower()
+            if out == "COLLECTIONS_MSG_AGENT":
+                ext = MC.pick_member(db.session, call_id=call_id)
+                db.session.commit()
+                if ext:
+                    ch.set_var("COLLECTIONS_MSG_AGENT", ext)
+                log.info("AGI message agent call=%s member=%s peer=%s", call_id if UUID_RE.match(call_id) else None,
+                         "found" if ext else "none", peer)
+                return Decision(bool(ext), "member" if ext else "no_member")
+            destination = (env.get("agi_extension") or "").strip()
+            if not E164_RE.match(destination):
+                raise AgiDeny("destination_invalid")
+            token = (ch.get_var("COLLECTIONS_MSG_TOKEN") or "").strip().lower()
+            epoch_uuid = (ch.get_global("COLLECTIONS_HUMAN_PBX_EPOCH") or "").strip().lower() or None
+            allow, reason = MC.authorize(db.session, call_id=call_id, token=token, destination=destination,
+                                         epoch_uuid=epoch_uuid)
+            if not allow and UUID_RE.match(call_id or ""):
+                db.session.execute(text("UPDATE message_calls SET reason_code = :r, updated_at = now() "
+                                        "WHERE id = CAST(:id AS uuid) AND reason_code IS NULL"),
+                                   {"r": reason, "id": call_id})
+            db.session.commit()                                  # the token is consumed BEFORE the allow is published
+            if not allow:
+                raise AgiDeny(reason)
+            if time.monotonic() > ch.deadline:
+                raise AgiDeny("agi_timeout")
+            ch.set_var("COLLECTIONS_MSG_DESTINATION", destination)
+            ch.set_var("COLLECTIONS_MSG_GATE", "ALLOW")           # last
+            self.stats["allow"] += 1
+            log.info("AGI message allow call=%s peer=%s", call_id, peer)
+            return Decision(True, "allowed")
+        except AgiDeny as deny:
+            db.session.rollback()
+            self.stats["deny"] += 1
+            log.info("AGI message deny reason=%s call=%s peer=%s", deny.reason,
+                     call_id if call_id and UUID_RE.match(call_id) else None, peer)
+            return Decision(False, deny.reason)
+        except Exception:  # noqa: BLE001 - any doubt denies (the dialplan hangs up without dialling)
+            db.session.rollback()
+            log.exception("AGI message script failed")
+            return Decision(False, "agi_internal_error")
 
     def _survey(self, ch: AgiChannel, env: dict, peer: str, script: str) -> Decision:
         """collections-survey-offer / -result: same peer allowlist and shared key as the gate."""

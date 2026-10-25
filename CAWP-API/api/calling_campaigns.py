@@ -36,6 +36,12 @@ Customers (2026-10-24, services/calling/campaign_cases.py)
   POST /v2/campaigns/<id>/cases/remove     take cases out by hand      campaigns_manage
   POST /v2/campaigns/<id>/cases/restore    put them back               campaigns_manage
   GET  /v2/campaigns/<id>/called           customers called (answered=) campaigns_manage
+Message campaigns (2026-10-25, services/calling/message_campaign.py)
+  GET  /v2/campaigns/<id>/sounds           the uploaded messages       campaigns_manage
+  POST /v2/campaigns/<id>/sounds/<kind>    upload (multipart file), converted and installed on the PBX
+  GET  /v2/campaigns/<id>/sounds/<kind>/audio   the converted WAV (preview)
+  DELETE /v2/campaigns/<id>/sounds/<kind>  remove (not while running)
+  GET  /v2/campaigns/<id>/message-calls    the dials (result=)         campaigns_manage
 
 No route talks to the PBX: a campaign call is authorized by the same code as POST /v2/calls and
 sent by the `calling` service.
@@ -256,3 +262,74 @@ def restore_cases(campaign_id):
 def called_customers(campaign_id):
     page, size, offset = page_args()
     return ok(cases_svc.called(campaign_id, request.args, page, size, offset))
+
+
+# --------------------------------------------------------------------------- message campaigns (2026-10-25)
+def _message_campaign(campaign_id, *, editable=False):
+    from core.api_response import ApiError
+    camp = svc.load(campaign_id, manage=True)
+    if camp.get("kind") != "message":
+        raise ApiError(409, "not_a_message_campaign", "this is not a message campaign")
+    if editable and camp["status"] in ("running", "stopped"):
+        raise ApiError(409, "campaign_" + camp["status"], f"the campaign is {camp['status']}; pause it to change its messages")
+    return camp
+
+
+@bp.get("/v2/campaigns/<uuid:campaign_id>/sounds")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+def list_sounds(campaign_id):
+    from services.calling import message_campaign as MC
+    _message_campaign(campaign_id)
+    return ok({"items": MC.sounds(campaign_id)})
+
+
+@bp.post("/v2/campaigns/<uuid:campaign_id>/sounds/<kind>")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+@idempotent()
+def upload_sound(campaign_id, kind):
+    from services.calling import message_campaign as MC
+    from services.calling.common import me
+    _message_campaign(campaign_id, editable=True)
+    upload = request.files.get("file")
+    if upload is None:
+        raise ApiError(422, VALIDATION_FAILED, "upload the audio as the multipart field `file`", {"file": "required"})
+    data = upload.read(10 * 1024 * 1024 + 1)
+    return ok(MC.store_sound(campaign_id, kind, data, upload.filename, me()), "message uploaded")
+
+
+@bp.get("/v2/campaigns/<uuid:campaign_id>/sounds/<kind>/audio")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+def sound_audio(campaign_id, kind):
+    from flask import Response
+
+    from services.calling import message_campaign as MC
+    _message_campaign(campaign_id)
+    data = MC.sound_audio(campaign_id, kind)
+    if data is None:
+        raise ApiError(404, "not_found", "no such message", {"kind": kind})
+    return Response(data, mimetype="audio/wav", headers={"Cache-Control": "private, no-store"})
+
+
+@bp.delete("/v2/campaigns/<uuid:campaign_id>/sounds/<kind>")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+@idempotent()
+def remove_sound(campaign_id, kind):
+    from services.calling import message_campaign as MC
+    _message_campaign(campaign_id, editable=True)
+    if not MC.delete_sound(campaign_id, kind):
+        raise ApiError(404, "not_found", "no such message", {"kind": kind})
+    return ok({"kind": kind, "deleted": True}, "message removed")
+
+
+@bp.get("/v2/campaigns/<uuid:campaign_id>/message-calls")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+def message_calls(campaign_id):
+    from services.calling import message_campaign as MC
+    _message_campaign(campaign_id)
+    page, size, offset = page_args()
+    return ok(MC.list_calls(campaign_id, request.args, page, size, offset))

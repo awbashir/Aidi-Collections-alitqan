@@ -121,6 +121,7 @@ class CallingService:
         self.campaigns = None
         self.live = None
         self.controls = None
+        self.messages = None
         self._status_failing = False
 
     # ---- lifecycle ------------------------------------------------------------------
@@ -141,8 +142,11 @@ class CallingService:
                                      allowed_peers=PeerAllowlist(self.cfg.agi_allowed_peers))
             self.agi.start()
             log.info("FastAGI hook listening on %s:%s", *self.agi.address[:2])
+        if self.cfg.dispatch_enabled and self.cfg.campaigns_enabled:   # 2026-10-25: message campaigns (0088)
+            from services.calling.message_campaign import MessageDispatcher
+            self.messages = MessageDispatcher(self.app, self.current_ctx, self.worker_id)
         self.supervisor = AmiSupervisor(
-            self.cfg.ami_config(), on_event=self.consumer.on_event,
+            self.cfg.ami_config(), on_event=self._on_event,
             on_session_start=self._on_session_start, on_session_end=self._on_session_end,
             on_heartbeat=self.consumer.on_heartbeat,
             session_options={"heartbeat": self.cfg.heartbeat_seconds})
@@ -161,6 +165,8 @@ class CallingService:
             self.reconciler = Reconciler(self.app, self.current_ctx, cdr_lookup.from_env(),
                                          interval=self.cfg.reconcile_seconds)
             self.reconciler.start()
+        if self.messages is not None:
+            self.messages.start()
         if self.cfg.dispatch_enabled and self.cfg.campaigns_enabled:
             from services.calling.campaign_dispatch import CampaignDispatcher
             self.campaigns = CampaignDispatcher(self.app, self.campaign_transport, self.worker_id,
@@ -174,6 +180,12 @@ class CallingService:
         self._start_status()
         log.info("calling service started (%s, PBX %s:%s, TLS %s, database %s)", self.worker_id,
                  self.cfg.ami_host, self.cfg.ami_port, "on" if self.cfg.ami_tls else "off", database_label())
+
+    def _on_event(self, frame, ctx):
+        """Every AMI event: the message-campaign events, then the evidence consumer (unchanged)."""
+        if self.messages is not None:
+            self.messages.on_event(frame, ctx)
+        self.consumer.on_event(frame, ctx)
 
     def current_ctx(self):
         """The live AMI session context (None while disconnected)."""
@@ -236,6 +248,8 @@ class CallingService:
             self.live.stop()
         if self.controls is not None:
             self.controls.stop()
+        if self.messages is not None:
+            self.messages.stop()
         if self.campaigns is not None:
             self.campaigns.stop()
         if self.dispatcher is not None:
@@ -285,6 +299,8 @@ class CallingService:
             "campaigns": ({"running": self.campaigns.is_alive(), "last_tick_at": self.campaigns.last_tick_at,
                            **self.campaigns.stats} if self.campaigns else None),
             "controls": ({"running": self.controls.is_alive(), **self.controls.stats} if self.controls else None),
+            "messages": ({"running": self.messages.is_alive(), "last_tick_at": self.messages.last_tick_at,
+                          **self.messages.stats} if self.messages else None),
         }
 
     def report_status(self, final: bool = False):
