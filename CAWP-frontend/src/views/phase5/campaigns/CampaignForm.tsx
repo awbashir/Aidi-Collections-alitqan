@@ -23,6 +23,9 @@
  * (`pool.case_list`: filled after creation from Excel or pasted national ids / account numbers on
  * the detail's Pool tab, where the list is reviewed and customers removed before the start), and
  * `pool.skip_any_payment` (on by default for a new campaign): no case with any approved payment.
+ * 2026-10-25 (0087): an end date and time (Asia/Riyadh; the campaign drains and stops by itself
+ * then) and random fill (an agent with no callable client of their own gets random clients of the
+ * campaign, any owner; a promise moves such a client to them).
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -81,6 +84,9 @@ type Draft = {
     source: 'filter' | 'list'
     /** 2026-10-24: no case with any approved payment */
     skipPaid: boolean
+    /** 2026-10-25: end date-time in Riyadh wall clock ("YYYY-MM-DDTHH:mm"), '' = no limit */
+    endsAt: string
+    fillRandom: boolean
     settings: CampaignSettings
     members: string[]
 }
@@ -105,10 +111,17 @@ const draftFrom = (c: Campaign | null, filter?: Record<string, unknown>): Draft 
         unassigned: c?.pool.unassigned_only === true,
         source: c?.pool.case_list ? 'list' : 'filter',
         skipPaid: c ? c.pool.skip_any_payment === true : true,
+        endsAt: c?.ends_at ? toRiyadhLocal(c.ends_at) : '',
+        fillRandom: c?.fill_random === true,
         settings: { ...DEFAULT_SETTINGS, ...(c?.settings || {}) },
         members: [],
     }
 }
+
+/** ISO instant -> "YYYY-MM-DDTHH:mm" on the Riyadh wall clock (UTC+3, no DST). */
+const toRiyadhLocal = (iso: string) => new Date(new Date(iso).getTime() + 3 * 3600 * 1000).toISOString().slice(0, 16)
+/** "YYYY-MM-DDTHH:mm" Riyadh -> ISO with the +03:00 offset the API requires. */
+const fromRiyadhLocal = (local: string) => `${local}:00+03:00`
 
 const poolOf = (d: Draft): CampaignPool => {
     const skip = d.skipPaid ? { skip_any_payment: true } : {}
@@ -243,8 +256,15 @@ const CampaignForm = ({
     const unassignedConflict = d.source === 'filter' && d.unassigned && Array.isArray(d.filter[USER_KEY]) && (d.filter[USER_KEY] as unknown[]).length > 0
     const gridIncomplete =
         d.source === 'filter' && !!(d.grid.field || d.grid.op || d.grid.value) && !(d.grid.field && d.grid.op && d.grid.value.trim())
+    const endsAtPast = !!d.endsAt && new Date(fromRiyadhLocal(d.endsAt)).getTime() <= Date.now()
     const canSubmit =
-        d.name.trim().length > 0 && d.name.trim().length <= 200 && hasCriterion && settingsOk && !gridIncomplete && !unassignedConflict
+        d.name.trim().length > 0 &&
+        d.name.trim().length <= 200 &&
+        hasCriterion &&
+        settingsOk &&
+        !gridIncomplete &&
+        !unassignedConflict &&
+        !endsAtPast
 
     const setSetting = <K extends keyof CampaignSettings>(k: K, v: CampaignSettings[K]) => setD((x) => ({ ...x, settings: { ...x.settings, [k]: v } }))
     const numberField = (k: keyof typeof LIMITS, label: string, hint: string) => (
@@ -275,9 +295,10 @@ const CampaignForm = ({
             onClose={onClose}
             onSubmit={async (key) => {
                 const settings = { ...d.settings }
+                const extra = { ends_at: d.endsAt ? fromRiyadhLocal(d.endsAt) : null, fill_random: d.fillRandom }
                 const res = campaign
-                    ? await campaignsApi.update(campaign.id, { expected_revision: campaign.revision, name: d.name.trim(), pool, settings }, key)
-                    : await campaignsApi.create({ name: d.name.trim(), pool, settings, member_ids: d.members }, key)
+                    ? await campaignsApi.update(campaign.id, { expected_revision: campaign.revision, name: d.name.trim(), pool, settings, ...extra }, key)
+                    : await campaignsApi.create({ name: d.name.trim(), pool, settings, member_ids: d.members, ...extra }, key)
                 onSaved(res)
             }}
         >
@@ -298,6 +319,25 @@ const CampaignForm = ({
                     ]}
                 />
             </DialogField>
+            <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
+                <DialogField label={t('p12.campcases.endsAt.label')} hint={t('p12.campcases.endsAt.hint')}>
+                    <Input
+                        size="sm"
+                        type="datetime-local"
+                        dir="ltr"
+                        value={d.endsAt}
+                        onChange={(e) => setD({ ...d, endsAt: e.target.value })}
+                        data-testid="p12-cf-ends-at"
+                    />
+                    {endsAtPast && <div className="mt-1 text-[12px] text-danger">{t('p12.campcases.endsAt.past')}</div>}
+                </DialogField>
+                <div className="mb-3 pt-6" data-testid="p12-cf-fill">
+                    <Checkbox checked={d.fillRandom} onChange={(checked: boolean) => setD({ ...d, fillRandom: checked })}>
+                        <span className="text-[13.5px] font-bold text-navy-600 dark:text-gray-100">{t('p12.campcases.fill.label')}</span>
+                    </Checkbox>
+                    <div className="mt-1 text-[12px] text-gray-600">{t('p12.campcases.fill.hint')}</div>
+                </div>
+            </div>
             <div className="mb-3" data-testid="p12-cf-skip-paid">
                 <Checkbox checked={d.skipPaid} onChange={(checked: boolean) => setD({ ...d, skipPaid: checked })}>
                     <span className="text-[13.5px] font-bold text-navy-600 dark:text-gray-100">{t('p12.campcases.skipPaid.label')}</span>

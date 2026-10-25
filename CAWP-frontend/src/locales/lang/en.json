@@ -6491,6 +6491,17 @@
       },
       "col": {
         "action": "Action"
+      },
+      "endsAt": {
+        "label": "Campaign ends at (Riyadh time)",
+        "hint": "The campaign stops placing new calls at this time, lets the calls in progress finish, then stops. Leave empty for no limit.",
+        "past": "That time has passed.",
+        "short": "Ends"
+      },
+      "fill": {
+        "label": "When an agent runs out of their own clients: random clients of the campaign",
+        "hint": "An agent with no client of their own left gets random clients from the campaign's list, even if assigned to another collector. A promise to pay moves that client to them.",
+        "short": "Random fill"
       }
     }
   }

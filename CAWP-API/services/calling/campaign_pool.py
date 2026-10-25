@@ -630,7 +630,8 @@ def _fact_params(campaign: dict, clock: dict) -> dict:
             "skip_any_payment": bool((campaign.get("pool") or {}).get(SKIP_PAID_KEY))}
 
 
-def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200, clock=None, exclude=()) -> list[dict]:
+def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200, clock=None, exclude=(),
+               fill: bool = False) -> list[dict]:
     """The member's next cases in dispatch order, pre-filtered by every SQL-checkable exclusion.
 
     Two stages so a large pool stays cheap: (1) the member's pool in dispatch order with the cheap
@@ -638,15 +639,29 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
     a time; (2) on that window only, the expensive ones (do-not-call, review flag, a call on the
     case, paid, attempts today, cooldown, no callable contact). Windows are read until `limit`
     candidates are found or the pool is exhausted. Measured on the full local copy: 330 ms for a
-    collector with 64k cases in one contract (one window), versus 1.2 s in one pass."""
+    collector with 64k cases in one contract (one window), versus 1.2 s in one pass.
+
+    `fill` (2026-10-25, campaigns.fill_random, 0087): the member has no callable case of their own;
+    any case of the pool (any owner, inside the creator's scope) in a RANDOM order (a fresh salt
+    per call, stable across the windows of that call). Every exclusion still applies."""
+    import secrets
     clock = clock or _clock()
     member_sql, member_params = scope_clause(member_id, "mb")
     if (campaign.get("pool") or {}).get(UNASSIGNED_KEY):          # the campaign grant (docstring)
         member_sql = f"({member_sql} OR c.user_id IS NULL)"
+    if fill:
+        member_sql, member_params = "TRUE", {}
+    order1 = ("md5(pool.id::text || :salt)" if fill
+              else f"{_PRIORITY} DESC, {_LAST_CONTACT} ASC NULLS FIRST, pool.id")
+    order2 = ("md5(pool.id::text || :salt)" if fill
+              else "pool.callback_due DESC, pool.last_contact ASC NULLS FIRST, pool.id")
+    order3 = ("md5(cand.case_id::text || :salt)" if fill
+              else "cand.callback_due DESC, cand.last_contact ASC NULLS FIRST, cand.case_id")
     cte, params = _pool_cte(campaign, (member_sql, member_params))
     params.update(_fact_params(campaign, clock))
     params["skip"] = [str(x) for x in exclude]
     params["win"] = int(window)
+    params["salt"] = secrets.token_hex(8)
     out, offset = [], 0
     while len(out) < limit:
         params.update(lim=int(limit - len(out)), off=offset)
@@ -660,7 +675,7 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
                                       WHERE f.case_id = pool.id AND f.status = 'open' ORDER BY f.due_at LIMIT 1) fu ON true
                  WHERE NOT pool.is_archive AND NOT pool.is_locked AND NOT {_FUTURE_CALLBACK} AND NOT {_RECHECK}
                    AND NOT {_REMOVED}
-                 ORDER BY {_PRIORITY} DESC, {_LAST_CONTACT} ASC NULLS FIRST, pool.id
+                 ORDER BY {order1}
                  LIMIT :win OFFSET :off),
             cand AS (
                 SELECT pool.id AS case_id, pool.idn, pool.callback_due, pool.last_contact,
@@ -677,11 +692,11 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
                    AND NOT {_ANSWERED} AND NOT {_CUSTOMER_IN_CALL} AND NOT {_ANY_PAYMENT}
                    AND NOT {_MAXED} AND NOT {_COOLING} AND {_CONTACT}
                    AND NOT (pool.id = ANY(CAST(:skip AS uuid[])))
-                 ORDER BY pool.callback_due DESC, pool.last_contact ASC NULLS FIRST, pool.id
+                 ORDER BY {order2}
                  LIMIT :lim)
             SELECT (SELECT count(*) FROM ordered) AS window_rows, cand.*
               FROM (SELECT 1) one LEFT JOIN cand ON true
-             ORDER BY cand.callback_due DESC, cand.last_contact ASC NULLS FIRST, cand.case_id"""),
+             ORDER BY {order3}"""),
             params).mappings().all()
         out.extend(dict(r) for r in rows if r["case_id"] is not None)
         if rows[0]["window_rows"] < window:
@@ -814,6 +829,8 @@ def _classified(campaign: dict, member_ids, clock) -> tuple[str, dict]:
     ms_sql, ms_params = union_scope_clause(member_ids)
     if member_ids and (campaign.get("pool") or {}).get(UNASSIGNED_KEY):   # the campaign grant
         ms_sql = f"({ms_sql} OR c.user_id IS NULL)"
+    if member_ids and campaign.get("fill_random"):                        # 2026-10-25: random fill
+        ms_sql, ms_params = "TRUE", {}
     # coalesce: an unassigned case (user_id NULL) makes a user-based scope test NULL, not false
     cte, params = _pool_cte(campaign, None, f", coalesce({ms_sql}, false) AS in_member_scope")
     params.update(ms_params)

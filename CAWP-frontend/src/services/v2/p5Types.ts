@@ -659,6 +659,10 @@ export type Campaign = {
     members: { active: number; total: number }
     /** 2026-10-24: customer-list size and hand removals */
     cases?: { listed: number; removed: number }
+    /** 2026-10-25 (0087): stops by itself at this time (null = no limit) */
+    ends_at?: Iso | null
+    /** 2026-10-25 (0087): an agent with no callable client of their own gets random pool clients of any owner */
+    fill_random?: boolean
     revision: number
     my_membership?: { active: boolean } | null
     my_readiness?: {
@@ -829,6 +833,8 @@ export type CampaignBody = {
     pool?: CampaignPool
     settings?: Partial<CampaignSettings>
     member_ids?: string[]
+    ends_at?: string | null
+    fill_random?: boolean
 }
 
 /* ------------------------------------------------------------------ PBX evidence (P4) */

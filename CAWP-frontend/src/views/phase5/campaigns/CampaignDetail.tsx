@@ -739,6 +739,13 @@ const CampaignDetail = () => {
                     </h3>
                     <div className="mt-1 text-[12.5px] text-gray-600">
                         {t(`p5.campaign.mode.${campaign.settings.next_mode}`)} · {t('p5.cd.membersN', { active: campaign.members.active, total: campaign.members.total })}
+                        {campaign.ends_at && (
+                            <span data-testid="p12-cd-ends-at">
+                                {' · '}
+                                {t('p12.campcases.endsAt.short')} <RiyadhTime iso={campaign.ends_at} />
+                            </span>
+                        )}
+                        {campaign.fill_random && <span data-testid="p12-cd-fill">{` · ${t('p12.campcases.fill.short')}`}</span>}
                     </div>
                 </div>
                 {manage && (

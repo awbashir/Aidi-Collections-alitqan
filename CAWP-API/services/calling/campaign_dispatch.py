@@ -109,7 +109,8 @@ def _day(session):
 def claim_recheck(session, attempt) -> str | None:
     """Called by dispatch.claim() for a campaign attempt, right before the token and the Originate."""
     r = session.execute(text("""
-        SELECT c.status, m.active, r.state, (r.lease_until > clock_timestamp()) AS lease_live
+        SELECT c.status, m.active, r.state, (r.lease_until > clock_timestamp()) AS lease_live,
+               (c.ends_at IS NOT NULL AND c.ends_at <= clock_timestamp()) AS time_up
           FROM campaigns c
           LEFT JOIN campaign_members m ON m.campaign_id = c.id AND m.user_id = CAST(:u AS uuid)
           LEFT JOIN campaign_readiness r ON r.campaign_id = c.id AND r.user_id = CAST(:u AS uuid)
@@ -119,6 +120,8 @@ def claim_recheck(session, attempt) -> str | None:
         return "campaign_missing"
     if r["status"] != "running":
         return f"campaign_{r['status']}"
+    if r["time_up"]:
+        return "campaign_time_limit"                  # 2026-10-25 (0087): queued before the sweep
     if not r["active"]:
         return "member_inactive"
     if r["state"] not in ("ready", "wrap_up"):
@@ -262,8 +265,18 @@ def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatc
     clock = P._clock()
     tried = set()
     answered = None
-    for cand in P.candidates(campaign, uid, limit=CANDIDATES_PER_DISPATCH, clock=clock):
+
+    def pool_order():
+        """Own cases first; with campaigns.fill_random (2026-10-25) then random cases of the pool."""
+        yield from P.candidates(campaign, uid, limit=CANDIDATES_PER_DISPATCH, clock=clock)
+        if campaign.get("fill_random"):
+            yield from P.candidates(campaign, uid, limit=CANDIDATES_PER_DISPATCH, clock=clock, fill=True,
+                                    exclude=tried)
+
+    for cand in pool_order():
         case_id = str(cand["case_id"])
+        if case_id in tried:
+            continue
         tried.add(case_id)
         if not _try_case_lock(session, case_id):
             continue                                       # another loop is on this case right now
@@ -362,6 +375,20 @@ def _record_dispatch(session, campaign, uid, attempt_id, case_id, contact_id, ch
 
 
 # --------------------------------------------------------------------------- housekeeping
+def expire_campaigns(session, *, audit_kw=None) -> list[str]:
+    """2026-10-25 (0087): running / paused campaigns whose ends_at has passed -> draining (no new
+    call; the ones in progress finish and are wrapped up; finish_drain then stops it)."""
+    rows = session.execute(text("""
+        UPDATE campaigns SET status = 'draining', drain_requested_at = coalesce(drain_requested_at, now())
+         WHERE status IN ('running', 'paused') AND ends_at IS NOT NULL AND ends_at <= clock_timestamp()
+        RETURNING id::text, ends_at"""), {}).all()
+    kw = dict(SYSTEM_AUDIT if audit_kw is None else audit_kw)
+    for cid, ends_at in rows:
+        audit.record("campaign.time_limit", "campaign", cid, after={"status": "draining", "ends_at": ends_at.isoformat()},
+                     reason="the campaign's end time was reached", session=session, **kw)
+    return [r[0] for r in rows]
+
+
 def outstanding_calls(session, campaign_id) -> int:
     return int(session.execute(text("""
         SELECT count(*) FROM call_attempts a
@@ -499,6 +526,8 @@ class CampaignDispatcher(threading.Thread):
     def run_once(self) -> int:
         self.stats["ticks"] += 1
         self.last_tick_at = time.time()
+        for cid in self._tx(expire_campaigns):
+            log.info("campaign %s reached its end time -> draining", cid)
         ids = self._tx(lambda s: [str(r[0]) for r in s.execute(text(
             "SELECT id FROM campaigns WHERE status IN ('running', 'draining') ORDER BY created_at, id")).all()])
         dispatched = 0

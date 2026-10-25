@@ -115,6 +115,36 @@ def _settings(raw, base: dict) -> dict:
     return out
 
 
+MAX_ENDS_AT_DAYS = 366
+
+
+def _ends_at(body):
+    """2026-10-25 (0087): `ends_at` = an ISO-8601 date-time with an offset in the future (at most
+    MAX_ENDS_AT_DAYS ahead), or null (no limit)."""
+    raw = body.get("ends_at")
+    if raw is None:
+        return None
+    try:
+        v = _dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        v = None
+    if v is None or v.tzinfo is None:
+        raise _err(422, VALIDATION_FAILED, "ends_at must be an ISO-8601 date-time with an offset", {"ends_at": "invalid"})
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if v <= now:
+        raise _err(422, VALIDATION_FAILED, "ends_at must be in the future", {"ends_at": "past"})
+    if v > now + _dt.timedelta(days=MAX_ENDS_AT_DAYS):
+        raise _err(422, VALIDATION_FAILED, f"ends_at must be within {MAX_ENDS_AT_DAYS} days", {"ends_at": "too_far"})
+    return v
+
+
+def _fill_random(body) -> bool:
+    v = body.get("fill_random", False)
+    if not isinstance(v, bool):
+        raise _err(422, VALIDATION_FAILED, "fill_random must be true or false", {"fill_random": "invalid"})
+    return v
+
+
 def _name(body) -> str:
     v = body.get("name")
     if not isinstance(v, str) or not v.strip():
@@ -210,6 +240,7 @@ def campaign_view(c: dict) -> dict:
         "updated_at": iso(c["updated_at"]), "started_at": iso(c["started_at"]), "paused_at": iso(c["paused_at"]),
         "drain_requested_at": iso(c["drain_requested_at"]), "stopped_at": iso(c["stopped_at"]),
         "stop_reason": c["stop_reason"], "members": {"active": int(counts["active"]), "total": int(counts["total"])},
+        "ends_at": iso(c.get("ends_at")), "fill_random": bool(c.get("fill_random")),   # 2026-10-25 (0087)
         "cases": _case_counts(c["id"]),                 # 2026-10-24: customer list / hand removals (0086)
         "revision": int(c["revision"]),
     }
@@ -282,8 +313,9 @@ def pool_scope() -> dict:
 
 
 def create(body: dict) -> str:
-    _unknown(body, {"name", "pool", "settings", "member_ids"})
+    _unknown(body, {"name", "pool", "settings", "member_ids", "ends_at", "fill_random"})
     name = _name(body)
+    ends_at, fill = _ends_at(body), _fill_random(body)
     pool = P.validate_pool(body.get("pool"))
     P.check_pool_statuses(pool, me())
     settings = _settings(body.get("settings"), DEFAULTS)
@@ -291,22 +323,23 @@ def create(body: dict) -> str:
     _check_members_allowed(members)
     cid = str(sess().execute(text("""
         INSERT INTO campaigns (name, pool, next_mode, wrapup_delay_seconds, max_attempts_per_day, cooldown_minutes,
-                               lease_seconds, created_by)
-        VALUES (:n, CAST(:p AS jsonb), :nm, :wd, :ma, :cd, :ls, CAST(:by AS uuid)) RETURNING id"""),
+                               lease_seconds, created_by, ends_at, fill_random)
+        VALUES (:n, CAST(:p AS jsonb), :nm, :wd, :ma, :cd, :ls, CAST(:by AS uuid), :ea, :fr) RETURNING id"""),
         {"n": name, "p": json.dumps(pool), "nm": settings["next_mode"], "wd": settings["wrapup_delay_seconds"],
          "ma": settings["max_attempts_per_day"], "cd": settings["cooldown_minutes"], "ls": settings["lease_seconds"],
-         "by": me()}).scalar())
+         "by": me(), "ea": ends_at, "fr": fill}).scalar())
     for u in members:
         sess().execute(text("INSERT INTO campaign_members (campaign_id, user_id, added_by) "
                             "VALUES (CAST(:c AS uuid), CAST(:u AS uuid), CAST(:by AS uuid))"),
                        {"c": cid, "u": u, "by": me()})
     audit.record("campaign.create", "campaign", cid, after={"name": name, "pool": pool, "settings": settings,
-                                                             "member_ids": members})
+                                                             "member_ids": members, "fill_random": fill,
+                                                             "ends_at": ends_at.isoformat() if ends_at else None})
     return cid
 
 
 def update(campaign_id, body: dict, expected) -> str:
-    _unknown(body, {"expected_revision", "name", "pool", "settings"})
+    _unknown(body, {"expected_revision", "name", "pool", "settings", "ends_at", "fill_random"})
     camp = load(campaign_id, lock="update", manage=True)
     _check_revision(camp, expected)
     if camp["status"] == "stopped":
@@ -322,6 +355,18 @@ def update(campaign_id, body: dict, expected) -> str:
         params["p"] = json.dumps(pool)
         sets.append("pool = CAST(:p AS jsonb)")
         before["pool"], after["pool"] = camp["pool"], pool
+    if "ends_at" in body:
+        ea = _ends_at(body)
+        if ea != camp.get("ends_at"):
+            params["ea"] = ea
+            sets.append("ends_at = :ea")
+            before["ends_at"], after["ends_at"] = iso(camp.get("ends_at")), iso(ea)
+    if "fill_random" in body:
+        fr = _fill_random(body)
+        if fr != bool(camp.get("fill_random")):
+            params["fr"] = fr
+            sets.append("fill_random = :fr")
+            before["fill_random"], after["fill_random"] = bool(camp.get("fill_random")), fr
     if "settings" in body:
         new = _settings(body.get("settings"), _settings_of(camp))
         for k, v in new.items():
@@ -378,6 +423,9 @@ def transition(campaign_id, action: str, body: dict, expected) -> dict:
                                      "AND active"), {"c": str(campaign_id)}).scalar()
         if not active:
             raise _err(409, "no_members", "add at least one active member before starting the campaign")
+        if camp.get("ends_at") is not None and camp["ends_at"] <= _dt.datetime.now(_dt.timezone.utc):
+            raise _err(409, "campaign_time_limit_passed", "the campaign's end time has passed; change it to start",
+                       {"ends_at": iso(camp["ends_at"])})
         sets += ["started_at = coalesce(started_at, now())", "paused_at = NULL"]
     elif action == "pause":
         sets.append("paused_at = now()")

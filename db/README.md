@@ -75,6 +75,7 @@ db/
 | 0084 | `migrations/0084_legacy_pbx_correlation.sql` | Asterisk 11 (`CALLING_PBX_EVENTS=legacy`): `call_dispatch_queue.ami_action_id` (the Originate ActionID, recorded by the claim before sending, set once, unique), `call_dispatch_tokens.bound_uniqueid` (the agent channel the FastAGI hook allowed) | nullable columns, CHECKs added `NOT VALID` then validated, unique partial index on the small dispatch queue, set-once trigger; brief lock on the two dispatch tables only, instant | Yes |
 | 0085 | `migrations/0085_call_legs_agent_uniqueid_index.sql` | partial index on agent `call_legs.uniqueid` (agent leg -> attempt lookups on Asterisk 11) | `CREATE INDEX CONCURRENTLY` (no-transaction), online | Yes |
 | 0086 | `migrations/0086_campaign_case_lists.sql` | campaign customer lists (`campaign_list_cases`, from Excel / pasted national ids or account numbers), hand removals (`campaign_removed_cases`), `campaigns.cases_changed_at` (bumps the revision) | two new tables + one nullable column, instant | Yes |
+| 0087 | `migrations/0087_campaign_time_limit_fill.sql` | `campaigns.ends_at` (drains then stops by itself), `campaigns.fill_random` (random pool cases of any owner when an agent has none), `campaign_case_assignments.previous_user_id` (a promise moved the case from that collector) | catalog-only column additions, instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

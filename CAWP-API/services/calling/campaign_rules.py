@@ -33,6 +33,14 @@ moves the open follow-up), a campaign_case_assignments row and a `case.assign` a
 (reason "assigned by campaign promise"). Only when the case has no collector at that moment
 (`UPDATE ... WHERE user_id IS NULL` under the wrap-up's case lock): an assigned case is never
 taken from its collector. An inactive agent gets nothing.
+
+2026-10-25 (0087, campaigns.fill_random): "when the user finished the clients assigned to him,
+randomly select from the campaign's list even if assigned to another user; if the user records a
+promise, transfer that client to the user". In a fill_random campaign an agent with no callable
+case of their own is dispatched a random pool case of any owner (`unassigned_dispatch_ok`, the
+same call-time grant), and the promise moves the case to the agent FROM ITS COLLECTOR too
+(`UPDATE ... WHERE user_id IS NOT DISTINCT FROM <the owner read under the case lock>`); the
+previous owner is kept in campaign_case_assignments.previous_user_id and the audit's `before`.
 """
 from __future__ import annotations
 
@@ -168,15 +176,23 @@ def claim_on_promise(attempt: dict, case_id: str, v: dict) -> dict | None:
     agent = str(attempt["collector_user_id"])
     if not sess().execute(text("SELECT is_active FROM users WHERE id = CAST(:u AS uuid)"), {"u": agent}).scalar():
         return None
+    # 2026-10-25 (0087): in a fill_random campaign the case moves to the agent from any collector
+    fill = bool(sess().execute(text("SELECT fill_random FROM campaigns WHERE id = CAST(:c AS uuid)"),
+                               {"c": str(attempt["campaign_id"])}).scalar())
+    previous = sess().execute(text("SELECT user_id::text FROM clints WHERE id = CAST(:c AS uuid)"),
+                              {"c": str(case_id)}).scalar()
+    if previous == agent or (previous is not None and not fill):
+        return None                                    # already theirs, or a collector's outside a fill campaign
     changed = sess().execute(text("""
-        UPDATE clints SET user_id = CAST(:u AS uuid) WHERE id = CAST(:c AS uuid) AND user_id IS NULL RETURNING id"""),
-        {"u": agent, "c": str(case_id)}).first()
+        UPDATE clints SET user_id = CAST(:u AS uuid) WHERE id = CAST(:c AS uuid)
+           AND user_id IS NOT DISTINCT FROM CAST(:prev AS uuid) RETURNING id"""),
+        {"u": agent, "c": str(case_id), "prev": previous}).first()
     if changed is None:
-        return None                                    # it has a collector: never taken from them
+        return None
     sess().execute(text("""INSERT INTO "SepcifyUsers" (user_id, clint_id, create_by)
                            VALUES (CAST(:u AS uuid), CAST(:c AS uuid), CAST(:by AS uuid))"""),
                    {"u": agent, "c": str(case_id), "by": me()})
-    return {"user_id": agent, "cause": cause}
+    return {"user_id": agent, "cause": cause, "previous_user_id": previous}
 
 
 def record_assignment(attempt: dict, case_id: str, assigned: dict | None, promise: dict | None) -> dict | None:
@@ -185,12 +201,14 @@ def record_assignment(attempt: dict, case_id: str, assigned: dict | None, promis
         return None
     promise_id = (promise or {}).get("id")
     sess().execute(text("""
-        INSERT INTO campaign_case_assignments (campaign_id, case_id, attempt_id, user_id, assigned_by, promise_id, cause)
+        INSERT INTO campaign_case_assignments (campaign_id, case_id, attempt_id, user_id, assigned_by, promise_id, cause,
+                                               previous_user_id)
         VALUES (CAST(:camp AS uuid), CAST(:c AS uuid), CAST(:a AS uuid), CAST(:u AS uuid), CAST(:by AS uuid),
-                CAST(:p AS uuid), :cause)"""),
+                CAST(:p AS uuid), :cause, CAST(:prev AS uuid))"""),
         {"camp": str(attempt["campaign_id"]), "c": str(case_id), "a": str(attempt["id"]), "u": assigned["user_id"],
-         "by": me(), "p": promise_id, "cause": assigned["cause"]})
-    audit.record("case.assign", "case", str(case_id), case_id=str(case_id), before={"user_id": None},
+         "by": me(), "p": promise_id, "cause": assigned["cause"], "prev": assigned.get("previous_user_id")})
+    audit.record("case.assign", "case", str(case_id), case_id=str(case_id),
+                 before={"user_id": assigned.get("previous_user_id")},
                  after={"user_id": assigned["user_id"], "campaign_id": str(attempt["campaign_id"]),
                         "attempt_id": str(attempt["id"]), "cause": assigned["cause"], "promise_id": promise_id},
                  reason=ASSIGN_REASON)
@@ -229,7 +247,7 @@ _GRANT_SQL = """
       JOIN call_attempts a ON a.id = ca.attempt_id
       {join}
      WHERE ca.user_id = CAST(:u AS uuid) AND {case_pred}
-       AND coalesce(cp.pool ->> 'unassigned_only', 'false') = 'true'
+       AND (coalesce(cp.pool ->> 'unassigned_only', 'false') = 'true' OR cp.fill_random)
        AND (EXISTS (SELECT 1 FROM call_reservations r WHERE r.attempt_id = a.id AND r.released_at IS NULL)
             OR a.wrapped_up_at > clock_timestamp() - make_interval(mins => :mins))
      LIMIT 1"""
@@ -255,20 +273,27 @@ def campaign_grant_identity(user_id, identity_number) -> bool:
 
 
 def unassigned_dispatch_ok(campaign_id, user_id, case_id) -> bool:
-    """Dispatch of an UNASSIGNED case to a member of an unassigned-only campaign: the user is an
-    active member, the case has no collector now, matches the pool definition and is in the
-    creator's current scope."""
+    """Dispatch of a case outside the member's own scope, from the campaign: the user is an active
+    member, the case matches the pool definition and is in the creator's current scope, and either
+    the campaign is unassigned-only and the case has no collector now, or (2026-10-25, 0087) the
+    campaign has fill_random (any owner)."""
     from services.calling import campaign_pool as P
     camp = sess().execute(text("""
-        SELECT cp.pool, cp.created_by FROM campaigns cp
+        SELECT cp.pool, cp.created_by, cp.fill_random FROM campaigns cp
           JOIN campaign_members m ON m.campaign_id = cp.id AND m.user_id = CAST(:u AS uuid) AND m.active
          WHERE cp.id = CAST(:c AS uuid)"""), {"c": str(campaign_id), "u": str(user_id)}).mappings().first()
-    if camp is None or not (camp["pool"] or {}).get(P.UNASSIGNED_KEY):
+    if camp is None:
+        return False
+    if camp["fill_random"]:
+        owner = "TRUE"
+    elif (camp["pool"] or {}).get(P.UNASSIGNED_KEY):
+        owner = "c.user_id IS NULL"
+    else:
         return False
     joins, where, params = P.definition_sql(camp["pool"], campaign_id=campaign_id)
     own, own_params = P.scope_clause(camp["created_by"], "os")
     return sess().execute(text(f"""
         SELECT 1 FROM clints c JOIN portfolios p ON p.id = c.portfolios_id JOIN contracts k ON k.id = p.contract_id
         {joins}
-         WHERE c.id = CAST(:case_id AS uuid) AND c.user_id IS NULL AND {where} AND {own}"""),
+         WHERE c.id = CAST(:case_id AS uuid) AND {owner} AND {where} AND {own}"""),
         {**params, **own_params, "case_id": str(case_id)}).first() is not None
