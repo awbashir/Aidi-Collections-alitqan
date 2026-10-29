@@ -77,6 +77,7 @@ db/
 | 0086 | `migrations/0086_campaign_case_lists.sql` | campaign customer lists (`campaign_list_cases`, from Excel / pasted national ids or account numbers), hand removals (`campaign_removed_cases`), `campaigns.cases_changed_at` (bumps the revision) | two new tables + one nullable column, instant | Yes |
 | 0087 | `migrations/0087_campaign_time_limit_fill.sql` | `campaigns.ends_at` (drains then stops by itself), `campaigns.fill_random` (random pool cases of any owner when an agent has none), `campaign_case_assignments.previous_user_id` (a promise moved the case from that collector) | catalog-only column additions, instant | Yes |
 | 0088 | `migrations/0088_message_campaigns.sql` | message campaigns: `campaigns.kind` (agent/message), `max_concurrent`, `message_transfer`, `message_notes`; `campaign_sounds` (converted audio); `message_calls` (one row per dial: token hash, PBX-reported state, key, member, result, note) | new tables + catalog-only columns, CHECKs NOT VALID then validated, instant | Yes |
+| 0089 | `migrations/0089_campaign_access_plays_listen.sql` | `campaigns.message_plays` (1..5, default 2); `campaign_case_assignments.message_call_id` (a promise after a message-campaign transfer moves the client), `attempt_id` nullable, exactly one of the two | catalog-only column + DROP NOT NULL, CHECKs NOT VALID then validated, instant | Yes |
 
 The `revision` columns are **not mapped in `models.py`**: every legacy serializer iterates
 mapped columns only and no legacy query selects `*`, so they never appear in a legacy

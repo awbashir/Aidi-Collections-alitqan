@@ -42,6 +42,7 @@ import {
   BrainCircuit, // Phase 6: AI administration
   BadgeCheck, // Phase 6: quality workspace
   ChartColumnStacked, // team performance dashboard
+  Trophy, // Alitqan performance board
 } from "lucide-react";
 
 
@@ -90,6 +91,7 @@ const navigationIcon: NavigationIcons = {
   calling_extensions: <Hash strokeWidth={2} size={18} />,
   call_monitor: <Activity strokeWidth={2} size={18} />,
   team_dashboard: <ChartColumnStacked strokeWidth={2} size={18} />,
+  itqan_dashboard: <Trophy strokeWidth={2} size={18} />,
   /* Phase 6 Q3 (voice training lab) */
   voice_lab: <Mic strokeWidth={2} size={18} />,
   /* Phase 6: AI administration and the quality workspace */

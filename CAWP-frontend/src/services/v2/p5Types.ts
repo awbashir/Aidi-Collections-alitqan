@@ -665,7 +665,7 @@ export type Campaign = {
     fill_random?: boolean
     /** 2026-10-25 (0088): 'message' = the PBX dials the client and plays the uploaded message */
     kind?: CampaignKind
-    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null } | null
+    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null; plays?: number } | null
     revision: number
     my_membership?: { active: boolean } | null
     my_readiness?: {
@@ -840,6 +840,8 @@ export type CampaignKind = 'agent' | 'message'
 export type MessageNoteResult = 'no_agent' | 'closed' | 'no_choice'
 export type MessageNotes = Partial<Record<MessageNoteResult, { status_id: string; sub_status_id: string | null }>> & {
     contact_method_id?: string
+    /** 2026-10-29 (0089): more than `seconds` on the line after answering -> this status, whatever the key */
+    listened?: { status_id: string; sub_status_id: string | null; seconds: number }
 }
 export type SoundKind = 'message' | 'callback' | 'goodbye'
 export type CampaignSound = {
@@ -904,6 +906,8 @@ export type CampaignBody = {
     max_concurrent?: number
     message_transfer?: boolean
     message_notes?: MessageNotes | null
+    /** 2026-10-29 (0089): 1..5 */
+    message_plays?: number
 }
 
 /* ------------------------------------------------------------------ PBX evidence (P4) */

@@ -196,13 +196,14 @@ def legacy_spec(status_id, sub_id, fields: dict):
     return spec, None
 
 
-def save_legacy_note(comment, sub_id, spec, actor, *, apply_all: bool = False):
+def save_legacy_note(comment, sub_id, spec, actor, *, apply_all: bool = False, assigning: dict | None = None):
     """POST /comments with a promise (`spec`) and/or applied to every account of the same debtor
     (`apply_all`, 0081): the note (one INSERT, as today), the promise and the copies in ONE
     transaction. Returns (body, http status) in the legacy contract: the note's as_dict()
     (+ comment_sub_status_id when given) plus `promise` (with a spec) and `applied_to` /
     `skipped_accounts` (with apply_all); 201 {status: false} when the promise or the copies are
-    refused (nothing is written then)."""
+    refused (nothing is written then). `assigning` (2026-10-29): the case was just moved to the
+    actor by campaign_rules.claim_on_message_promise; its assignment row is written with the note."""
     from services import comment_status_tree as status_tree
     from services import note_siblings
     try:
@@ -219,6 +220,9 @@ def save_legacy_note(comment, sub_id, spec, actor, *, apply_all: bool = False):
             note_id = comment.id
         promise = apply(comment.clint_id, actor, spec, source="note", comment_id=note_id) if spec else None
         siblings = note_siblings.write(planned, note_id, comment.clint_id, actor, source="note")
+        if assigning is not None:
+            from services.calling import campaign_rules
+            campaign_rules.record_message_assignment(comment.clint_id, assigning, promise)
         _s().commit()
     except ApiError as e:
         _s().rollback()

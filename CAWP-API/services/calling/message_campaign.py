@@ -50,7 +50,7 @@ log = logging.getLogger("cawp.calling.message")
 
 DIAL_CONTEXT = "collections-message-dial"
 IVR_CONTEXT = "collections-message-ivr"
-RING_SECONDS = 30
+RING_SECONDS = 60                  # 2026-10-29: the customer asked for 60 s (was 30); = the dialplan's ring_seconds
 TOKEN_TTL_SECONDS = RING_SECONDS + 60
 SOUND_KINDS = ("message", "callback", "goodbye")
 NOTE_RESULTS = ("no_agent", "closed", "no_choice")
@@ -65,6 +65,11 @@ SWEEP_SECONDS = {"sending": 120, "dialing": RING_SECONDS + 120}
 NOTE_TEXT = {"no_agent": "حملة رسائل: اختار العميل التحويل إلى موظف ولم يتوفر موظف؛ سُمعت رسالة معاودة الاتصال.",
              "closed": "حملة رسائل: استمع العميل للرسالة واختار الإنهاء.",
              "no_choice": "حملة رسائل: استمع العميل للرسالة ولم يختر شيئاً."}
+# 2026-10-29 (0089) message_notes.listened: the client stayed on the line more than `seconds` after answering
+LISTENED_TEXT = "حملة رسائل: بقي العميل على الخط {s} ثانية بعد الرد ({what})."
+LISTENED_WHAT = {"no_agent": "اختار التحويل ولم يتوفر موظف", "closed": "اختار الإنهاء", "no_choice": "لم يختر شيئاً",
+                 "transferred": "حُوّل إلى موظف", "hung_up": "أغلق الخط"}
+LISTEN_MAX_SECONDS = 600
 
 _KEY = IDENTITY_KEY_SQL
 
@@ -239,9 +244,11 @@ class Job:
 
 def originate_fields(call_id: str, campaign: dict, destination: str, token: str, *, transfer: bool,
                      goodbye: bool) -> list[tuple[str, str]]:
+    plays = campaign.get("message_plays") or 2
     variables = [f"__COLLECTIONS_MSG_CALL={call_id}", f"__COLLECTIONS_MSG_CAMPAIGN={campaign['id']}",
                  f"COLLECTIONS_MSG_TOKEN={token}", f"COLLECTIONS_MSG_TRANSFER={'1' if transfer else '0'}",
-                 f"COLLECTIONS_MSG_GOODBYE={'1' if goodbye else '0'}"]
+                 f"COLLECTIONS_MSG_GOODBYE={'1' if goodbye else '0'}",
+                 f"COLLECTIONS_MSG_PLAYS_MAX={int(plays) if 1 <= int(plays) <= 5 else 2}"]   # 2026-10-29 (0089)
     return [("Channel", f"Local/{destination}@{DIAL_CONTEXT}/n"), ("Context", IVR_CONTEXT), ("Exten", "s"),
             ("Priority", "1"), ("Timeout", str((RING_SECONDS + 15) * 1000)), ("Async", "true"),
             ("CallerID", f"cawp-msg <{destination}>")] + [("Variable", v) for v in variables]
@@ -419,35 +426,56 @@ def pick_member(session, *, call_id: str) -> str | None:
 
 
 # --------------------------------------------------------------------------- PBX events
-def _note(session, m: dict, result: str) -> str | None:
-    """The note the campaign names for this result (none configured -> none)."""
+def _listened(session, m: dict) -> int | None:
+    """Whole seconds since the client answered when the campaign's `listened` threshold is passed
+    (more than `seconds`), else None."""
+    cfg = (m.get("message_notes") or {}).get("listened") or {}
+    if not cfg.get("status_id") or not cfg.get("seconds") or m.get("answered_at") is None:
+        return None
+    secs = session.execute(text("SELECT extract(epoch FROM clock_timestamp() - CAST(:a AS timestamptz))"),
+                           {"a": m["answered_at"]}).scalar()
+    return int(secs) if secs is not None and secs > int(cfg["seconds"]) else None
+
+
+def _note(session, m: dict, result: str, *, listened: int | None = None) -> str | None:
+    """The note the campaign names for this result (none configured -> none); `listened` (0089):
+    the `listened` status instead, whatever the result, with the seconds in the text."""
     notes = (m.get("message_notes") or {})
-    cfg = notes.get(result) or {}
+    cfg = notes.get("listened" if listened is not None else result) or {}
     status_id, method_id = cfg.get("status_id"), notes.get("contact_method_id")
     if not status_id or not method_id:
         return None
+    body = (LISTENED_TEXT.format(s=listened, what=LISTENED_WHAT.get(result, result)) if listened is not None
+            else NOTE_TEXT[result])
     note_id = str(session.execute(text("""
         INSERT INTO "Comments" (clint_id, user_id, "contactMethod_id", comment, comment_status_id, comment_sub_status_id,
                                 "contactNumber")
         VALUES (CAST(:case AS uuid), CAST(:u AS uuid), CAST(:method AS uuid), :t, CAST(:st AS uuid), CAST(:sub AS uuid), :num)
         RETURNING id"""), {"case": str(m["case_id"]), "u": str(m["created_by"]), "method": method_id,
-                           "t": NOTE_TEXT[result], "st": status_id, "sub": cfg.get("sub_status_id"),
+                           "t": body, "st": status_id, "sub": cfg.get("sub_status_id"),
                            "num": m["destination"]}).scalar())
     audit.record("note.create", "comment", note_id, case_id=str(m["case_id"]), after={
         "comment_status_id": status_id, "comment_sub_status_id": cfg.get("sub_status_id"), "source": "message_campaign",
-        "message_call_id": str(m["id"]), "result": result}, session=session, actor_user_id=None, request_id=None,
+        "message_call_id": str(m["id"]), "result": result, "listened_seconds": listened}, session=session, actor_user_id=None, request_id=None,
         idempotency_key=None, source="campaign")
     return note_id
 
 
-def _finish(session, m: dict, result: str | None, *, reason: str | None = None) -> None:
+def _finish(session, m: dict, result: str | None, *, reason: str | None = None) -> str | None:
+    """The result (and its note: the `listened` one when the client stayed long enough, else the
+    result's own) -> the note written now, if any."""
     note_id = None
-    if result in NOTE_RESULTS and m.get("note_id") is None:
-        note_id = _note(session, m, result)
+    if m.get("note_id") is None and result is not None:
+        listened = _listened(session, m)
+        if listened is not None:
+            note_id = _note(session, m, result, listened=listened)
+        elif result in NOTE_RESULTS:
+            note_id = _note(session, m, result)
     session.execute(text("""
         UPDATE message_calls SET result = coalesce(CAST(:r AS text), result), note_id = coalesce(CAST(:n AS uuid), note_id),
                reason_code = coalesce(CAST(:rc AS text), reason_code), updated_at = now()
          WHERE id = CAST(:id AS uuid)"""), {"r": result, "n": note_id, "rc": reason, "id": str(m["id"])})
+    return note_id
 
 
 def on_event(session, frame) -> str | None:
@@ -511,6 +539,12 @@ def on_event(session, frame) -> str | None:
             result = ("transferred" if m["member_answered_at"] is not None
                       else "hung_up" if m["answered_at"] is not None else "unknown")
             _finish(session, m, result, reason="client_hung_up" if result == "hung_up" else None)
+        elif m["note_id"] is None and (listened := _listened(session, m)) is not None:
+            # 0089: e.g. a transferred call (no result note) whose length passed the `listened` threshold
+            note_id = _note(session, m, result, listened=listened)
+            if note_id is not None:
+                session.execute(text("UPDATE message_calls SET note_id = CAST(:n AS uuid) WHERE id = CAST(:id AS uuid)"),
+                                {"n": note_id, "id": call_id})
         session.execute(text("""UPDATE message_calls SET state = 'ended', ended_at = coalesce(ended_at, now()),
                                        updated_at = now() WHERE id = CAST(:id AS uuid)"""), {"id": call_id})
     else:
@@ -638,8 +672,9 @@ def validate_notes(raw) -> dict | None:
     from services.calling.common import valid_uuid
     if raw is None:
         return None
-    if not isinstance(raw, dict) or set(raw) - {*NOTE_RESULTS, "contact_method_id"}:
-        raise ApiError(422, VALIDATION_FAILED, "message_notes must be {no_agent?, closed?, no_choice?, contact_method_id?}",
+    if not isinstance(raw, dict) or set(raw) - {*NOTE_RESULTS, "listened", "contact_method_id"}:
+        raise ApiError(422, VALIDATION_FAILED,
+                       "message_notes must be {no_agent?, closed?, no_choice?, listened?, contact_method_id?}",
                        {"message_notes": "invalid"})
     out = {}
     method = raw.get("contact_method_id")
@@ -649,13 +684,19 @@ def validate_notes(raw) -> dict | None:
                                        {"i": mid}).first() is None:
             raise ApiError(422, VALIDATION_FAILED, "unknown contact method", {"message_notes.contact_method_id": "unknown"})
         out["contact_method_id"] = mid
-    for r in NOTE_RESULTS:
+    for r in (*NOTE_RESULTS, "listened"):
         v = raw.get(r)
         if v in (None, {}):
             continue
-        if not isinstance(v, dict) or set(v) - {"status_id", "sub_status_id"}:
+        extra = {"seconds"} if r == "listened" else set()
+        if not isinstance(v, dict) or set(v) - {"status_id", "sub_status_id", *extra}:
             raise ApiError(422, VALIDATION_FAILED, f"message_notes.{r} must be {{status_id, sub_status_id?}}",
                            {f"message_notes.{r}": "invalid"})
+        if r == "listened":                               # 2026-10-29 (0089): more than `seconds` after answering
+            secs = v.get("seconds")
+            if isinstance(secs, bool) or not isinstance(secs, int) or not 1 <= secs <= LISTEN_MAX_SECONDS:
+                raise ApiError(422, VALIDATION_FAILED, f"message_notes.listened.seconds must be 1..{LISTEN_MAX_SECONDS}",
+                               {"message_notes.listened.seconds": "invalid"})
         sid, sub = valid_uuid(v.get("status_id")), v.get("sub_status_id")
         sub = valid_uuid(sub) if sub not in (None, "") else None
         rows = {str(x[0]): x[1] for x in _s().execute(text("""
@@ -665,7 +706,9 @@ def validate_notes(raw) -> dict | None:
             raise ApiError(422, VALIDATION_FAILED, f"message_notes.{r}: unknown status or sub-status",
                            {f"message_notes.{r}": "unknown"})
         out[r] = {"status_id": sid, "sub_status_id": sub}
-    if any(r in out for r in NOTE_RESULTS) and "contact_method_id" not in out:
+        if r == "listened":
+            out[r]["seconds"] = v["seconds"]
+    if any(r in out for r in (*NOTE_RESULTS, "listened")) and "contact_method_id" not in out:
         raise ApiError(422, VALIDATION_FAILED, "a note needs a contact method", {"message_notes.contact_method_id": "required"})
     return out
 

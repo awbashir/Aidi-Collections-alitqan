@@ -1,0 +1,47 @@
+{
+  "context": "collections-human-outbound",
+  "driver": "SIP",
+  "trunk": "Mobily18",
+  "max_call_seconds": 3600,
+  "ring_seconds": 60,
+  "record": true,
+  "trunks": [
+    "Mobily18",
+    "Mobily19",
+    "Mobily20",
+    "Mobily21",
+    "Mobily22",
+    "Mobily23",
+    "Mobily24",
+    "Mobily25",
+    "Mobily26"
+  ],
+  "dial_format": "national_sa",
+  "pbx_events": "legacy",
+  "issabel_trunk_ids": {
+    "Mobily18": 2,
+    "Mobily19": 3,
+    "Mobily20": 4,
+    "Mobily21": 5,
+    "Mobily22": 6,
+    "Mobily23": 7,
+    "Mobily24": 8,
+    "Mobily25": 9,
+    "Mobily26": 10
+  },
+  "calling_windows": [
+    {
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "start": "00:00",
+      "end": "24:00"
+    }
+  ]
+}

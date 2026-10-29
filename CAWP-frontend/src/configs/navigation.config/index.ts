@@ -62,6 +62,18 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* Alitqan performance board, beside the team dashboard (customer request 2026-10-29). */
+  {
+    key: "itqan_dashboard",
+    group: NAV_GROUP_DAILY_OPERATIONS,
+    path: "/itqan-dashboard",
+    title: "Alitqan performance",
+    translateKey: "p13.itqan.nav",
+    icon: "itqan_dashboard",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* Phase 1: the daily attention queue sits right under Home. */
   {
     key: "attention_queue",

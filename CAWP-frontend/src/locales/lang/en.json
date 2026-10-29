@@ -6524,7 +6524,8 @@
       "noteFor": {
         "no_agent": "Asked for an agent, none free",
         "closed": "Chose to close (2)",
-        "no_choice": "Listened, no choice"
+        "no_choice": "Listened, no choice",
+        "listened": "Stayed on the line longer"
       },
       "contactMethod": "Contact method for the notes",
       "sound": {
@@ -6617,8 +6618,146 @@
       "err": {
         "sounds_missing": "Upload the required messages and install them on the PBX before starting (the message, and the callback message when transfer is on).",
         "message_campaign": "A message campaign dials the clients itself; stay ready to take a transferred client.",
-        "not_a_message_campaign": "This is not a message campaign."
-      }
+        "not_a_message_campaign": "This is not a message campaign.",
+        "listen_seconds": "Enter a time on the line from 1 to 600 seconds."
+      },
+      "plays": "Times the message plays",
+      "playsHint": "1 to 5 times when the client presses no key.",
+      "listenSeconds": "Time on the line (seconds)",
+      "listenSecondsHint": "A client who stays on the line longer than this after answering gets the status below, whatever they choose (1 to 600)."
+    }
+  },
+  "p13": {
+    "itqan": {
+      "nav": "Alitqan performance",
+      "title": "Alitqan performance board",
+      "subtitle": "Collector and supervisor scorecards from the system's real data",
+      "scope": {
+        "all": "All collectors",
+        "team": "Your team",
+        "own": "Your own performance"
+      },
+      "month": "Month",
+      "portfolio": "Portfolio",
+      "allPortfolios": "All portfolios",
+      "workDays": "Working days: {{passed}} of {{total}} (Sunday to Thursday)",
+      "workDaysClosed": "Closed month: {{total}} working days",
+      "idle": "{{n}} accounts with no activity this month (no login, call, note or payment) are not scored: {{names}}",
+      "overview": "Where does the monthly target stand?",
+      "target": "Target",
+      "collected": "Collected",
+      "expected": "Expected to date",
+      "openPromises": "Open promises",
+      "gap": "Gap after promises",
+      "collectors": "Collectors",
+      "ofTarget": "{{p}} of target",
+      "pace": "{{p}} of expected",
+      "ratings": "Rating distribution",
+      "trend": "Collected over the last 6 months and this month",
+      "trendNoTargets": "Achievement for past months is unknown: the monthly target history starts when it was enabled.",
+      "trendCollector": "Target achievement (past months)",
+      "achievement": "Achievement",
+      "paceTitle": "Each collector against the expected to date",
+      "noTargets": "No targets this month",
+      "leaderboard": "Leaderboard",
+      "rowHint": "Click a row for the collector's card",
+      "collector": "Collector",
+      "score": "Score",
+      "rank": "Rank",
+      "ratingCol": "Rating",
+      "paceCol": "Of expected",
+      "supervisor": "Supervisor",
+      "none": "No collectors in this scope",
+      "close": "Close",
+      "criterion": "Criterion",
+      "weight": "Weight used",
+      "weightOriginal": "Original weight",
+      "indicator": "Indicator",
+      "how": {
+        "payments": "Approved collections / expected to date (target x working days passed / working days in the month).",
+        "calls": "App calls (click-to-call and campaigns) per working day / what the team's top 10% reach ({{calls}} a day); no daily call target is recorded.",
+        "reach": "Calls the client answered / all calls, against {{reach_target}}%.",
+        "ptp": "(kept rate + share of promises with a payment) / 2 for the promises due this month, against {{ptp_target}}%.",
+        "intensity": "Half for call attempts per client ({{attempts_full}} = full), half for notes a day ({{notes_full}} = full).",
+        "attendance": "Working days with a successful login / working days passed.",
+        "system": "Share of the collector's open clients with a note in the last {{system_days}} days."
+      },
+      "rating": {
+        "excellent": "Excellent",
+        "very_good": "Very good",
+        "good": "Good",
+        "needs_improvement": "Needs improvement"
+      },
+      "crit": {
+        "payments": "Payments",
+        "calls": "Productivity (calls)",
+        "reach": "Reach rate",
+        "ptp": "Promises and their quality",
+        "intensity": "Work intensity",
+        "attendance": "Attendance",
+        "system": "System update quality"
+      },
+      "critShort": {
+        "payments": "Payments",
+        "calls": "Calls",
+        "reach": "Reach",
+        "ptp": "Promises",
+        "intensity": "Intensity",
+        "attendance": "Attendance",
+        "system": "Updates"
+      },
+      "ind": {
+        "payments": "{{got}} of the expected {{exp}}",
+        "calls": "{{n}} calls a day (reference {{target}})",
+        "reach": "{{rate}} of calls (target {{target}}%)",
+        "ptp": "kept {{kept}}, with a payment {{paid}} ({{n}} promises due)",
+        "intensity": "{{attempts}} attempts per client, {{notes}} notes a day",
+        "attendance": "{{n}} login days of {{of}} working days",
+        "system": "{{rate}} of open clients noted within {{days}} days"
+      },
+      "dropped": "Criteria with no data in the system were dropped and their weights redistributed: {{list}}",
+      "drop": {
+        "resched": "Rescheduling",
+        "najiz": "Najiz payments",
+        "cooperation": "Commitment and cooperation",
+        "instructions": "Following instructions",
+        "supervision": "Supervision quality",
+        "reports": "Reports",
+        "notes_speed": "Handling remarks",
+        "turnover": "Staff turnover"
+      },
+      "supervisors": "Supervisor cards",
+      "teamOf": "team of {{n}} collectors",
+      "supCrit": {
+        "target": "Monthly target",
+        "quality": "Team quality",
+        "improvement": "Improvement"
+      },
+      "supHow": {
+        "target": "Team collected / team expected to date.",
+        "quality": "Average score of the team's collectors.",
+        "improvement": "The team's pace this month / its achievement last month (unknown when last month's target was not recorded)."
+      },
+      "supLine": "Collected {{got}} of {{target}} · last month {{prev}}",
+      "portfolios": "Cash and today's promises by portfolio",
+      "cash": "Cash",
+      "scheduled": "Scheduled",
+      "promisesToday": "Today's promises",
+      "advanced": "Strong-collector indicators",
+      "advancedHint": "The best in each column is highlighted in green",
+      "adv": {
+        "call_to_ptp": "Call to promise",
+        "kept_rate": "Promises kept",
+        "paid_rate": "Promise to payment",
+        "avg_payment": "Average payment",
+        "calls_per_contact": "Calls per contact",
+        "attempts_per_client": "Attempts per client",
+        "new_files_24h": "New files within 24h"
+      },
+      "methodCollector": "How the collector scorecard is computed",
+      "methodSupervisor": "How the supervisor scorecard is computed",
+      "methodIntro": "Each criterion is scored out of 100 and multiplied by its weight. A criterion unknown for a collector (no target, no calls, no promise due) is left out of their score. Money: approved payments only, credited to the client's current owner.",
+      "ratingRule": "Rating: 90+ excellent, 80+ very good, 70+ good, below that needs improvement. A supervisor is a supervisor user (not a system admin) with at least two collectors in their team."
     }
   }
 }

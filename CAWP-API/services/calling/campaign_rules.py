@@ -41,6 +41,18 @@ case of their own is dispatched a random pool case of any owner (`unassigned_dis
 same call-time grant), and the promise moves the case to the agent FROM ITS COLLECTOR too
 (`UPDATE ... WHERE user_id IS NOT DISTINCT FROM <the owner read under the case lock>`); the
 previous owner is kept in campaign_case_assignments.previous_user_id and the audit's `before`.
+
+2026-10-29 (0089), customer request: "any client the collector gives a promise status, assign
+that client to the collector" - on CAMPAIGN calls only (customer's choice), from any collector:
+* every agent-campaign wrap-up with a promise moves the case to the agent (no longer only
+  unassigned cases or fill_random campaigns);
+* a client a message campaign transferred to a member (they talked, `message_calls.member_user_id`,
+  within GRANT_AFTER_WRAPUP_MINUTES of the call's end) moves to that member when they save a note
+  with a promise status or a promise (legacy POST /comments; `claim_on_message_promise`); the
+  assignment row names the message call (campaign_case_assignments.message_call_id).
+And "a campaign reaching a client not assigned to the user shows 'cannot access'": the call-time
+grant now covers every campaign attempt, not only unassigned-only / fill_random campaigns, and the
+legacy client route admits it for supervisor-scoped users too (app.py GET /clints/<id>).
 """
 from __future__ import annotations
 
@@ -176,13 +188,15 @@ def claim_on_promise(attempt: dict, case_id: str, v: dict) -> dict | None:
     agent = str(attempt["collector_user_id"])
     if not sess().execute(text("SELECT is_active FROM users WHERE id = CAST(:u AS uuid)"), {"u": agent}).scalar():
         return None
-    # 2026-10-25 (0087): in a fill_random campaign the case moves to the agent from any collector
-    fill = bool(sess().execute(text("SELECT fill_random FROM campaigns WHERE id = CAST(:c AS uuid)"),
-                               {"c": str(attempt["campaign_id"])}).scalar())
+    return _move_case(case_id, agent, cause)
+
+
+def _move_case(case_id: str, agent: str, cause: str) -> dict | None:
+    """The legacy assignment writes, from whoever holds the case (2026-10-29: any collector)."""
     previous = sess().execute(text("SELECT user_id::text FROM clints WHERE id = CAST(:c AS uuid)"),
                               {"c": str(case_id)}).scalar()
-    if previous == agent or (previous is not None and not fill):
-        return None                                    # already theirs, or a collector's outside a fill campaign
+    if previous == agent:
+        return None                                    # already theirs
     changed = sess().execute(text("""
         UPDATE clints SET user_id = CAST(:u AS uuid) WHERE id = CAST(:c AS uuid)
            AND user_id IS NOT DISTINCT FROM CAST(:prev AS uuid) RETURNING id"""),
@@ -193,6 +207,58 @@ def claim_on_promise(attempt: dict, case_id: str, v: dict) -> dict | None:
                            VALUES (CAST(:u AS uuid), CAST(:c AS uuid), CAST(:by AS uuid))"""),
                    {"u": agent, "c": str(case_id), "by": me()})
     return {"user_id": agent, "cause": cause, "previous_user_id": previous}
+
+
+def claim_on_message_promise(case_id: str, actor: str, status_id, sub_id, has_promise: bool) -> dict | None:
+    """Legacy POST /comments (2026-10-29): `actor` talked with this client after a message campaign
+    transferred them (member_answered_at set, the call live or ended less than
+    GRANT_AFTER_WRAPUP_MINUTES ago) and saves a promise status or a promise -> the case moves to
+    them, BEFORE the promise is recorded. -> {"user_id", "cause", "previous_user_id",
+    "message_call_id", "campaign_id"} or None."""
+    from services import promise_required as promise_rules
+    if _uuid(case_id) is None or not actor:
+        return None
+    if status_id is not None and promise_rules.status_requires_promise(status_id, sub_id):
+        cause = "status"
+    elif has_promise:
+        cause = "promise"
+    else:
+        return None
+    call = sess().execute(text("""
+        SELECT m.id::text, m.campaign_id::text FROM message_calls m JOIN users u ON u.id = m.member_user_id AND u.is_active
+         WHERE m.case_id = CAST(:c AS uuid) AND m.member_user_id = CAST(:u AS uuid) AND m.member_answered_at IS NOT NULL
+           AND (m.state IN ('talking', 'uncertain') OR m.ended_at > clock_timestamp() - make_interval(mins => :mins))
+           AND NOT EXISTS (SELECT 1 FROM campaign_case_assignments x WHERE x.message_call_id = m.id)
+         ORDER BY m.member_answered_at DESC LIMIT 1"""),
+        {"c": _uuid(case_id), "u": str(actor), "mins": GRANT_AFTER_WRAPUP_MINUTES}).first()
+    if call is None:
+        return None
+    sess().execute(text("SELECT 1 FROM clints WHERE id = CAST(:c AS uuid) FOR UPDATE"), {"c": _uuid(case_id)})
+    moved = _move_case(_uuid(case_id), str(actor), cause)
+    if moved is None:
+        return None
+    return {**moved, "message_call_id": call[0], "campaign_id": call[1]}
+
+
+def record_message_assignment(case_id: str, assigned: dict | None, promise: dict | None) -> dict | None:
+    """After the note (and promise) of claim_on_message_promise: the assignment row and the audit."""
+    if assigned is None:
+        return None
+    promise_id = (promise or {}).get("id")
+    sess().execute(text("""
+        INSERT INTO campaign_case_assignments (campaign_id, case_id, message_call_id, user_id, assigned_by, promise_id,
+                                               cause, previous_user_id)
+        VALUES (CAST(:camp AS uuid), CAST(:c AS uuid), CAST(:m AS uuid), CAST(:u AS uuid), CAST(:by AS uuid),
+                CAST(:p AS uuid), :cause, CAST(:prev AS uuid))"""),
+        {"camp": assigned["campaign_id"], "c": str(case_id), "m": assigned["message_call_id"], "u": assigned["user_id"],
+         "by": me(), "p": promise_id, "cause": assigned["cause"], "prev": assigned.get("previous_user_id")})
+    audit.record("case.assign", "case", str(case_id), case_id=str(case_id),
+                 before={"user_id": assigned.get("previous_user_id")},
+                 after={"user_id": assigned["user_id"], "campaign_id": assigned["campaign_id"],
+                        "message_call_id": assigned["message_call_id"], "cause": assigned["cause"],
+                        "promise_id": promise_id},
+                 reason=ASSIGN_REASON)
+    return assigned
 
 
 def record_assignment(attempt: dict, case_id: str, assigned: dict | None, promise: dict | None) -> dict | None:
@@ -247,7 +313,6 @@ _GRANT_SQL = """
       JOIN call_attempts a ON a.id = ca.attempt_id
       {join}
      WHERE ca.user_id = CAST(:u AS uuid) AND {case_pred}
-       AND (coalesce(cp.pool ->> 'unassigned_only', 'false') = 'true' OR cp.fill_random)
        AND (EXISTS (SELECT 1 FROM call_reservations r WHERE r.attempt_id = a.id AND r.released_at IS NULL)
             OR a.wrapped_up_at > clock_timestamp() - make_interval(mins => :mins))
      LIMIT 1"""
@@ -261,7 +326,7 @@ _MESSAGE_GRANT_SQL = """
 
 
 def campaign_grant(user_id, case_id) -> bool:
-    """`user_id` has a campaign attempt on `case_id` (unassigned-only campaign) that holds its
+    """`user_id` has a campaign attempt on `case_id` (any campaign since 2026-10-29) that holds its
     reservation or was wrapped up less than GRANT_AFTER_WRAPUP_MINUTES ago; or (2026-10-25, 0088) a
     message campaign transferred that client to them (ringing, talking, or ended less than
     GRANT_AFTER_WRAPUP_MINUTES ago)."""

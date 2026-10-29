@@ -106,6 +106,9 @@ type Draft = {
     transfer: boolean
     notes: Record<MessageNoteResult, { status: string; sub: string }>
     contactMethod: string
+    /** 2026-10-29 (0089): plays 1..5; the "stayed on the line" status and its seconds */
+    plays: number
+    listen: { seconds: number; status: string; sub: string }
     settings: CampaignSettings
     members: string[]
 }
@@ -139,6 +142,12 @@ const draftFrom = (c: Campaign | null, filter?: Record<string, unknown>): Draft 
             NOTE_RESULTS.map((r) => [r, { status: c?.message?.notes?.[r]?.status_id || '', sub: c?.message?.notes?.[r]?.sub_status_id || '' }])
         ) as Draft['notes'],
         contactMethod: c?.message?.notes?.contact_method_id || '',
+        plays: c?.message?.plays ?? 2,
+        listen: {
+            seconds: c?.message?.notes?.listened?.seconds ?? NaN,
+            status: c?.message?.notes?.listened?.status_id || '',
+            sub: c?.message?.notes?.listened?.sub_status_id || '',
+        },
         settings: { ...DEFAULT_SETTINGS, ...(c?.settings || {}) },
         members: [],
     }
@@ -152,6 +161,8 @@ const notesOf = (d: Draft): MessageNotes | null => {
     NOTE_RESULTS.forEach((r) => {
         if (d.notes[r].status) out[r] = { status_id: d.notes[r].status, sub_status_id: d.notes[r].sub || null }
     })
+    if (d.listen.status)
+        out.listened = { status_id: d.listen.status, sub_status_id: d.listen.sub || null, seconds: d.listen.seconds }
     if (Object.keys(out).length === 0) return null
     return { ...out, contact_method_id: d.contactMethod || undefined }
 }
@@ -286,10 +297,13 @@ const CampaignForm = ({
         return Number.isInteger(v) && v >= LIMITS[k][0] && v <= LIMITS[k][1]
     })
     const notes = notesOf(d)
+    const listenOk = Number.isInteger(d.listen.seconds) && d.listen.seconds >= 1 && d.listen.seconds <= 600
     const messageOk =
         !isMessage ||
-        (Number.isInteger(d.maxConcurrent) && d.maxConcurrent >= 1 && d.maxConcurrent <= 20 && (!notes || !!d.contactMethod))
+        (Number.isInteger(d.maxConcurrent) && d.maxConcurrent >= 1 && d.maxConcurrent <= 20 && (!notes || !!d.contactMethod) &&
+            Number.isInteger(d.plays) && d.plays >= 1 && d.plays <= 5 && (!d.listen.status || listenOk))
     const mainStatuses = statusList.filter((o) => !o.parent_id)
+    const listenSubs = statusList.filter((o) => o.parent_id && o.parent_id === d.listen.status)
     const pool = poolOf(d)
     const hasCriterion =
         pool.case_list === true ||
@@ -341,7 +355,9 @@ const CampaignForm = ({
             onClose={onClose}
             onSubmit={async (key) => {
                 const settings = { ...d.settings }
-                const msg = isMessage ? { max_concurrent: d.maxConcurrent, message_transfer: d.transfer, message_notes: notes } : {}
+                const msg = isMessage
+                    ? { max_concurrent: d.maxConcurrent, message_transfer: d.transfer, message_notes: notes, message_plays: d.plays }
+                    : {}
                 const extra = { ends_at: d.endsAt ? fromRiyadhLocal(d.endsAt) : null, ...(isMessage ? {} : { fill_random: d.fillRandom }), ...msg }
                 const res = campaign
                     ? await campaignsApi.update(campaign.id, { expected_revision: campaign.revision, name: d.name.trim(), pool, settings, ...extra }, key)
@@ -573,6 +589,20 @@ const CampaignForm = ({
                             </Checkbox>
                             <div className="mt-1 text-[12px] text-gray-600">{t('p12.msg.transferHint')}</div>
                         </div>
+                        <DialogField label={t('p12.msg.plays')} required hint={t('p12.msg.playsHint')}>
+                            <Input
+                                size="sm"
+                                dir="ltr"
+                                inputMode="numeric"
+                                value={Number.isNaN(d.plays) ? '' : String(d.plays)}
+                                onChange={(e) => {
+                                    const raw = e.target.value.replace(/[^0-9]/g, '').slice(0, 1)
+                                    setD({ ...d, plays: raw === '' ? NaN : Number(raw) })
+                                }}
+                                data-testid="p12-cf-plays"
+                            />
+                        </DialogField>
+                        <div />
                         {numberField('max_attempts_per_day', String(t('p5.cf.maxAttempts')), String(t('p5.cf.maxAttemptsHint')))}
                         {numberField('cooldown_minutes', String(t('p5.cf.cooldown')), String(t('p5.cf.cooldownHint')))}
                     </div>
@@ -609,6 +639,53 @@ const CampaignForm = ({
                             </div>
                         )
                     })}
+                    <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-3" data-testid="p12-cf-note-listened">
+                        <DialogField
+                            label={t('p12.msg.listenSeconds')}
+                            required={!!d.listen.status}
+                            hint={
+                                d.listen.status && !listenOk ? (
+                                    <span className="text-red-600">{t('p12.msg.err.listen_seconds')}</span>
+                                ) : (
+                                    t('p12.msg.listenSecondsHint')
+                                )
+                            }
+                        >
+                            <Input
+                                size="sm"
+                                dir="ltr"
+                                inputMode="numeric"
+                                value={Number.isNaN(d.listen.seconds) ? '' : String(d.listen.seconds)}
+                                onChange={(e) => {
+                                    const raw = e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
+                                    setD({ ...d, listen: { ...d.listen, seconds: raw === '' ? NaN : Number(raw) } })
+                                }}
+                                data-testid="p12-cf-listen-seconds"
+                            />
+                        </DialogField>
+                        <DialogField label={t('p12.msg.noteFor.listened')}>
+                            <Select
+                                size="sm"
+                                menuPosition="fixed"
+                                isClearable
+                                isLoading={noteStatuses.loading}
+                                options={mainStatuses}
+                                value={mainStatuses.find((o) => o.value === d.listen.status) || null}
+                                onChange={(o) => setD({ ...d, listen: { ...d.listen, status: (o as Option | null)?.value || '', sub: '' } })}
+                            />
+                        </DialogField>
+                        <DialogField label={t('p9.campaign.subStatus')}>
+                            <Select
+                                size="sm"
+                                menuPosition="fixed"
+                                isClearable
+                                isDisabled={listenSubs.length === 0}
+                                options={listenSubs}
+                                value={listenSubs.find((o) => o.value === d.listen.sub) || null}
+                                onChange={(o) => setD({ ...d, listen: { ...d.listen, sub: (o as Option | null)?.value || '' } })}
+                            />
+                        </DialogField>
+                    </div>
                     <DialogField label={t('p12.msg.contactMethod')} required={!!notes}>
                         <div data-testid="p12-cf-contact-method">
                             <Select

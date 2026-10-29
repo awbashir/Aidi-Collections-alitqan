@@ -16,7 +16,7 @@ leaves the campaign and a note records it.
    the same pool as today (filters or customer list, every exclusion: do-not-call, paid, any
    payment, answered in this campaign, removed by hand, calling window, end time).
 2. The PBX dials the client's number **once** on the first reachable Mobily trunk with the trunk's
-   caller ID (the same rules as click-to-call: no second SIM after a failure), 30 s ring.
+   caller ID (the same rules as click-to-call: no second SIM after a failure), 60 s ring (30 s until 2026-10-29).
    A one-shot token checked by the app's FastAGI hook gates the dial: no token, no call.
 3. Client answers → the uploaded message plays (once, then once more if no key is pressed).
 4. Keys:
@@ -39,6 +39,16 @@ service did not see is *uncertain* and reconciled, never counted.
 Note on the project rule "click-to-call is extension-first": message campaigns dial the client
 first by design (the customer's request). They are a separate campaign kind with their own
 restricted dialplan; click-to-call and agent campaigns stay extension-first and unchanged.
+
+### 2026-10-29 additions (migration 0089)
+
+* **Times the message plays** (1..5, default 2) when no key is pressed: `campaigns.message_plays`, sent on
+  the Originate as `COLLECTIONS_MSG_PLAYS_MAX` and re-checked by the dialplan (anything else = 2).
+* **Time on the line**: `message_notes.listened = {seconds, status_id, sub_status_id}`. A client who stays
+  on the line more than `seconds` after answering gets that status note instead of the result's own,
+  whatever key they pressed (customer's choice: always); measured at the result, else at the call's end.
+* A promise status saved by the member a "1" transferred the client to moves the client to that member
+  (campaign_rules.claim_on_message_promise; `campaign_case_assignments.message_call_id`).
 
 ## 2. Messages (audio)
 
@@ -95,7 +105,7 @@ Nothing else changes: no `sip.conf`, trunks, routes, AMI rights (the `cawp-calli
 
 PBX (after a backup of `/etc/asterisk`, `/var/www/cawp-provision`, `/etc/httpd/conf.d/cawp-provision.conf`):
 `/etc/asterisk/collections-message.conf` (generated from the Alitqan policy: Mobily18..26 = Issabel
-trunks 2..10, 30 s ring, 3600 s limit, 60 s wait for a member, 20 s member ring, recording, 24/7) +
+trunks 2..10, 60 s ring (30 s until 2026-10-29), 3600 s limit, 60 s wait for a member, 20 s member ring, recording, 24/7) +
 `#include collections-message.conf` in `extensions_custom.conf`; `COLLECTIONS_MSG_AGI=agi://127.0.0.1:4573`
 in `collections-globals.conf`; `/var/lib/asterisk/sounds/cawp` (asterisk:asterisk 0750); the
 provisioning `index.php` (PHP 5.4 variant) and the vhost (`/v1/sounds/...` rule, PUT, 4.2 MB limit

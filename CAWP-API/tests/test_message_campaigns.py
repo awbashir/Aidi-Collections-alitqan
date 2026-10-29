@@ -98,10 +98,12 @@ def _status(pgc, name):
     return sid
 
 
-def _message_campaign(client, auth, w, pgc, *, members=None, start=True, max_concurrent=2, notes=None):
+def _message_campaign(client, auth, w, pgc, *, members=None, start=True, max_concurrent=2, notes=None, plays=None):
     body = {"name": "msg", "kind": "message", "pool": {"contract_ids": [w.contract]},
             "member_ids": members if members is not None else [w.c1, w.c2],
             "settings": {"max_attempts_per_day": 5, "cooldown_minutes": 0}, "max_concurrent": max_concurrent}
+    if plays is not None:
+        body["message_plays"] = plays
     if notes is not None:
         body["message_notes"] = notes
     r = client.post("/v2/campaigns", headers=auth(w.supervisor, key()), json=body)
@@ -306,6 +308,88 @@ def test_no_agent_and_hang_up_during_the_message(cp_app, client, auth, world, pg
     # unknown or malformed frames change nothing
     assert in_app(cp_app, lambda s: MC.on_event(s, Frame(CallId="not-a-uuid", State="ended"))) is None
     assert in_app(cp_app, lambda s: MC.on_event(s, Frame(UserEvent="CollectionsCall", CallId=call, State="ended"))) is None
+
+
+# --------------------------------------------------------------------------- 2026-10-29 (0089)
+def test_play_count_is_validated_shown_sent_and_read_by_the_dialplan(cp_app, client, auth, world, pgc):
+    from services.calling import message_campaign as MC
+    from services.calling import message_dialplan as MD
+    w = world
+    base = {"name": "m", "kind": "message", "pool": {"contract_ids": [w.contract]}, "member_ids": [w.c1]}
+    for bad in (0, 6, True, "3"):
+        r = client.post("/v2/campaigns", headers=auth(w.supervisor, key()), json={**base, "message_plays": bad})
+        assert r.status_code == 422 and r.get_json()["error"]["message_plays"] == "invalid", r.get_json()
+    r = client.post("/v2/campaigns", headers=auth(w.supervisor, key()),
+                    json={"name": "a", "pool": {"contract_ids": [w.contract]}, "message_plays": 3})
+    assert r.status_code == 422 and r.get_json()["error"]["message_plays"] == "not_applicable"
+    case_for(pgc, w.c1, w.portfolio)
+    cid = _message_campaign(client, auth, w, pgc, max_concurrent=1, plays=4)
+    d = client.get(f"/v2/campaigns/{cid}", headers=auth(w.supervisor)).get_json()["data"]
+    assert d["message"]["plays"] == 4
+    job = in_app(cp_app, lambda s: MC.dispatch_one(s, load(cp_app, cid), CTX))
+    assert "COLLECTIONS_MSG_PLAYS_MAX=4" in [v for k, v in job.fields if k == "Variable"]
+    rev = d["revision"]
+    r = client.patch(f"/v2/campaigns/{cid}", headers=auth(w.supervisor, key()),
+                     json={"expected_revision": rev, "message_plays": 1})
+    assert r.status_code == 200, r.get_json()
+    assert client.get(f"/v2/campaigns/{cid}", headers=auth(w.supervisor)).get_json()["data"]["message"]["plays"] == 1
+    lines = MD.render(POLICY).splitlines()
+    assert ' same => n,ExecIf($[${REGEX("^[1-5]$" ${COLLECTIONS_MSG_PLAYS_MAX})}]?Set(COLLECTIONS_MSG_MAX=${COLLECTIONS_MSG_PLAYS_MAX}))' in lines
+    assert " same => n,GotoIf($[${COLLECTIONS_MSG_PLAYS} < ${COLLECTIONS_MSG_MAX}]?play)" in lines
+    assert not any("< 2]" in ln for ln in lines)
+
+
+def test_listened_threshold_records_its_status_whatever_the_key(cp_app, client, auth, world, pgc):
+    w = world
+    listened, closed = _status(pgc, "msg listened"), _status(pgc, "msg closed")
+    base = {"name": "m", "kind": "message", "pool": {"contract_ids": [w.contract]}, "member_ids": [w.c1]}
+    for bad, field in (({"seconds": 0, "status_id": listened}, "message_notes.listened.seconds"),
+                       ({"seconds": 601, "status_id": listened}, "message_notes.listened.seconds"),
+                       ({"seconds": 10}, "message_notes.listened"),
+                       ({"seconds": 10, "status_id": listened, "x": 1}, "message_notes.listened")):
+        r = client.post("/v2/campaigns", headers=auth(w.supervisor, key()),
+                        json={**base, "message_notes": {"listened": bad, "contact_method_id": CL.method}})
+        assert r.status_code == 422 and field in r.get_json()["error"], r.get_json()
+    notes = {"listened": {"seconds": 10, "status_id": listened}, "closed": {"status_id": closed},
+             "contact_method_id": CL.method}
+
+    def answered_ago(call, secs):
+        run(pgc, "UPDATE message_calls SET answered_at = now() - make_interval(secs => %s) WHERE id = %s", secs, call)
+
+    def note_of(call):
+        return q1(pgc, """SELECT n.comment_status_id::text, n.comment FROM message_calls m JOIN "Comments" n ON n.id = m.note_id
+                           WHERE m.id = %s""", call)
+
+    # pressed 2 after 30 s on the line: the `listened` status, not the `closed` one
+    cid, case, call, ev = _answered_call(cp_app, client, auth, w, pgc, notes=notes)
+    d = client.get(f"/v2/campaigns/{cid}", headers=auth(w.supervisor)).get_json()["data"]
+    assert d["message"]["notes"]["listened"] == {"seconds": 10, "status_id": listened, "sub_status_id": None}
+    answered_ago(call, 30)
+    ev(State="key", Key="2")
+    ev(State="result", Result="closed")
+    ev(State="ended")
+    st, body = note_of(call)
+    assert st == listened and "30" in body and "اختار الإنهاء" in body
+    # pressed 2 after 3 s: the result's own status
+    cid, case, call, ev = _answered_call(cp_app, client, auth, w, pgc, notes=notes)
+    answered_ago(call, 3)
+    ev(State="key", Key="2")
+    ev(State="result", Result="closed")
+    ev(State="ended")
+    assert note_of(call)[0] == closed
+    # hung up during the message after 20 s: `listened` (no result status configured for that)
+    cid, case, call, ev = _answered_call(cp_app, client, auth, w, pgc, notes=notes)
+    answered_ago(call, 20)
+    ev(State="ended")
+    assert note_of(call)[0] == listened
+    # a result without a status at the time (no_choice after 5 s), the call ends after 40 s: measured at the end
+    cid, case, call, ev = _answered_call(cp_app, client, auth, w, pgc, notes=notes)
+    answered_ago(call, 5)
+    ev(State="result", Result="no_choice")
+    assert q1(pgc, "SELECT note_id FROM message_calls WHERE id = %s", call) == (None,)
+    answered_ago(call, 40)
+    ev(State="ended")
+    assert note_of(call)[0] == listened
 
 
 # --------------------------------------------------------------------------- the FastAGI protocol

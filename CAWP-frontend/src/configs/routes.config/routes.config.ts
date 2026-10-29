@@ -19,6 +19,13 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/teamDashboard")),
     authority: [],
   },
+  /* Alitqan performance board (`itqan_dashboard` = calls_supervise | calls_manage, derived; 2026-10-29). */
+  {
+    key: "itqan_dashboard",
+    path: "/itqan-dashboard",
+    component: lazy(() => import("@/views/itqanDashboard")),
+    authority: [],
+  },
   {
     key: "users",
     path: "/users",

@@ -418,8 +418,8 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
                             "next_contact_date": iso(v["callback"]), "call_id": attempt_id,
                             "follow_up_id": follow_up_id}, reason="call wrap-up")
 
-    # 0080: a promise on an unassigned campaign case first assigns it to the agent who made the
-    # call (so the promise is created on their own case), then the promise is recorded
+    # 0080 (0089: from any collector): a promise on a campaign case first assigns it to the agent
+    # who made the call (so the promise is created on their own case), then the promise is recorded
     assigning = campaign_rules.claim_on_promise(attempt, case_id, v)
     promise = None
     if v["promise"] is not None:                                   # create (source call_wrapup) or link
@@ -434,7 +434,7 @@ def _save(attempt: dict, case: dict, contact: dict | None, v: dict) -> dict:
     # contact_blocked stays the wrong_number outcome's, its CHECK call_wrapups_contact_block_only_wrong_number)
     status_blocked = v["outcome"] != "wrong_number" and campaign_rules.block_dialed_by_status(contact, attempt_id, v)
     block_id = _do_not_call(case_id, attempt_id, v) if v["outcome"] == "do_not_call" else None
-    # 0080: a promise on an unassigned campaign case assigns it to the agent who made the call
+    # 0080 (0089: from any collector): a promise on a campaign case assigns it to the agent who made the call
     assigned = campaign_rules.record_assignment(attempt, case_id, assigning, promise)
 
     from flask import request

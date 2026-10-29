@@ -652,8 +652,9 @@ def test_stopping_status_is_rechecked_before_the_originate(cp_app, client, auth,
 
 def test_promise_on_an_unassigned_campaign_case_assigns_it_to_the_caller(cp_app, client, auth, world, pgc):
     """Unassigned + promise -> the case goes to the agent who made the call, in the wrap-up's
-    transaction (clints.user_id, "SepcifyUsers", campaign_case_assignments, audit). A case that
-    has a collector is never taken from them."""
+    transaction (clints.user_id, "SepcifyUsers", campaign_case_assignments, audit). 2026-10-29
+    (0089): a case that has a collector moves to the agent too (campaign calls only), the previous
+    collector kept in previous_user_id."""
     from test_calling_campaign_helpers import add_contact, make_case, note_body, number
     from test_calling_c2c_helpers import new_supervisor
     w = world
@@ -683,15 +684,13 @@ def test_promise_on_an_unassigned_campaign_case_assigns_it_to_the_caller(cp_app,
     live = client.get(f"/v2/campaigns/{cu}/live", headers=auth(CP.super)).get_json()["data"]
     assert live["members"][0]["today"]["assigned_by_promise"] == 1 and live["today"]["assigned_by_promise"] == 1
     act(client, auth, CP.super, cu, "stop")
-    # a case WITH a collector: the promise never moves it
+    # a case WITH a collector (2026-10-29): the promise moves it to the agent who called
     cid = new_campaign(client, auth, w, owner=CP.super, members=[agent], settings=settings,
                        pool={"contract_ids": [w.contract]})
     ready(pgc, cid, agent, lease_seconds=300)
     got = _call_and_wrap(cp_app, client, auth, pgc, cid, w, agent, answered=True, outcome="connected", note=note_body("ok"),
                          promise={"amount": "50", "due_date": _tomorrow(), "agreed": True})
     assert got["case_id"] == owned
-    assert q1(pgc, "SELECT user_id::text FROM clints WHERE id = %s", owned) == (w.c1,)
-    assert q1(pgc, "SELECT count(*) FROM campaign_case_assignments WHERE case_id = %s", owned) == (0,)
-    pool = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(CP.super)).get_json()["data"]["items"]
-    by_case = {i["case"]["id"]: i for i in pool}
-    assert by_case[owned]["assigned_by_campaign"] is None and by_case[free]["assigned_by_campaign"] is None
+    assert q1(pgc, "SELECT user_id::text FROM clints WHERE id = %s", owned) == (agent,)
+    assert q1(pgc, """SELECT user_id::text, previous_user_id::text, cause FROM campaign_case_assignments
+                       WHERE attempt_id = %s""", got["attempt_id"]) == (agent, w.c1, "promise")

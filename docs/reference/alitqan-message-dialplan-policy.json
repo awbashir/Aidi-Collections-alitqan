@@ -1,0 +1,44 @@
+{
+  "trunks": [
+    "Mobily18",
+    "Mobily19",
+    "Mobily20",
+    "Mobily21",
+    "Mobily22",
+    "Mobily23",
+    "Mobily24",
+    "Mobily25",
+    "Mobily26"
+  ],
+  "issabel_trunk_ids": {
+    "Mobily18": 2,
+    "Mobily19": 3,
+    "Mobily20": 4,
+    "Mobily21": 5,
+    "Mobily22": 6,
+    "Mobily23": 7,
+    "Mobily24": 8,
+    "Mobily25": 9,
+    "Mobily26": 10
+  },
+  "ring_seconds": 60,
+  "max_call_seconds": 3600,
+  "transfer_wait_seconds": 60,
+  "member_ring_seconds": 20,
+  "record": true,
+  "calling_windows": [
+    {
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "start": "00:00",
+      "end": "24:00"
+    }
+  ]
+}

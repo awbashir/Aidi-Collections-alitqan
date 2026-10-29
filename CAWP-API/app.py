@@ -1579,14 +1579,20 @@ def getclint(id):
             #get clints by user_id
             clint = Clints.query.filter_by(id=id,user_id=current_user).first()
             if clint is None:
-                # campaign grant: the unassigned case this collector is calling from an
-                # unassigned-only campaign, or wrapped up < 30 min ago (campaign_rules)
+                # campaign grant: the case this collector is calling from a campaign, or
+                # wrapped up < 30 min ago (campaign_rules)
                 from services.calling import campaign_rules
                 if campaign_rules.campaign_grant(current_user, id):
                     clint = Clints.query.filter_by(id=id).first()
         else:
             #get all clints
             clint = getClintBySupervisor(clint_id=id,supervisor_id=is_super.id)
+            if clint is None:
+                # 2026-10-29: the same campaign grant for supervisor-scoped users (collectors who
+                # supervise a pool user reach other collectors' clients from a campaign)
+                from services.calling import campaign_rules
+                if campaign_rules.campaign_grant(current_user, id):
+                    clint = Clints.query.filter_by(id=id).first()
 
         if clint is None:
                return jsonify( {"message": "العميل غير موجود","status":False , "error": "role not found"}),201
@@ -1928,11 +1934,17 @@ def createComment():
         # 0080: a status with blocks_dialed_number blocks the note's number (committed with the note)
         from services.calling import campaign_rules
         campaign_rules.block_legacy_note_number(data, sub_status_id)
+        # 2026-10-29 (0089): a promise from the member a message campaign transferred this client to
+        # moves the client to them first (so the promise is created on their own case)
+        assigning = campaign_rules.claim_on_message_promise(
+            data.get('clint_id'), str(get_jwt_identity()), data.get('comment_status_id'), sub_status_id,
+            promise_spec is not None)
         comment = Comments(**data)
-        if promise_spec is not None or apply_all:
+        if promise_spec is not None or apply_all or assigning is not None:
             # the note, the promise and the copies in one transaction (services/promise_required.py)
             body, code = promise_required.save_legacy_note(comment, sub_status_id, promise_spec,
-                                                           str(get_jwt_identity()), apply_all=apply_all)
+                                                           str(get_jwt_identity()), apply_all=apply_all,
+                                                           assigning=assigning)
             return jsonify(body), code
         if sub_status_id is not None:
             return jsonify(comment_status_tree.insert_legacy_note(comment, sub_status_id)), 200

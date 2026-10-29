@@ -22,7 +22,7 @@ services/calling/message_campaign.py):
    national number; the first trunk whose SIPPEER status is OK; the trunk's caller ID; ONE Dial,
    never another trunk. Its hangup handler reports DIALSTATUS.
 2. The client answers -> Local;1 runs [collections-message-ivr]: the message (sounds
-   cawp/<campaign>-message, played twice at most), one key read: 2 -> goodbye, 1 (when enabled) ->
+   cawp/<campaign>-message, played COLLECTIONS_MSG_PLAYS_MAX times at most: 1..5, default 2), one key read: 2 -> goodbye, 1 (when enabled) ->
    the hook `collections-message-agent` names a free campaign member, whose extension is rung with
    hold music; nobody free / no answer until transfer_wait_seconds -> the callback message.
 3. Every step is a `UserEvent(CollectionsMessage, CallId, State, ...)`; the calling service
@@ -162,11 +162,14 @@ def render(policy) -> str:
     lines += [
         " same => n,Wait(0.5)",
         " same => n,Set(COLLECTIONS_MSG_PLAYS=0)",
+        # the campaign's play count (Originate variable, 1..5); anything else -> 2 (0089)
+        " same => n,Set(COLLECTIONS_MSG_MAX=2)",
+        ' same => n,ExecIf($[${REGEX("^[1-5]$" ${COLLECTIONS_MSG_PLAYS_MAX})}]?Set(COLLECTIONS_MSG_MAX=${COLLECTIONS_MSG_PLAYS_MAX}))',
         " same => n(play),Set(COLLECTIONS_MSG_PLAYS=$[${COLLECTIONS_MSG_PLAYS} + 1])",
         " same => n,Read(COLLECTIONS_MSG_KEY,${COLLECTIONS_MSG_SOUND}-message,1,,1,6)",
         ' same => n,GotoIf($["${COLLECTIONS_MSG_KEY}" = "1" & "${COLLECTIONS_MSG_TRANSFER}" = "1"]?transfer)',
         ' same => n,GotoIf($["${COLLECTIONS_MSG_KEY}" = "2"]?close)',
-        " same => n,GotoIf($[${COLLECTIONS_MSG_PLAYS} < 2]?play)",
+        " same => n,GotoIf($[${COLLECTIONS_MSG_PLAYS} < ${COLLECTIONS_MSG_MAX}]?play)",
         f" same => n,{_ev('result', ',Result: no_choice')}",
         " same => n,Hangup()",
         f" same => n(close),{_ev('key', ',Key: 2')}",
