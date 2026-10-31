@@ -138,15 +138,16 @@ def _ends_at(body):
     return v
 
 
-MESSAGE_KEYS = ("max_concurrent", "message_transfer", "message_notes", "message_plays")
+MESSAGE_KEYS = ("max_concurrent", "message_transfer", "message_notes", "message_plays", "message_caller_id")
 
 
 def _message_fields(body, *, kind: str, base: dict | None = None) -> dict:
     """2026-10-25 (0088): max_concurrent (1..20), message_transfer (bool), message_notes (see
     services/calling/message_campaign.validate_notes); 2026-10-29 (0089): message_plays (1..5);
-    only for kind `message`."""
+    2026-10-31 (0090): message_caller_id (one of outbound_numbers, null = automatic); only for kind `message`."""
     from services.calling import message_campaign as MC
-    base = base or {"max_concurrent": 5, "message_transfer": True, "message_notes": None, "message_plays": 2}
+    base = base or {"max_concurrent": 5, "message_transfer": True, "message_notes": None, "message_plays": 2,
+                    "message_caller_id": None}
     keys = set(MESSAGE_KEYS) & set(body)
     if kind != "message":
         if keys:
@@ -168,6 +169,8 @@ def _message_fields(body, *, kind: str, base: dict | None = None) -> dict:
         if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 5:
             raise _err(422, VALIDATION_FAILED, "message_plays must be an integer 1..5", {"message_plays": "invalid"})
         out["message_plays"] = v
+    if "message_caller_id" in body:
+        out["message_caller_id"] = MC.validate_caller_id(body["message_caller_id"])
     if "message_notes" in body:
         out["message_notes"] = MC.validate_notes(body["message_notes"])
     return out
@@ -278,7 +281,8 @@ def campaign_view(c: dict) -> dict:
         "ends_at": iso(c.get("ends_at")), "fill_random": bool(c.get("fill_random")),   # 2026-10-25 (0087)
         "kind": c.get("kind") or "agent",                                             # 2026-10-25 (0088)
         "message": ({"max_concurrent": int(c["max_concurrent"]), "transfer": bool(c["message_transfer"]),
-                     "notes": c.get("message_notes"), "plays": int(c.get("message_plays") or 2)}
+                     "notes": c.get("message_notes"), "plays": int(c.get("message_plays") or 2),
+                     "caller_id": c.get("message_caller_id")}
                     if c.get("kind") == "message" else None),
         "cases": _case_counts(c["id"]),                 # 2026-10-24: customer list / hand removals (0086)
         "revision": int(c["revision"]),
@@ -369,14 +373,14 @@ def create(body: dict) -> str:
     cid = str(sess().execute(text("""
         INSERT INTO campaigns (name, pool, next_mode, wrapup_delay_seconds, max_attempts_per_day, cooldown_minutes,
                                lease_seconds, created_by, ends_at, fill_random, kind, max_concurrent, message_transfer,
-                               message_notes, message_plays)
+                               message_notes, message_plays, message_caller_id)
         VALUES (:n, CAST(:p AS jsonb), :nm, :wd, :ma, :cd, :ls, CAST(:by AS uuid), :ea, :fr, :kind, :mc, :mt,
-                CAST(:mn AS jsonb), :mp) RETURNING id"""),
+                CAST(:mn AS jsonb), :mp, :mcid) RETURNING id"""),
         {"n": name, "p": json.dumps(pool), "nm": settings["next_mode"], "wd": settings["wrapup_delay_seconds"],
          "ma": settings["max_attempts_per_day"], "cd": settings["cooldown_minutes"], "ls": settings["lease_seconds"],
          "by": me(), "ea": ends_at, "fr": fill, "kind": kind, "mc": msg["max_concurrent"], "mt": msg["message_transfer"],
          "mn": json.dumps(msg["message_notes"]) if msg["message_notes"] is not None else None,
-         "mp": msg["message_plays"]}).scalar())
+         "mp": msg["message_plays"], "mcid": msg["message_caller_id"]}).scalar())
     for u in members:
         sess().execute(text("INSERT INTO campaign_members (campaign_id, user_id, added_by) "
                             "VALUES (CAST(:c AS uuid), CAST(:u AS uuid), CAST(:by AS uuid))"),
@@ -413,10 +417,11 @@ def update(campaign_id, body: dict, expected) -> str:
             before["ends_at"], after["ends_at"] = iso(camp.get("ends_at")), iso(ea)
     if set(MESSAGE_KEYS) & set(body):
         cur = {"max_concurrent": camp["max_concurrent"], "message_transfer": camp["message_transfer"],
-               "message_notes": camp.get("message_notes"), "message_plays": camp.get("message_plays") or 2}
+               "message_notes": camp.get("message_notes"), "message_plays": camp.get("message_plays") or 2,
+               "message_caller_id": camp.get("message_caller_id")}
         new = _message_fields(body, kind=camp.get("kind") or "agent", base=cur)
         for k, col in (("max_concurrent", "max_concurrent"), ("message_transfer", "message_transfer"),
-                       ("message_plays", "message_plays")):
+                       ("message_plays", "message_plays"), ("message_caller_id", "message_caller_id")):
             if new[k] != cur[k]:
                 params[f"m_{k}"] = new[k]
                 sets.append(f"{col} = :m_{k}")

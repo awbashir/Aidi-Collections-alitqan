@@ -392,6 +392,76 @@ def test_listened_threshold_records_its_status_whatever_the_key(cp_app, client, 
     assert note_of(call)[0] == listened
 
 
+# --------------------------------------------------------------------------- 2026-10-31 (0090)
+NUMBER = "+966125786530"
+
+
+def test_outbound_number_is_validated_shown_and_read_by_the_dialplan(cp_app, client, auth, world, pgc):
+    from services.calling import message_dialplan as MD
+    w = world
+    r = client.get("/v2/campaigns/outbound-numbers", headers=auth(w.supervisor))
+    assert r.status_code == 200, r.get_json()
+    items = r.get_json()["data"]["items"]
+    assert len(items) == 118 and {"number": "+966125786518", "pbx_trunk": "Mobily18"} in items
+    assert {"number": "+966125792949", "pbx_trunk": None} in items         # on the customer's list, no PBX trunk
+    assert "+966125786543" not in {i["number"] for i in items}             # a PBX trunk, not on the list
+    assert client.get("/v2/campaigns/outbound-numbers", headers=auth(w.c1)).status_code == 403
+    base = {"name": "m", "kind": "message", "pool": {"contract_ids": [w.contract]}, "member_ids": [w.c1]}
+    for bad in ("+966500000000", 5):
+        r = client.post("/v2/campaigns", headers=auth(w.supervisor, key()), json={**base, "message_caller_id": bad})
+        assert r.status_code == 422 and r.get_json()["error"]["message_caller_id"] == "unknown", r.get_json()
+    r = client.post("/v2/campaigns", headers=auth(w.supervisor, key()),
+                    json={"name": "a", "pool": {"contract_ids": [w.contract]}, "message_caller_id": NUMBER})
+    assert r.status_code == 422 and r.get_json()["error"]["message_caller_id"] == "not_applicable"
+    cid = _message_campaign(client, auth, w, pgc, start=False)
+    view = lambda: client.get(f"/v2/campaigns/{cid}", headers=auth(w.supervisor)).get_json()["data"]  # noqa: E731
+    assert view()["message"]["caller_id"] is None                          # automatic by default
+    for value in (NUMBER, None):
+        r = client.patch(f"/v2/campaigns/{cid}", headers=auth(w.supervisor, key()),
+                         json={"expected_revision": view()["revision"], "message_caller_id": value})
+        assert r.status_code == 200, r.get_json()
+        assert view()["message"]["caller_id"] == value
+    lines = MD.render(POLICY).splitlines()
+    gate = lines.index(" same => n,AGI(${GLOBAL(COLLECTIONS_MSG_AGI)}/collections-message-authorize)")
+    assert lines.index(" same => n,Set(COLLECTIONS_MSG_CID=)") < gate      # nothing from the Originate survives
+    use = lines.index(' same => n,ExecIf($[${REGEX("^[+]966[0-9]{9}$" ${COLLECTIONS_MSG_CID})} = 1]?Set(CALLERID(all)=${COLLECTIONS_MSG_CID}))')
+    trunk_cid = next(i for i, ln in enumerate(lines) if "Set(CALLERID(all)=${COLLECTIONS_CID})" in ln)
+    dial = next(i for i, ln in enumerate(lines) if "Dial(SIP/${COLLECTIONS_TRUNK}/" in ln)
+    assert trunk_cid < use < dial                                          # it overrides the trunk's, before the one Dial
+
+
+def test_gate_publishes_the_outbound_number_and_the_call_records_what_the_pbx_used(cp_app, client, auth, world, pgc, msg_agi):
+    from services.calling import message_campaign as MC
+    from test_calling_agi import FakeAsterisk
+    w = world
+
+    def gate(cid):
+        job = in_app(cp_app, lambda s: MC.dispatch_one(s, load(cp_app, cid), CTX))
+        token = next(v.split("=", 1)[1] for k, v in job.fields if k == "Variable" and v.startswith("COLLECTIONS_MSG_TOKEN="))
+        dest = q1(pgc, "SELECT destination FROM message_calls WHERE id = %s", job.call_id)[0]
+        env = {"agi_network_script": "collections-message-authorize", "agi_extension": dest,
+               "agi_channel": "Local/+966@collections-message-dial-00000001;2", "agi_context": "collections-message-dial"}
+        fake = FakeAsterisk(msg_agi, attempt=job.call_id, token=token, env=env,
+                            channel_vars={"COLLECTIONS_MSG_CALL": job.call_id, "COLLECTIONS_MSG_TOKEN": token,
+                                          "COLLECTIONS_MSG_CID": "+966500000000"},   # never trusted
+                            globals_={"COLLECTIONS_HUMAN_PBX_EPOCH": CTX.epoch.split("@")[0]}).run()
+        return job.call_id, fake
+
+    case_for(pgc, w.c1, w.portfolio)
+    cid = _message_campaign(client, auth, w, pgc, max_concurrent=1)
+    call, fake = gate(cid)
+    assert fake.vars["COLLECTIONS_MSG_GATE"] == "ALLOW" and fake.vars["COLLECTIONS_MSG_CID"] == ""   # automatic
+    run(pgc, "UPDATE message_calls SET state = 'ended' WHERE id = %s", call)
+    run(pgc, "UPDATE campaigns SET message_caller_id = %s WHERE id = %s", NUMBER, cid)
+    case_for(pgc, w.c2, w.portfolio)
+    call, fake = gate(cid)
+    assert fake.vars["COLLECTIONS_MSG_GATE"] == "ALLOW" and fake.vars["COLLECTIONS_MSG_CID"] == NUMBER
+    in_app(cp_app, lambda s: MC.on_event(s, Frame(CallId=call, State="dialing", Trunk="Mobily18", Cid=NUMBER)))
+    assert q1(pgc, "SELECT state, caller_id FROM message_calls WHERE id = %s", call) == ("dialing", NUMBER)
+    calls = client.get(f"/v2/campaigns/{cid}/message-calls", headers=auth(w.supervisor)).get_json()["data"]["items"]
+    assert calls[0]["caller_id"] == NUMBER
+
+
 # --------------------------------------------------------------------------- the FastAGI protocol
 @pytest.fixture
 def msg_agi(cp_app):

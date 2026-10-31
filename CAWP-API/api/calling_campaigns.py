@@ -37,6 +37,7 @@ Customers (2026-10-24, services/calling/campaign_cases.py)
   POST /v2/campaigns/<id>/cases/restore    put them back               campaigns_manage
   GET  /v2/campaigns/<id>/called           customers called (answered=) campaigns_manage
 Message campaigns (2026-10-25, services/calling/message_campaign.py)
+  GET  /v2/campaigns/outbound-numbers      the customer's outbound numbers (0090)  campaigns_manage
   GET  /v2/campaigns/<id>/sounds           the uploaded messages       campaigns_manage
   POST /v2/campaigns/<id>/sounds/<kind>    upload (multipart file), converted and installed on the PBX
   GET  /v2/campaigns/<id>/sounds/<kind>/audio   the converted WAV (preview)
@@ -273,6 +274,14 @@ def _message_campaign(campaign_id, *, editable=False):
     if editable and camp["status"] in ("running", "stopped"):
         raise ApiError(409, "campaign_" + camp["status"], f"the campaign is {camp['status']}; pause it to change its messages")
     return camp
+
+
+@bp.get("/v2/campaigns/outbound-numbers")
+@jwt_required()
+@permission_required(CAMPAIGNS_MANAGE)
+def list_outbound_numbers():
+    from services.calling import message_campaign as MC
+    return ok({"items": MC.outbound_numbers()})
 
 
 @bp.get("/v2/campaigns/<uuid:campaign_id>/sounds")

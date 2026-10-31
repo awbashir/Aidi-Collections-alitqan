@@ -42,14 +42,14 @@ import { formatCount } from '@/utils/v2/format'
 import { CallStateBadge, CampaignStatusBadge, Card, CaseCell, Fact, MemberStateBadge, Notice, OutcomeBadge } from '../parts'
 import { memberReason, poolReason } from '../labels'
 import { CalledTab, CaseImport } from './CampaignCustomers'
-import { MessageCallsTab, MessageSummaryCard, SoundsCard } from './CampaignMessages'
+import { CallerIdTab, MessageCallsTab, MessageSummaryCard, SoundsCard } from './CampaignMessages'
 import CampaignForm from './CampaignForm'
 import CampaignReport from './CampaignReport'
 import PoolFilterChips, { usePoolNames } from './PoolFilterChips'
 
 const { THead, TBody, Tr, Th, Td } = Table
-type Tab = 'live' | 'pool' | 'called' | 'roster' | 'settings' | 'report'
-const TABS: Tab[] = ['live', 'pool', 'called', 'roster', 'settings', 'report']
+type Tab = 'live' | 'pool' | 'called' | 'roster' | 'caller' | 'settings' | 'report'
+const TABS: Tab[] = ['live', 'pool', 'called', 'roster', 'caller', 'settings', 'report']
 type HashState = { tab: Tab; reason: string | undefined; page: number }
 const schema: HashSchema<HashState> = {
     tab: { key: 'tab', codec: hashCodec.oneOf(TABS), default: 'live' },
@@ -796,9 +796,16 @@ const CampaignDetail = () => {
             </div>
             <div className="mb-4">
                 <CountTabs<Tab>
-                    tabs={TABS.map((tab) => ({
+                    tabs={TABS.filter((tab) => tab !== 'caller' || campaign.kind === 'message').map((tab) => ({
                         value: tab,
-                        label: tab === 'report' ? t('p11.campreport.tab') : tab === 'called' ? t('p12.campcases.calledTab') : t(`p5.cd.tab.${tab}`),
+                        label:
+                            tab === 'report'
+                                ? t('p11.campreport.tab')
+                                : tab === 'called'
+                                  ? t('p12.campcases.calledTab')
+                                  : tab === 'caller'
+                                    ? t('p12.msg.caller.tab')
+                                    : t(`p5.cd.tab.${tab}`),
                     }))}
                     value={state.tab}
                     onChange={(tab) => setState({ tab, page: 1 })}
@@ -816,6 +823,7 @@ const CampaignDetail = () => {
                     <CalledTab campaignId={campaign.id} page={state.page} onState={(p) => setState(p)} />
                 ))}
             {state.tab === 'roster' && <RosterTab campaign={campaign} onChanged={q.reload} />}
+            {state.tab === 'caller' && campaign.kind === 'message' && <CallerIdTab campaign={campaign} onChanged={q.reload} />}
             {state.tab === 'settings' && <SettingsTab campaign={campaign} />}
             {state.tab === 'report' && <CampaignReport campaign={campaign} />}
             <TransitionDialog

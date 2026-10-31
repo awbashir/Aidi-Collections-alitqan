@@ -495,6 +495,7 @@ class FastAgiServer(threading.Thread):
             ch.set_var(out, "")                                   # cleared first
             if out == "COLLECTIONS_MSG_GATE":
                 ch.set_var("COLLECTIONS_MSG_DESTINATION", "")
+                ch.set_var("COLLECTIONS_MSG_CID", "")
             key = ch.get_global("COLLECTIONS_AGI_KEY") or ""
             if not hmac.compare_digest(key.encode(), self.secret.encode()):
                 raise AgiDeny("agi_key_mismatch")
@@ -524,6 +525,10 @@ class FastAgiServer(threading.Thread):
             if time.monotonic() > ch.deadline:
                 raise AgiDeny("agi_timeout")
             ch.set_var("COLLECTIONS_MSG_DESTINATION", destination)
+            caller_id = MC.gate_caller_id(db.session, call_id)    # 0090: the campaign's outbound number
+            db.session.commit()
+            if caller_id:
+                ch.set_var("COLLECTIONS_MSG_CID", caller_id)
             ch.set_var("COLLECTIONS_MSG_GATE", "ALLOW")           # last
             self.stats["allow"] += 1
             log.info("AGI message allow call=%s peer=%s", call_id, peer)

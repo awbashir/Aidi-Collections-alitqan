@@ -665,7 +665,7 @@ export type Campaign = {
     fill_random?: boolean
     /** 2026-10-25 (0088): 'message' = the PBX dials the client and plays the uploaded message */
     kind?: CampaignKind
-    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null; plays?: number } | null
+    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null; plays?: number; caller_id?: string | null } | null
     revision: number
     my_membership?: { active: boolean } | null
     my_readiness?: {
@@ -858,8 +858,12 @@ export type MessageCallResult =
     | 'no_answer' | 'busy' | 'unavailable' | 'congestion' | 'failed' | 'denied' | 'no_trunk' | 'hung_up'
     | 'no_choice' | 'closed' | 'no_agent' | 'transferred' | 'unknown'
 export type MessageCallState = 'sending' | 'dialing' | 'answered' | 'transferring' | 'talking' | 'ended' | 'failed' | 'uncertain'
+/** 2026-10-31 (0090): pbx_trunk null = the number has no trunk on the PBX */
+export type OutboundNumber = { number: string; pbx_trunk: string | null }
 export type MessageCall = {
     id: string
+    /** the number the PBX reported using on this dial */
+    caller_id?: string | null
     case: { id: string; name: string | null; account_number: string | null }
     state: MessageCallState
     result: MessageCallResult | null
@@ -908,6 +912,8 @@ export type CampaignBody = {
     message_notes?: MessageNotes | null
     /** 2026-10-29 (0089): 1..5 */
     message_plays?: number
+    /** 2026-10-31 (0090): one of the outbound numbers, null = automatic */
+    message_caller_id?: string | null
 }
 
 /* ------------------------------------------------------------------ PBX evidence (P4) */

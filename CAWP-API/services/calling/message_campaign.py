@@ -370,6 +370,13 @@ def authorize(session, *, call_id: str, token: str, destination: str, epoch_uuid
     return True, "allowed"
 
 
+def gate_caller_id(session, call_id: str) -> str | None:
+    """The campaign's outbound number for this dial (0090); None = automatic (the trunk's)."""
+    return session.execute(text("""
+        SELECT cp.message_caller_id FROM message_calls m JOIN campaigns cp ON cp.id = m.campaign_id
+         WHERE m.id = CAST(:id AS uuid)"""), {"id": call_id}).scalar()
+
+
 def evaluate_recheck(session, m) -> str:
     """The case/contact rules at the gate (the call's own row is live, so not the 'busy' check)."""
     from services.calling import rules as R
@@ -494,8 +501,11 @@ def on_event(session, frame) -> str | None:
     m = dict(m)
     st = m["state"]
     if state == "dialing" and st in ("sending", "dialing"):
+        cid = (get("Cid") or "").strip()                  # 0090: the number the PBX put on the call
         session.execute(text("""UPDATE message_calls SET state = 'dialing', dialing_at = coalesce(dialing_at, now()),
-                                       updated_at = now() WHERE id = CAST(:id AS uuid)"""), {"id": call_id})
+                                       caller_id = coalesce(CAST(:cid AS text), caller_id),
+                                       updated_at = now() WHERE id = CAST(:id AS uuid)"""),
+                        {"id": call_id, "cid": cid if re.fullmatch(r"[+]?[0-9]{5,15}", cid) else None})
     elif state == "dial_end":
         status = (get("DialStatus") or "").strip().upper()
         fail = (get("Fail") or "").strip()
@@ -665,6 +675,22 @@ class MessageDispatcher(threading.Thread):
 
 
 # --------------------------------------------------------------------------- API helpers (request-bound)
+def outbound_numbers() -> list[dict]:
+    """The customer's outbound numbers (0090); `pbx_trunk` null = no trunk on the PBX."""
+    return [dict(r) for r in _s().execute(text(
+        "SELECT number, pbx_trunk FROM outbound_numbers ORDER BY number")).mappings()]
+
+
+def validate_caller_id(raw) -> str | None:
+    from core.api_response import VALIDATION_FAILED, ApiError
+    if raw in (None, ""):
+        return None
+    if not isinstance(raw, str) or _s().execute(text("SELECT 1 FROM outbound_numbers WHERE number = :n"),
+                                                {"n": raw}).first() is None:
+        raise ApiError(422, VALIDATION_FAILED, "not one of the outbound numbers", {"message_caller_id": "unknown"})
+    return raw
+
+
 def validate_notes(raw) -> dict | None:
     """`message_notes` of the campaign form -> the normalized object (statuses and the contact method
     must exist; a result without a status records no note)."""
@@ -820,7 +846,7 @@ def list_calls(campaign_id, args, page, size, offset) -> dict:
                                             "account_number": r["account_number"]},
               "state": r["state"], "result": r["result"], "key": r["ivr_key"], "dial_status": r["dial_status"],
               "member": user_ref(r["member_user_id"], r["member_name"]) if r["member_user_id"] else None,
-              "recording": r["recording"], "note_id": str(r["note_id"]) if r["note_id"] else None,
+              "caller_id": r["caller_id"], "recording": r["recording"], "note_id": str(r["note_id"]) if r["note_id"] else None,
               "reason_code": r["reason_code"], "created_at": iso(r["created_at"]), "answered_at": iso(r["answered_at"]),
               "member_answered_at": iso(r["member_answered_at"]), "ended_at": iso(r["ended_at"])} for r in rows]
     return {"items": items, "total": int(total), "page": page, "page_size": size}

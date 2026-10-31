@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 import Button from '@/components/ui/Button'
 import Select from '@/components/ui/Select'
 import Table from '@/components/ui/Table'
-import { RiyadhTime } from '@/components/v2/Display'
+import { Ltr, RiyadhTime } from '@/components/v2/Display'
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/v2/States'
 import { PagerFooter, TableFrame } from '@/components/v2/ListParts'
 import ToastNotification from '@/components/shared/myComponents/ToastNotification'
@@ -153,6 +153,68 @@ const SoundRow = ({ campaign, kind, sound, editable, onChanged }: {
     )
 }
 
+/** 2026-10-31 (0090): the number the client sees on this campaign's calls. Automatic = as so far. */
+export const CallerIdTab = ({ campaign, onChanged }: { campaign: Campaign; onChanged: () => void }) => {
+    const { t } = useTranslation()
+    const q = useV2Query((signal) => campaignsApi.outboundNumbers(signal), [])
+    const current = campaign.message?.caller_id || ''
+    const [value, setValue] = useState(current)
+    const [saving, setSaving] = useState(false)
+    useEffect(() => setValue(current), [current])
+    const items = q.data?.items || []
+    const auto = { value: '', label: String(t('p12.msg.caller.auto')) }
+    const options: Option[] = [
+        auto,
+        ...items.map((n) => ({ value: n.number, label: n.pbx_trunk ? n.number : `${n.number} — ${t('p12.msg.caller.noTrunkShort')}` })),
+    ]
+    const chosen = items.find((n) => n.number === value)
+    const editable = campaign.status !== 'stopped'
+    const save = async () => {
+        setSaving(true)
+        try {
+            await campaignsApi.update(campaign.id, { expected_revision: campaign.revision, message_caller_id: value || null }, newIdempotencyKey())
+            ToastNotification(String(t('p12.msg.caller.saved')), campaign.name, 'success')
+            onChanged()
+        } catch (e) {
+            ToastNotification(String(describe(e, t)), campaign.name, 'danger')
+        } finally {
+            setSaving(false)
+        }
+    }
+    return (
+        <Card title={t('p12.msg.caller.title')} testId="p12-msg-caller">
+            <div className="mb-3 text-[12.5px] text-gray-600">{t('p12.msg.caller.hint')}</div>
+            {q.error && !q.data ? (
+                <ErrorState error={q.error} onRetry={q.reload} describe={describe} />
+            ) : (
+                <div className="flex flex-wrap items-end gap-3">
+                    <label className="flex w-full max-w-[340px] flex-col gap-1 text-[12.5px]">
+                        <span className="text-gray-600">{t('p12.msg.caller.label')}</span>
+                        <Select
+                            size="sm"
+                            isSearchable
+                            isDisabled={!editable}
+                            isLoading={q.loading}
+                            options={options}
+                            value={options.find((o) => o.value === value) || auto}
+                            onChange={(o) => setValue((o as Option | null)?.value || '')}
+                        />
+                    </label>
+                    <Button size="sm" variant="solid" loading={saving} disabled={!editable || saving || value === current} onClick={save} data-testid="p12-msg-caller-save">
+                        {t('p12.msg.caller.save')}
+                    </Button>
+                </div>
+            )}
+            {chosen && !chosen.pbx_trunk && (
+                <Notice tone="warning" className="mt-3" testId="p12-msg-caller-no-trunk">
+                    {t('p12.msg.caller.noTrunk')}
+                </Notice>
+            )}
+            {campaign.status === 'running' && <div className="mt-3 text-[12px] text-gray-600">{t('p12.msg.caller.running')}</div>}
+        </Card>
+    )
+}
+
 export const SoundsCard = ({ campaign, onChanged }: { campaign: Campaign; onChanged?: () => void }) => {
     const { t } = useTranslation()
     const q = useV2Query((signal) => campaignsApi.sounds(campaign.id, signal), [campaign.id, campaign.revision])
@@ -273,11 +335,12 @@ export const MessageCallsTab = ({ campaignId, page, onState }: { campaignId: str
                                 <Th>{t('p12.msg.calls.result')}</Th>
                                 <Th>{t('p12.msg.calls.key')}</Th>
                                 <Th>{t('p12.msg.calls.member')}</Th>
+                                <Th>{t('p12.msg.caller.col')}</Th>
                             </Tr>
                         </THead>
                         <TBody>
                             {q.loading && !data ? (
-                                <SkeletonRows cols={6} />
+                                <SkeletonRows cols={7} />
                             ) : data && data.items.length ? (
                                 data.items.map((it) => (
                                     <Tr key={it.id} data-testid="p12-msg-call-row" data-result={it.result || ''}>
@@ -291,11 +354,14 @@ export const MessageCallsTab = ({ campaignId, page, onState }: { campaignId: str
                                         <Td>{it.result ? t(`p12.msg.result.${it.result}`) : '—'}</Td>
                                         <Td className="tabular-nums">{it.key || '—'}</Td>
                                         <Td>{it.member?.name || '—'}</Td>
+                                        <Td>
+                                            <Ltr className="tabular-nums">{it.caller_id || '—'}</Ltr>
+                                        </Td>
                                     </Tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={6}>
+                                    <td colSpan={7}>
                                         <EmptyState title={t('p12.msg.calls.empty')} />
                                     </td>
                                 </tr>

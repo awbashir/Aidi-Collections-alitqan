@@ -14,6 +14,7 @@ import BaseService from '../BaseService'
 import { V2Error, v2Get, v2Patch, v2Post, v2Put, v2Request } from './http'
 import type {
     CampaignSound,
+    OutboundNumber,
     MessageCall,
     SoundKind,
     CalledListing,
@@ -352,6 +353,9 @@ export const campaignsApi = {
         v2Get<CalledListing>(`/v2/campaigns/${enc(id)}/called`, q, signal),
 
     /* 2026-10-25 (0088): message campaigns */
+    outboundNumbers: (signal?: AbortSignal) =>
+        v2Get<{ items: OutboundNumber[] }>('/v2/campaigns/outbound-numbers', undefined, signal),
+
     sounds: (id: string, signal?: AbortSignal) =>
         v2Get<{ items: CampaignSound[] }>(`/v2/campaigns/${enc(id)}/sounds`, undefined, signal),
 

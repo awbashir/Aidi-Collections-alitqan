@@ -6624,7 +6624,20 @@
       "plays": "Times the message plays",
       "playsHint": "1 to 5 times when the client presses no key.",
       "listenSeconds": "Time on the line (seconds)",
-      "listenSecondsHint": "A client who stays on the line longer than this after answering gets the status below, whatever they choose (1 to 600)."
+      "listenSecondsHint": "A client who stays on the line longer than this after answering gets the status below, whatever they choose (1 to 600).",
+      "caller": {
+        "tab": "Outbound number",
+        "col": "Number shown",
+        "title": "The number the client sees",
+        "label": "Outbound number",
+        "hint": "Choose the number the client sees on this campaign's calls. One number can carry several calls at once.",
+        "auto": "Automatic (first available line's number)",
+        "noTrunkShort": "not on the PBX",
+        "noTrunk": "This number is not set up on the PBX: clients who call it back may not get through. Confirm a test call before using it on a large campaign.",
+        "save": "Save",
+        "saved": "Outbound number saved",
+        "running": "The campaign is running: the change applies to the next calls."
+      }
     }
   },
   "p13": {

@@ -50,6 +50,15 @@ restricted dialplan; click-to-call and agent campaigns stay extension-first and 
 * A promise status saved by the member a "1" transferred the client to moves the client to that member
   (campaign_rules.claim_on_message_promise; `campaign_case_assignments.message_call_id`).
 
+### 2026-10-31 addition (migration 0090): the outbound number
+
+A tab on the campaign page picks the number the client sees (customer's list of 118, or automatic). All
+82 Mobily trunks are the same peer (same host, no per-number credentials) and one number already carries
+26+ calls at once, so the number is the call's caller ID and the trunk choice does not change. The FastAGI
+gate publishes it (`COLLECTIONS_MSG_CID`, cleared first, re-checked by the dialplan; never from the
+Originate), and the `dialing` event reports what the PBX used (`message_calls.caller_id`).
+Whether Mobily accepts the 39 numbers with no PBX trunk is NOT yet proven: confirm with a test call.
+
 ## 2. Messages (audio)
 
 * Uploaded on the campaign form: **message** (required), **we will call you back** (required when

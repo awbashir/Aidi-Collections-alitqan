@@ -19,8 +19,9 @@ services/calling/message_campaign.py):
 1. Local;2 runs [collections-message-dial]: the FastAGI hook `collections-message-authorize`
    consumes the one-shot token (bound to this call, its destination and the PBX epoch) and only
    then sets COLLECTIONS_MSG_GATE=ALLOW; every gate output is re-checked; the calling window; the
-   national number; the first trunk whose SIPPEER status is OK; the trunk's caller ID; ONE Dial,
-   never another trunk. Its hangup handler reports DIALSTATUS.
+   national number; the first trunk whose SIPPEER status is OK; the trunk's caller ID, or the
+   campaign's outbound number the hook published (COLLECTIONS_MSG_CID, 0090; re-checked here); ONE
+   Dial, never another trunk. Its hangup handler reports DIALSTATUS.
 2. The client answers -> Local;1 runs [collections-message-ivr]: the message (sounds
    cawp/<campaign>-message, played COLLECTIONS_MSG_PLAYS_MAX times at most: 1..5, default 2), one key read: 2 -> goodbye, 1 (when enabled) ->
    the hook `collections-message-agent` names a free campaign member, whose extension is rung with
@@ -99,6 +100,7 @@ def render(policy) -> str:
         "exten => _+X.,1,Set(COLLECTIONS_MSG_GATE=)",
         " same => n,Set(COLLECTIONS_MSG_DESTINATION=)",
         " same => n,Set(COLLECTIONS_MSG_FAIL=)",
+        " same => n,Set(COLLECTIONS_MSG_CID=)",       # only the hook sets it (0090)
         " same => n,Set(CHANNEL(hangup_handler_push)=collections-message-dial-end,s,1)",
         f" same => n,GotoIf({UUID_CHECK % 'COLLECTIONS_MSG_CALL'}?deny)",
         f" same => n,AGI({agi}/collections-message-authorize)",
@@ -125,9 +127,11 @@ def render(policy) -> str:
         " same => n,ExecIf($[${LEN(${GLOBAL(FORCEDOUTCID_${COLLECTIONS_TRUNK_ID})})} != 0]"
         "?Set(COLLECTIONS_CID=${GLOBAL(FORCEDOUTCID_${COLLECTIONS_TRUNK_ID})}))",
         " same => n,ExecIf($[${LEN(${COLLECTIONS_CID})} != 0]?Set(CALLERID(all)=${COLLECTIONS_CID}))",
+        # the campaign's outbound number (every Mobily trunk is the same peer: the number is the caller ID)
+        ' same => n,ExecIf($[${REGEX("^[+]966[0-9]{9}$" ${COLLECTIONS_MSG_CID})} = 1]?Set(CALLERID(all)=${COLLECTIONS_MSG_CID}))',
         " same => n,Set(CDR(outbound_cnum)=${CALLERID(num)})",
         " same => n,Set(CDR(userfield)=cawp-msg:${COLLECTIONS_MSG_CALL})",
-        f" same => n,{_ev('dialing', ',Trunk: ${COLLECTIONS_TRUNK}')}",
+        f" same => n,{_ev('dialing', ',Trunk: ${COLLECTIONS_TRUNK},Cid: ${CALLERID(num)}')}",
         f" same => n,Dial(SIP/${{COLLECTIONS_TRUNK}}/${{COLLECTIONS_DIAL_NUMBER}},{p['ring_seconds']},"
         f"iL({p['max_call_seconds'] * 1000}))",
         " same => n,Hangup()",                        # any DIALSTATUS ends the call: never another trunk
