@@ -237,9 +237,22 @@ def _team_sql() -> tuple[str, dict]:
         return "TRUE", {}
     team = sorted(set(scope.user_ids or []) | {uid})
     params["v_team"] = team
+    # 2026-10-31 (customer request): a supervisor also reaches the campaigns of their contracts:
+    # the pool's contracts or portfolios, or a customer on the campaign's list
+    contracts = ""
+    if scope.contract_ids:
+        params["v_cids"] = sorted(scope.contract_ids)
+        contracts = (""" OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(coalesce(cp.pool -> 'contract_ids', '[]')) vc
+                          WHERE vc = ANY(CAST(:v_cids AS text[])))
+             OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(coalesce(cp.pool -> 'portfolio_ids', '[]')) vp
+                          JOIN portfolios vpf ON vpf.id::text = vp
+                         WHERE vpf.contract_id::text = ANY(CAST(:v_cids AS text[])))
+             OR EXISTS (SELECT 1 FROM campaign_list_cases vl JOIN clints vlc ON vlc.id = vl.case_id
+                          JOIN portfolios vlp ON vlp.id = vlc.portfolios_id
+                         WHERE vl.campaign_id = cp.id AND vlp.contract_id::text = ANY(CAST(:v_cids AS text[])))""")
     return (f"({member} OR cp.created_by = ANY(CAST(:v_team AS uuid[])) OR EXISTS ("
             "SELECT 1 FROM campaign_members tm WHERE tm.campaign_id = cp.id "
-            "AND tm.user_id = ANY(CAST(:v_team AS uuid[]))))"), params
+            f"AND tm.user_id = ANY(CAST(:v_team AS uuid[]))){contracts})"), params
 
 
 def load(campaign_id, *, lock: str | None = None, manage: bool = False) -> dict:

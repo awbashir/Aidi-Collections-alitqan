@@ -125,3 +125,38 @@ def test_promise_status_from_a_message_transfer_moves_the_client_to_the_member(c
                  "WHERE action = 'case.assign' AND case_id = %s", moved)
     assert ev == (w.c2, w.c1, mid)
     assert q1(pgc, 'SELECT count(*) FROM "SepcifyUsers" WHERE clint_id = %s AND user_id = %s', moved, w.c1) == (1,)
+
+
+def test_supervisor_reaches_the_campaigns_of_their_contracts_only(cp_app, client, auth, world, pgc):
+    """2026-10-31: pool by contract or portfolio, or a customer list, in a supervised contract."""
+    from test_calling_helpers import new_contract
+    w = world
+    other_contract, other_portfolio = new_contract(pgc, "cp other contract")
+    mine = new_supervisor(pgc, role=CP.supervisor_role, contracts=[w.contract], name="CP contract supervisor")
+    outside = new_supervisor(pgc, role=CP.supervisor_role, contracts=[other_contract], name="CP other supervisor")
+    plain = new_user(pgc, CP.collector_role, "CP plain collector")
+    by_contract = new_campaign(client, auth, w, owner=CP.super, members=[w.c1], start=False)
+    by_portfolio = new_campaign(client, auth, w, owner=CP.super, members=[w.c1], start=False,
+                                pool={"portfolio_ids": [w.portfolio]})
+    listed = new_campaign(client, auth, w, owner=CP.super, members=[w.c1], start=False,
+                          pool={"case_list": True, "contract_ids": [], "portfolio_ids": [], "filter": {}})
+    case = make_case(pgc, w.c2, w.portfolio)
+    run(pgc, "INSERT INTO campaign_list_cases (campaign_id, case_id, source, matched_by) VALUES (%s, %s, 'paste', 'account')", listed, case)
+    elsewhere = new_campaign(client, auth, w, owner=CP.super, members=[w.c1], start=False,
+                             pool={"contract_ids": [other_contract]})
+
+    def visible(user):
+        r = client.get("/v2/campaigns?page_size=100", headers=auth(user))
+        assert r.status_code == 200, r.get_json()
+        return {i["id"] for i in r.get_json()["data"]["items"]}
+
+    assert {by_contract, by_portfolio, listed} <= visible(mine) and elsewhere not in visible(mine)
+    assert elsewhere in visible(outside) and not {by_contract, by_portfolio, listed} & visible(outside)
+    assert client.get(f"/v2/campaigns/{listed}", headers=auth(mine)).status_code == 200
+    assert client.get(f"/v2/campaigns/{elsewhere}", headers=auth(mine)).status_code == 404
+    rev = client.get(f"/v2/campaigns/{by_contract}", headers=auth(mine)).get_json()["data"]["revision"]
+    r = client.patch(f"/v2/campaigns/{by_contract}", headers=auth(mine, key()),
+                     json={"expected_revision": rev, "name": "renamed by the contract supervisor"})
+    assert r.status_code == 200, r.get_json()
+    # a collector (no campaigns_manage) still sees only the campaigns they belong to
+    assert client.get(f"/v2/campaigns/{by_contract}", headers=auth(plain)).status_code == 404
