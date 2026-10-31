@@ -665,7 +665,7 @@ export type Campaign = {
     fill_random?: boolean
     /** 2026-10-25 (0088): 'message' = the PBX dials the client and plays the uploaded message */
     kind?: CampaignKind
-    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null; plays?: number; caller_id?: string | null } | null
+    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null; plays?: number; caller_ids?: string[] } | null
     revision: number
     my_membership?: { active: boolean } | null
     my_readiness?: {
@@ -912,8 +912,8 @@ export type CampaignBody = {
     message_notes?: MessageNotes | null
     /** 2026-10-29 (0089): 1..5 */
     message_plays?: number
-    /** 2026-10-31 (0090): one of the outbound numbers, null = automatic */
-    message_caller_id?: string | null
+    /** 2026-10-31 (0091): outbound numbers, used in rotation; empty = automatic */
+    message_caller_ids?: string[]
 }
 
 /* ------------------------------------------------------------------ PBX evidence (P4) */

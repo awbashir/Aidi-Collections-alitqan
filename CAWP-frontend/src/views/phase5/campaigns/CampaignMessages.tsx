@@ -153,26 +153,23 @@ const SoundRow = ({ campaign, kind, sound, editable, onChanged }: {
     )
 }
 
-/** 2026-10-31 (0090): the number the client sees on this campaign's calls. Automatic = as so far. */
+/** 2026-10-31 (0090, 0091): the numbers the client sees on this campaign's calls, used in rotation. None = automatic. */
 export const CallerIdTab = ({ campaign, onChanged }: { campaign: Campaign; onChanged: () => void }) => {
     const { t } = useTranslation()
     const q = useV2Query((signal) => campaignsApi.outboundNumbers(signal), [])
-    const current = campaign.message?.caller_id || ''
-    const [value, setValue] = useState(current)
+    const current = (campaign.message?.caller_ids || []).join(',')
+    const [value, setValue] = useState<string[]>(campaign.message?.caller_ids || [])
     const [saving, setSaving] = useState(false)
-    useEffect(() => setValue(current), [current])
+    useEffect(() => setValue(current ? current.split(',') : []), [current])
     const items = q.data?.items || []
-    const auto = { value: '', label: String(t('p12.msg.caller.auto')) }
-    const options: Option[] = [
-        auto,
-        ...items.map((n) => ({ value: n.number, label: n.pbx_trunk ? n.number : `${n.number} — ${t('p12.msg.caller.noTrunkShort')}` })),
-    ]
-    const chosen = items.find((n) => n.number === value)
+    const label = (n: string) => (items.find((i) => i.number === n)?.pbx_trunk === null ? `${n} — ${t('p12.msg.caller.noTrunkShort')}` : n)
+    const options: Option[] = items.map((n) => ({ value: n.number, label: label(n.number) }))
+    const noTrunk = value.some((n) => items.find((i) => i.number === n)?.pbx_trunk === null)
     const editable = campaign.status !== 'stopped'
     const save = async () => {
         setSaving(true)
         try {
-            await campaignsApi.update(campaign.id, { expected_revision: campaign.revision, message_caller_id: value || null }, newIdempotencyKey())
+            await campaignsApi.update(campaign.id, { expected_revision: campaign.revision, message_caller_ids: value }, newIdempotencyKey())
             ToastNotification(String(t('p12.msg.caller.saved')), campaign.name, 'success')
             onChanged()
         } catch (e) {
@@ -187,25 +184,45 @@ export const CallerIdTab = ({ campaign, onChanged }: { campaign: Campaign; onCha
             {q.error && !q.data ? (
                 <ErrorState error={q.error} onRetry={q.reload} describe={describe} />
             ) : (
-                <div className="flex flex-wrap items-end gap-3">
-                    <label className="flex w-full max-w-[340px] flex-col gap-1 text-[12.5px]">
+                <>
+                    <label className="flex w-full max-w-[640px] flex-col gap-1 text-[12.5px]">
                         <span className="text-gray-600">{t('p12.msg.caller.label')}</span>
                         <Select
                             size="sm"
+                            isMulti
                             isSearchable
+                            closeMenuOnSelect={false}
                             isDisabled={!editable}
                             isLoading={q.loading}
+                            placeholder={t('p12.msg.caller.auto')}
                             options={options}
-                            value={options.find((o) => o.value === value) || auto}
-                            onChange={(o) => setValue((o as Option | null)?.value || '')}
+                            value={value.map((n) => ({ value: n, label: label(n) }))}
+                            onChange={(v) => setValue(((v as Option[] | null) || []).map((o) => o.value))}
                         />
                     </label>
-                    <Button size="sm" variant="solid" loading={saving} disabled={!editable || saving || value === current} onClick={save} data-testid="p12-msg-caller-save">
-                        {t('p12.msg.caller.save')}
-                    </Button>
-                </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <Button size="sm" variant="solid" loading={saving} disabled={!editable || saving || value.join(',') === current} onClick={save} data-testid="p12-msg-caller-save">
+                            {t('p12.msg.caller.save')}
+                        </Button>
+                        {editable && (
+                            <>
+                                <button type="button" className="text-[12.5px] font-extrabold text-navy-600 underline dark:text-gray-100" onClick={() => setValue(items.map((i) => i.number))} data-testid="p12-msg-caller-all">
+                                    {t('p12.msg.caller.selectAll', { n: items.length })}
+                                </button>
+                                {value.length > 0 && (
+                                    <button type="button" className="text-[12.5px] font-extrabold text-navy-600 underline dark:text-gray-100" onClick={() => setValue([])}>
+                                        {t('p12.msg.caller.clear')}
+                                    </button>
+                                )}
+                            </>
+                        )}
+                        <span className="text-[12.5px] text-gray-600" data-testid="p12-msg-caller-count">
+                            {value.length ? t('p12.msg.caller.count', { n: value.length }) : t('p12.msg.caller.auto')}
+                        </span>
+                    </div>
+                </>
             )}
-            {chosen && !chosen.pbx_trunk && (
+            {noTrunk && (
                 <Notice tone="warning" className="mt-3" testId="p12-msg-caller-no-trunk">
                     {t('p12.msg.caller.noTrunk')}
                 </Notice>

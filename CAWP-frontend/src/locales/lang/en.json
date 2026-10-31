@@ -6626,17 +6626,20 @@
       "listenSeconds": "Time on the line (seconds)",
       "listenSecondsHint": "A client who stays on the line longer than this after answering gets the status below, whatever they choose (1 to 600).",
       "caller": {
-        "tab": "Outbound number",
+        "tab": "Outbound numbers",
         "col": "Number shown",
-        "title": "The number the client sees",
-        "label": "Outbound number",
-        "hint": "Choose the number the client sees on this campaign's calls. One number can carry several calls at once.",
+        "title": "The numbers the client sees",
+        "label": "Outbound numbers",
+        "hint": "Choose one number or more. The campaign's calls are shared evenly: the number with the fewest calls in this campaign goes next.",
         "auto": "Automatic (first available line's number)",
         "noTrunkShort": "not on the PBX",
-        "noTrunk": "This number is not set up on the PBX: clients who call it back may not get through. Confirm a test call before using it on a large campaign.",
+        "noTrunk": "Some selected numbers are not set up on the PBX: they show to the client normally, but clients who call them back may not get through.",
         "save": "Save",
-        "saved": "Outbound number saved",
-        "running": "The campaign is running: the change applies to the next calls."
+        "saved": "Outbound numbers saved",
+        "running": "The campaign is running: the change applies to the next calls.",
+        "selectAll": "Select all numbers ({{n}})",
+        "clear": "Clear",
+        "count": "{{n}} numbers selected"
       }
     }
   },

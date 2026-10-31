@@ -371,10 +371,21 @@ def authorize(session, *, call_id: str, token: str, destination: str, epoch_uuid
 
 
 def gate_caller_id(session, call_id: str) -> str | None:
-    """The campaign's outbound number for this dial (0090); None = automatic (the trunk's)."""
-    return session.execute(text("""
-        SELECT cp.message_caller_id FROM message_calls m JOIN campaigns cp ON cp.id = m.campaign_id
-         WHERE m.id = CAST(:id AS uuid)"""), {"id": call_id}).scalar()
+    """The outbound number for this dial (0090, 0091: the campaign's number with the fewest calls so
+    far, first in the list on a tie), noted on the call; None = automatic (the trunk's). The lock
+    keeps simultaneous dials apart; the caller commits."""
+    row = session.execute(text("""
+        SELECT m.campaign_id::text, cp.message_caller_ids FROM message_calls m JOIN campaigns cp ON cp.id = m.campaign_id
+         WHERE m.id = CAST(:id AS uuid)"""), {"id": call_id}).first()
+    if row is None or not row[1]:
+        return None
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"), {"k": f"message_caller:{row[0]}"})
+    number = session.execute(text("""
+        SELECT u.n FROM unnest(CAST(:ids AS text[])) WITH ORDINALITY u(n, o)
+         ORDER BY (SELECT count(*) FROM message_calls m WHERE m.campaign_id = CAST(:c AS uuid) AND m.caller_id = u.n), u.o
+         LIMIT 1"""), {"ids": list(row[1]), "c": row[0]}).scalar()
+    session.execute(text("UPDATE message_calls SET caller_id = :n WHERE id = CAST(:id AS uuid)"), {"n": number, "id": call_id})
+    return number
 
 
 def evaluate_recheck(session, m) -> str:
@@ -681,14 +692,20 @@ def outbound_numbers() -> list[dict]:
         "SELECT number, pbx_trunk FROM outbound_numbers ORDER BY number")).mappings()]
 
 
-def validate_caller_id(raw) -> str | None:
+def validate_caller_ids(raw) -> list[str]:
+    """Distinct numbers, in the order given, all on the customer's list; empty = automatic."""
     from core.api_response import VALIDATION_FAILED, ApiError
-    if raw in (None, ""):
-        return None
-    if not isinstance(raw, str) or _s().execute(text("SELECT 1 FROM outbound_numbers WHERE number = :n"),
-                                                {"n": raw}).first() is None:
-        raise ApiError(422, VALIDATION_FAILED, "not one of the outbound numbers", {"message_caller_id": "unknown"})
-    return raw
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or any(not isinstance(n, str) for n in raw):
+        raise ApiError(422, VALIDATION_FAILED, "message_caller_ids must be a list of numbers", {"message_caller_ids": "invalid"})
+    numbers = list(dict.fromkeys(raw))
+    known = {r[0] for r in _s().execute(text("SELECT number FROM outbound_numbers WHERE number = ANY(CAST(:n AS text[]))"),
+                                        {"n": numbers})}
+    if set(numbers) - known:
+        raise ApiError(422, VALIDATION_FAILED, "not one of the outbound numbers",
+                       {"message_caller_ids": "unknown", "numbers": sorted(set(numbers) - known)})
+    return numbers
 
 
 def validate_notes(raw) -> dict | None:

@@ -52,12 +52,15 @@ restricted dialplan; click-to-call and agent campaigns stay extension-first and 
 
 ### 2026-10-31 addition (migration 0090): the outbound number
 
-A tab on the campaign page picks the number the client sees (customer's list of 118, or automatic). All
+A tab on the campaign page picks the numbers the client sees (customer's list of 118, or automatic); with
+several (0091) the calls rotate: the number with the fewest calls in the campaign goes next. All
 82 Mobily trunks are the same peer (same host, no per-number credentials) and one number already carries
 26+ calls at once, so the number is the call's caller ID and the trunk choice does not change. The FastAGI
 gate publishes it (`COLLECTIONS_MSG_CID`, cleared first, re-checked by the dialplan; never from the
 Originate), and the `dialing` event reports what the PBX used (`message_calls.caller_id`).
-Whether Mobily accepts the 39 numbers with no PBX trunk is NOT yet proven: confirm with a test call.
+Live test 2026-10-31 to the test mobile: +966125786530 (has a trunk) and +966125792949 (no PBX trunk) both
+answered and both showed on the phone, so Mobily accepts a listed number without a PBX trunk. Calls back to
+those 39 numbers have no PBX trunk behind them and were not tested.
 
 ## 2. Messages (audio)
 
