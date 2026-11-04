@@ -44,6 +44,7 @@ MODULES = [
     "api.home_dashboard",    # home dashboard v2: KPI cards, charts, leaderboard, portfolio, calls (2026-10-20)
     "api.itqan_performance",  # Alitqan performance board: collector and supervisor scorecards (2026-10-29)
 ]
+    "api.report_builder",    # report center: self-service BI and SQL builder (0093, 2026-11-04)
 
 
 def register_blueprints(app):

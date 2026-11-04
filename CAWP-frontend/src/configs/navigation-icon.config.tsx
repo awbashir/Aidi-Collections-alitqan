@@ -43,6 +43,8 @@ import {
   BadgeCheck, // Phase 6: quality workspace
   ChartColumnStacked, // team performance dashboard
   Trophy, // Alitqan performance board
+  ChartPie, // self-service BI
+  Database, // SQL builder
 } from "lucide-react";
 
 
@@ -93,6 +95,8 @@ const navigationIcon: NavigationIcons = {
   team_dashboard: <ChartColumnStacked strokeWidth={2} size={18} />,
   itqan_dashboard: <Trophy strokeWidth={2} size={18} />,
   /* Phase 6 Q3 (voice training lab) */
+  reports_bi: <ChartPie strokeWidth={2} size={18} />,
+  reports_sql: <Database strokeWidth={2} size={18} />,
   voice_lab: <Mic strokeWidth={2} size={18} />,
   /* Phase 6: AI administration and the quality workspace */
   ai_admin: <BrainCircuit strokeWidth={2} size={18} />,

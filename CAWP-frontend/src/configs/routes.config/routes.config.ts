@@ -687,6 +687,21 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/phase4/hub")),
     authority: [],
   },
+  /* Report center builders (2026-11-04, docs/report-builder-plan.md): self-service BI
+   * (`reports_bi`, scoped) and the SQL builder (`reports_sql`, the API also requires an
+   * all-clients scope). Static paths outrank `/reports/:id`. */
+  {
+    key: "reports_bi",
+    path: "/reports/bi",
+    component: lazy(() => import("@/views/reportBuilder/bi")),
+    authority: [],
+  },
+  {
+    key: "reports_sql",
+    path: "/reports/sql",
+    component: lazy(() => import("@/views/reportBuilder/sql")),
+    authority: [],
+  },
   {
     key: "reports_any",
     path: "/reports/:id",

@@ -168,7 +168,9 @@
       "requests": "Requests"
     },
     "p4": {
-      "reports": "Reports hub"
+      "reports": "Reports hub",
+      "bi": "Self-service BI",
+      "sql": "SQL builder"
     },
     "p5": {
       "calls": "Calls",
@@ -6641,6 +6643,221 @@
         "clear": "Clear",
         "count": "{{n}} numbers selected"
       }
+    }
+  },
+  "rb": {
+    "add": "Add",
+    "remove": "Remove",
+    "run": "Run",
+    "save": "Save",
+    "name": "Name",
+    "yes": "Yes",
+    "no": "No",
+    "empty": "(empty)",
+    "weekOf": "Week of {{d}}",
+    "exportExcel": "Export to Excel",
+    "shared": "Shared",
+    "sharedBy": "Shared by {{name}}",
+    "prev": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{pages}}",
+    "shareHint": "Share with everyone who can open this page (they see it with their own client scope)",
+    "shareHintSql": "Share with the other SQL builder users",
+    "hub": {
+      "title": "Build your own",
+      "bi": "Self-service BI",
+      "sql": "SQL builder",
+      "biDesc": "Drag fields into rows, columns, values and filters to build a pivot table and chart. Save, load and export to Excel.",
+      "sqlDesc": "Visual query builder and SQL editor with a data dictionary of every table and field in Arabic and English. Read-only."
+    },
+    "bi": {
+      "title": "Self-service BI",
+      "subtitle": "Drag fields to build a report: pivot table, chart and Excel export.",
+      "scopeNote": "Results only include the clients you are allowed to see. Totals are exact and computed on the server.",
+      "moneyNote": "Approved collected counts approved payments only; pending, rejected and reversed payments are never included. Dates are Asia/Riyadh days.",
+      "dataset": "Dataset",
+      "dimensions": "Dimensions",
+      "measures": "Measures",
+      "searchFields": "Search fields",
+      "saved": "Saved reports",
+      "noSaved": "Nothing saved yet.",
+      "noDatasets": "No datasets are available.",
+      "zone": {
+        "rows": "Rows",
+        "columns": "Columns",
+        "values": "Values",
+        "filters": "Filters"
+      },
+      "short": {
+        "rows": "R",
+        "columns": "C",
+        "filters": "F"
+      },
+      "addTo": {
+        "rows": "Add to rows",
+        "columns": "Add to columns",
+        "filters": "Add as a filter",
+        "values": "Add to values"
+      },
+      "dropHint": "Drag a dimension here",
+      "dropMeasureHint": "Drag a measure here",
+      "dropFilterHint": "Drag a dimension here to filter",
+      "remove": "Remove {{name}}",
+      "grain": "Date grouping",
+      "grains": {
+        "day": "Day",
+        "week": "Week",
+        "month": "Month",
+        "quarter": "Quarter",
+        "year": "Year"
+      },
+      "op": {
+        "in": "is any of",
+        "not_in": "is none of",
+        "contains": "contains",
+        "is_empty": "is empty",
+        "not_empty": "is not empty",
+        "between": "between",
+        "eq": "is"
+      },
+      "from": "From",
+      "to": "To",
+      "value": "Value",
+      "containsHint": "Text to look for",
+      "searchValues": "Search values",
+      "chartType": "Chart type",
+      "chart": {
+        "bar": "Bar",
+        "line": "Line",
+        "pie": "Pie",
+        "table": "Table only"
+      },
+      "swap": "Swap rows and columns",
+      "meta": "{{rows}} rows · {{ms}} ms",
+      "total": "Total",
+      "other": "Other",
+      "needValue": "Add at least one measure to Values to see results.",
+      "truncated": "The result is larger than 5,000 cells and was cut. Add filters or fewer fields.",
+      "columnsTruncated": "Only the first 60 column headers are shown. Move a field to rows or add a filter.",
+      "noRows": "No data for this layout",
+      "noRowsHint": "Change the filters or the date range.",
+      "saveAs": "Save as…",
+      "saveChanges": "Save changes",
+      "saveTitle": "Save report",
+      "loaded": "Loaded: {{name}}",
+      "confirmDelete": "Delete \"{{name}}\"?"
+    },
+    "sql": {
+      "title": "SQL builder",
+      "subtitle": "{{n}} read-only tables, described field by field in Arabic and English.",
+      "safetyNote": "Queries run read-only on the curated reporting tables only: one SELECT, at most {{rows}} rows and {{s}} seconds. Every run is recorded.",
+      "dictionary": "Data dictionary",
+      "dictionaryHint": "Click a table or a field to use it.",
+      "searchDict": "Search tables and fields",
+      "useTable": "Use this table",
+      "joinsTo": "Joins:",
+      "mode": "Mode",
+      "tabBuilder": "Visual builder",
+      "tabEditor": "SQL editor",
+      "editor": "SQL editor",
+      "meta": "{{rows}} rows · {{ms}} ms",
+      "noRows": "The query returned no rows.",
+      "truncated": "Only the first {{n}} rows are shown. Add a LIMIT or filters; the Excel export can hold up to 50,000 rows.",
+      "lists": "Lists",
+      "savedQueries": "Saved queries",
+      "recentRuns": "My recent runs",
+      "saveTitle": "Save query",
+      "agg": {
+        "count": "Count",
+        "count_distinct": "Count distinct",
+        "sum": "Sum",
+        "avg": "Average",
+        "min": "Minimum",
+        "max": "Maximum"
+      },
+      "op": {
+        "between": "between",
+        "in": "in list",
+        "not_in": "not in list",
+        "contains": "contains",
+        "starts_with": "starts with",
+        "is_null": "is empty",
+        "not_null": "is not empty"
+      },
+      "b": {
+        "table": "Table",
+        "joins": "Joins",
+        "joinType": "Join type",
+        "left": "Keep all (LEFT)",
+        "inner": "Matching only (INNER)",
+        "addJoin": "Add a join",
+        "noJoins": "No joins.",
+        "columns": "Columns",
+        "column": "Column",
+        "agg": "Aggregate",
+        "noAgg": "No aggregate",
+        "noColumns": "Add at least one column.",
+        "groupedBy": "Grouped by: {{cols}}",
+        "filters": "Filters",
+        "noFilters": "No filters.",
+        "op": "Condition",
+        "listHint": "Values separated by commas",
+        "order": "Order by",
+        "dir": "Direction",
+        "asc": "Ascending",
+        "desc": "Descending",
+        "limit": "Row limit",
+        "buildRun": "Build and run",
+        "openEditor": "Open in SQL editor"
+      }
+    },
+    "type": {
+      "uuid": "id",
+      "text": "text",
+      "money": "money",
+      "number": "number",
+      "int": "integer",
+      "bool": "yes/no",
+      "date": "date",
+      "datetime": "date-time",
+      "json": "json"
+    },
+    "runs": {
+      "when": "When",
+      "kind": "Kind",
+      "outcome": "Outcome",
+      "rows": "Rows",
+      "what": "Query",
+      "dataset": "Dataset: {{ds}}",
+      "kinds": {
+        "bi_query": "BI report",
+        "bi_export": "BI export",
+        "sql_run": "SQL run",
+        "sql_export": "SQL export"
+      },
+      "outcomes": {
+        "ok": "OK",
+        "refused": "Refused",
+        "error": "Error",
+        "timeout": "Timed out"
+      }
+    },
+    "err": {
+      "query_timeout": "The query took too long. Narrow the filters or the date range.",
+      "sql_runner_not_configured": "The SQL runner is not configured yet (no read-only database login). Ask the system administrator.",
+      "sql_runner_unavailable": "The read-only database login could not connect. Try again later.",
+      "sql_reader_misconfigured": "The read-only database login has too many rights, so nothing was run. Ask the system administrator.",
+      "sql_requires_all_scope": "The SQL builder is for administrators who can see all clients.",
+      "sql_multiple_statements": "Run one statement at a time (remove the extra ';').",
+      "sql_not_select": "Only SELECT queries can run here.",
+      "sql_permission_denied": "Only the reporting tables in the data dictionary can be read.",
+      "sql_required": "Write a query first.",
+      "sql_too_long": "The query is too long.",
+      "sql_syntax": "The query has an unclosed quote or comment.",
+      "sql_error": "The database refused the query: {{msg}}",
+      "validation_failed": "Some fields are not valid. Check the layout and try again.",
+      "not_owner": "Only the owner can change this.",
+      "revision_conflict": "Someone changed this in the meantime. Reload it."
     }
   },
   "p13": {
