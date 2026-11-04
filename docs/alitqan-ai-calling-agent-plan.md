@@ -53,7 +53,8 @@ connections to the app server (measured 2026-11-04). So the app starts the call:
   OpenAI Realtime bridge; Python asyncio, one new dependency (`websockets`). systemd unit + compose entry.
 * API `POST/GET /v2/ai/test-calls`, `POST .../<id>/stop`; the page; tests with a fake PBX and a fake
   Realtime server; a live test to your mobile.
-* Limits: one test call at a time per user, 3 minutes each, 20 a day; every call audited. Cost: OpenAI
+* Limits: one test call at a time per user, 3 minutes each; every call audited. The daily limit per user
+  (`AI_TEST_CALLS_PER_DAY`) is off since 2026-11-04 (customer request); the AI gateway's daily quota still applies. Cost: OpenAI
   Realtime is billed per minute of audio; the 3-minute cap bounds each test.
 
 ## 5. Risks

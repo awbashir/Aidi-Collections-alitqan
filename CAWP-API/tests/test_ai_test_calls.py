@@ -388,3 +388,22 @@ def test_realtime_link_over_a_real_websocket():
     assert base64.b64decode(sent["audio"]) == b"\x44" * 800
     assert got["audio"] == b"\x33" * 320 and got["barge"] == 1 and got["end"] == 1 and not got["err"]
     assert ("agent", "أهلاً") in got["tr"] and ("client", "تمام") in got["tr"]
+
+
+def test_daily_limit_is_off_by_default_and_optional(client, hdr, pgc, monkeypatch):
+    configure(monkeypatch)
+    insert_policy(pgc, allowed_categories=["audio", "transcripts"])
+    body = {"destination": "0563287135", "instructions": "اختبار"}
+
+    def place():
+        r = client.post("/v2/ai/test-calls", json=body, headers=hdr(AI.admin, key()))
+        if r.status_code == 201:
+            run(pgc, "UPDATE ai_test_calls SET state = 'ended', result = 'completed', ended_at = now() WHERE id = %s",
+                r.get_json()["data"]["id"])
+        return r
+    monkeypatch.delenv("AI_TEST_CALLS_PER_DAY", raising=False)
+    assert client.get("/v2/ai/test-calls/options", headers=hdr(AI.admin)).get_json()["data"]["limits"]["per_day"] == 0
+    assert [place().status_code for _ in range(25)] == [201] * 25           # no daily limit
+    monkeypatch.setenv("AI_TEST_CALLS_PER_DAY", "25")
+    r = place()
+    assert r.status_code == 429 and r.get_json()["code"] == "ai_test_call_limit"

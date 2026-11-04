@@ -16,7 +16,8 @@ row, one use, short-lived, the row still dialing; it answers the number to dial 
 number from THIS row (never from the SIP request).
 
 Limits (environment, read at call time): AI_TEST_CALL_MAX_SECONDS (default 180, 30..600) per call,
-AI_TEST_CALLS_PER_DAY (default 20, 1..200) per user (Asia/Riyadh day), one open call per user.
+AI_TEST_CALLS_PER_DAY per user (Asia/Riyadh day; default 0 = no daily limit, customer request 2026-11-04),
+one open call per user. The AI gateway's own daily quota of provider calls still applies.
 """
 from __future__ import annotations
 
@@ -71,7 +72,7 @@ def _env_int(name, default, lo, hi) -> int:
 
 def limits() -> dict:
     return {"max_seconds": _env_int("AI_TEST_CALL_MAX_SECONDS", 180, 30, 600),
-            "per_day": _env_int("AI_TEST_CALLS_PER_DAY", 20, 1, 200)}
+            "per_day": _env_int("AI_TEST_CALLS_PER_DAY", 0, 0, 1000)}          # 0 = no daily limit
 
 
 def token_hash(token: str) -> str:
@@ -185,13 +186,13 @@ def create(user_id, body: dict) -> dict:
     if s.execute(text("""SELECT 1 FROM ai_test_calls WHERE created_by = CAST(:u AS uuid) AND state = ANY(:open)"""),
                  {"u": str(user_id), "open": list(STATES_OPEN)}).first():
         raise ApiError(409, "ai_test_call_active", "you already have a test call in progress", None)
-    today = s.execute(text("""
+    per_day = limits()["per_day"]
+    today = 0 if not per_day else s.execute(text("""
         SELECT count(*) FROM ai_test_calls WHERE created_by = CAST(:u AS uuid)
            AND (created_at AT TIME ZONE 'Asia/Riyadh')::date = (now() AT TIME ZONE 'Asia/Riyadh')::date"""),
         {"u": str(user_id)}).scalar()
-    if today >= limits()["per_day"]:
-        raise ApiError(429, "ai_test_call_limit", "the daily limit of test calls is reached",
-                       {"per_day": limits()["per_day"]})
+    if per_day and today >= per_day:
+        raise ApiError(429, "ai_test_call_limit", "the daily limit of test calls is reached", {"per_day": per_day})
     row = s.execute(text("""
         INSERT INTO ai_test_calls (created_by, destination, caller_id, voice, instructions)
         VALUES (CAST(:u AS uuid), :d, :c, :v, :i) RETURNING *"""),

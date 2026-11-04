@@ -174,7 +174,11 @@ const AiTestCallPage = () => {
                         </Notice>
                     )}
                     {o.ready && !o.service.running && <Notice tone="warning" testId="p13-aitest-service">{t('p13.aitest.serviceDown')}</Notice>}
-                    <Notice tone="info">{t('p13.aitest.disclaimer', { secs: o.limits.max_seconds, n: o.limits.per_day })}</Notice>
+                    <Notice tone="info">
+                        {o.limits.per_day
+                            ? t('p13.aitest.disclaimer', { secs: o.limits.max_seconds, n: o.limits.per_day })
+                            : t('p13.aitest.disclaimerNoDaily', { secs: o.limits.max_seconds })}
+                    </Notice>
 
                     <div className="grid gap-4 xl:grid-cols-2">
                         <Card title={t('p13.aitest.setup')} testId="p13-aitest-form">
