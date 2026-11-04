@@ -16,6 +16,11 @@ payments, `remaining` = amount - paid (negative when overpaid, exactly like the 
 `outstanding`). Pending, rejected and reversed money never counts. The summary is summed in
 SQL numeric over the same rows that are listed.
 
+2026-11-04 (customer request: "separate the clients with the same identity by contract"): the
+accounts are ordered by contract, the opened case's contract first, and `by_contract` sums each
+contract (count, amount, paid, remaining) over every matching account; `contract` is the opened
+case's own contract and each group says whether it is that contract (`same_contract`).
+
 Archived accounts (is_archive, including the `<account>-أرشيف<n>` records a portfolio upload
 renamed) are left out unless `include_archived`. Read-only: nothing is written or audited.
 """
@@ -81,9 +86,13 @@ _ACCOUNTS_SQL = """
     SELECT acc.*,
            count(*) OVER () AS total_count,
            sum(original) OVER () AS total_amount,
-           sum(paid) OVER () AS total_paid
+           sum(paid) OVER () AS total_paid,
+           count(*) OVER (PARTITION BY contract_id) AS contract_count,
+           sum(original) OVER (PARTITION BY contract_id) AS contract_amount,
+           sum(paid) OVER (PARTITION BY contract_id) AS contract_paid
       FROM acc
-     ORDER BY is_archive, create_at DESC, id
+     ORDER BY contract_id IS DISTINCT FROM CAST(:my_contract AS text), contract_name NULLS LAST, contract_id,
+              is_archive, create_at DESC, id
      LIMIT :lim
 """
 
@@ -92,9 +101,11 @@ def same_identity(case_id, scope, include_archived: bool = False) -> dict:
     """{identity, summary, accounts, truncated} for the case `case_id` (already authorized)."""
     s = _s()
     me = s.execute(text("""
-        SELECT "identityNumber" AS identity, {key} AS norm
-          FROM clints WHERE id = CAST(:cid AS uuid)
-    """.format(key=IDENTITY_KEY_SQL.format(col='"identityNumber"'))), {"cid": str(case_id)}).mappings().first()
+        SELECT c."identityNumber" AS identity, {key} AS norm, pf.contract_id::text AS contract_id, ct.name AS contract_name
+          FROM clints c LEFT JOIN portfolios pf ON pf.id = c.portfolios_id LEFT JOIN contracts ct ON ct.id = pf.contract_id
+         WHERE c.id = CAST(:cid AS uuid)
+    """.format(key=IDENTITY_KEY_SQL.format(col='c."identityNumber"'))), {"cid": str(case_id)}).mappings().first()
+    my_contract = me["contract_id"] if me else None
     identity = me["identity"] if me else None
     norm = me["norm"] if me else None
     rows = []
@@ -102,13 +113,19 @@ def same_identity(case_id, scope, include_archived: bool = False) -> dict:
         pred, params = scope_sql(scope, "c", "sid")
         sql = _ACCOUNTS_SQL.format(scope=pred, key=IDENTITY_KEY_SQL.format(col='c."identityNumber"'))
         rows = s.execute(text(sql), {"norm": norm, "cid": str(case_id), "archived": bool(include_archived),
-                                     "lim": MAX_ACCOUNTS, **params}).mappings().all()
+                                     "lim": MAX_ACCOUNTS, "my_contract": my_contract, **params}).mappings().all()
 
     count = int(rows[0]["total_count"]) if rows else 0
     amount = rows[0]["total_amount"] if rows else Decimal("0")
     paid = rows[0]["total_paid"] if rows else Decimal("0")
-    accounts = []
+    accounts, groups = [], {}
     for r in rows:
+        if r["contract_id"] not in groups:
+            groups[r["contract_id"]] = {
+                "contract": None if r["contract_id"] is None else {"id": r["contract_id"], "name": r["contract_name"]},
+                "same_contract": r["contract_id"] == my_contract, "count": int(r["contract_count"]),
+                "amount": money(r["contract_amount"]), "paid": money(r["contract_paid"]),
+                "remaining": money(r["contract_amount"] - r["contract_paid"])}
         note = None
         if r["note_at"] is not None:
             note = {"status": r["note_status"], "sub_status": r["note_sub_status"],
@@ -134,5 +151,7 @@ def same_identity(case_id, scope, include_archived: bool = False) -> dict:
         "summary": {"count": count, "amount": money(amount), "paid": money(paid),
                     "remaining": money(amount - paid)},
         "accounts": accounts,
+        "contract": None if not me or my_contract is None else {"id": my_contract, "name": me["contract_name"]},
+        "by_contract": list(groups.values()),
         "truncated": count > len(accounts),
     }

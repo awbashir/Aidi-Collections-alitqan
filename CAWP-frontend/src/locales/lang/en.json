@@ -5429,7 +5429,11 @@
         "lastStatus": "Last note status",
         "lastNoteAt": "Last note date",
         "owner": "Collector"
-      }
+      },
+      "split": "In this contract: {{same}} · in other contracts: {{other}}",
+      "thisContract": "This contract",
+      "groupCount": "{{n}} accounts",
+      "noContract": "No contract"
     }
   },
   "p9": {
@@ -6399,11 +6403,11 @@
     },
     "notes": {
       "applyAll": {
-        "label": "Apply to all the client's accounts ({{count}})",
-        "hintOn": "The same note is also saved on: {{accounts}}. The promise and the follow-up stay on this account only.",
-        "hintOff": "The note is saved on this account only. Other active accounts of the client: {{accounts}}.",
+        "label": "Apply to all the client's accounts in the same contract ({{count}})",
+        "hintOn": "The same note is also saved on the client's accounts in the same contract: {{accounts}}. Accounts in other contracts are not affected. The promise and the follow-up stay on this account only.",
+        "hintOff": "The note is saved on this account only. Other active accounts of the client in the same contract: {{accounts}}.",
         "tooMany": "This client has {{count}} other active accounts, more than the {{limit}} a note can be applied to: the note is saved on this account only.",
-        "title": "Applied to the client's accounts",
+        "title": "Applied to the client's accounts in the same contract",
         "applied": "The note was also applied to the accounts: {{accounts}}.",
         "skipped": "Not applied (the status belongs to another contract): {{accounts}}."
       },
@@ -6422,7 +6426,7 @@
         "hint": "A note with this status shows the promise amount and payment date (optional); when filled in, the promise is created with the note. Bulk notes and imports don't ask for it."
       },
       "err": {
-        "too_many_accounts": "The client has too many accounts to apply the note to all of them; untick \"Apply to all the client's accounts\"."
+        "too_many_accounts": "The client has too many accounts in this contract to apply the note to all of them; untick \"Apply to all the client's accounts in the same contract\"."
       }
     }
   },

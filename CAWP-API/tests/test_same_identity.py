@@ -252,3 +252,20 @@ def test_last_note_status_sub_status_and_owner(sc, db):
     assert row[silent]["last_note"] is None
     assert row[other]["owner"] == {"id": M.col, "name": "Money Collector"}
     assert row[other]["name"] == "Sid " + other[:8]
+
+
+def test_accounts_are_grouped_by_contract_own_contract_first(sc, db):
+    """2026-11-04 ("separate the clients with the same identity by contract"): the accounts come
+    grouped by contract, the opened case's contract first, with each contract's count and money."""
+    ident = new_identity()
+    opened = case_with(db, ident, amount=1000)
+    other1 = case_with(db, ident, amount=700, portfolio=M.other_portfolio)
+    mine = case_with(db, ident, amount=400)
+    other2 = case_with(db, ident, amount=300, portfolio=M.other_portfolio)
+    data = get(sc, opened).get_json()["data"]
+    assert data["accounts"][0]["id"] == mine and {a["id"] for a in data["accounts"][1:]} == {other1, other2}
+    assert data["contract"]["id"] == M.contract
+    groups = data["by_contract"]
+    assert [(g["contract"]["id"], g["same_contract"], g["count"], g["amount"]) for g in groups] == [
+        (M.contract, True, 1, "400.00"), (M.other_contract, False, 2, "1000.00")]
+    assert data["summary"]["count"] == 3 and data["summary"]["amount"] == "1400.00"
