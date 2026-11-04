@@ -56,6 +56,7 @@ SCRIPT = "collections-authorize"
 SURVEY_SCRIPTS = ("collections-survey-offer", "collections-survey-result")
 # 2026-10-25 (0088): message campaigns (services/calling/message_campaign.py)
 MESSAGE_SCRIPTS = ("collections-message-authorize", "collections-message-agent")
+AI_SCRIPT = "collections-ai-authorize"                   # AI calling agent test (0092)
 MAX_LINE = 4096
 MAX_HEADERS = 64
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -427,6 +428,8 @@ class FastAgiServer(threading.Thread):
                 script = (env.get("agi_network_script") or "").strip("/")
                 if script in SURVEY_SCRIPTS:                     # post-call survey (services/calling/survey.py)
                     return self._survey(ch, env, peer, script)
+                if script == AI_SCRIPT:                          # AI calling agent test (0092)
+                    return self._ai(ch, env, peer)
                 if script in MESSAGE_SCRIPTS:                    # message campaigns (0088)
                     return self._message(ch, env, peer, script)
                 validate_environment(env, req)
@@ -542,6 +545,50 @@ class FastAgiServer(threading.Thread):
         except Exception:  # noqa: BLE001 - any doubt denies (the dialplan hangs up without dialling)
             db.session.rollback()
             log.exception("AGI message script failed")
+            return Decision(False, "agi_internal_error")
+
+    def _ai(self, ch: AgiChannel, env: dict, peer: str) -> Decision:
+        """collections-ai-authorize: the one-shot token of an AI test call -> COLLECTIONS_AI_GATE ALLOW
+        (published only after the commit), with the number to dial and the outbound number taken
+        from the call's row, never from the SIP request. Same peer allowlist and shared key."""
+        from extensions import db
+        from services.ai import test_calls as TC
+        call_id = None
+        try:
+            if env.get("agi_network") != "yes":
+                raise AgiDeny("not_fastagi")
+            for name in ("COLLECTIONS_AI_GATE", "COLLECTIONS_AI_DESTINATION", "COLLECTIONS_AI_CID"):
+                ch.set_var(name, "")                              # cleared first
+            key = ch.get_global("COLLECTIONS_AGI_KEY") or ""
+            if not hmac.compare_digest(key.encode(), self.secret.encode()):
+                raise AgiDeny("agi_key_mismatch")
+            call_id = (ch.get_var("COLLECTIONS_AI_CALL") or "").strip().lower()
+            token = (ch.get_var("COLLECTIONS_AI_TOKEN") or "").strip().lower()
+            allow, reason, out = TC.authorize(db.session, call_id=call_id, token=token)
+            if not allow and UUID_RE.match(call_id or ""):
+                db.session.execute(text("UPDATE ai_test_calls SET reason_code = :r, updated_at = now() "
+                                        "WHERE id = CAST(:id AS uuid) AND reason_code IS NULL"), {"r": reason, "id": call_id})
+            db.session.commit()                                  # the token is consumed BEFORE the allow is published
+            if not allow:
+                raise AgiDeny(reason)
+            if time.monotonic() > ch.deadline:
+                raise AgiDeny("agi_timeout")
+            ch.set_var("COLLECTIONS_AI_DESTINATION", out["destination"])
+            if out["caller_id"]:
+                ch.set_var("COLLECTIONS_AI_CID", out["caller_id"])
+            ch.set_var("COLLECTIONS_AI_GATE", "ALLOW")            # last
+            self.stats["allow"] += 1
+            log.info("AGI ai allow call=%s peer=%s", call_id, peer)
+            return Decision(True, "allowed")
+        except AgiDeny as deny:
+            db.session.rollback()
+            self.stats["deny"] += 1
+            log.info("AGI ai deny reason=%s call=%s peer=%s", deny.reason,
+                     call_id if call_id and UUID_RE.match(call_id) else None, peer)
+            return Decision(False, deny.reason)
+        except Exception:  # noqa: BLE001 - any doubt denies (the dialplan hangs up without dialling)
+            db.session.rollback()
+            log.exception("AGI ai script failed")
             return Decision(False, "agi_internal_error")
 
     def _survey(self, ch: AgiChannel, env: dict, peer: str, script: str) -> Decision:

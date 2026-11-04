@@ -315,6 +315,28 @@ services:
       start_period: 20s
       retries: 3
 
+  # --- AI voice service: the AI calling agent test (2026-11-04, docs/alitqan-ai-calling-agent-plan.md) --
+  # Idle unless AI_VOICE_ENABLED=1. It places the test call itself: a SIP INVITE to the PBX as one
+  # dedicated extension, RTP both ways, and the OpenAI Realtime session minted through the AI gateway.
+  ai-voice:
+    profiles: ["calling"]
+    build: ./CAWP-API
+    container_name: cawp-ai-voice
+    env_file: ./CAWP-API/.env.docker
+    environment:
+      AI_VOICE_ENABLED: ${AI_VOICE_ENABLED:-0}
+      AI_VOICE_PBX_HOST: ${AI_VOICE_PBX_HOST:-}
+      AI_VOICE_LOCAL_IP: ${AI_VOICE_LOCAL_IP:-}
+      AI_VOICE_SIP_USER: ${AI_VOICE_SIP_USER:-}
+      AI_VOICE_SIP_SECRET: ${AI_VOICE_SIP_SECRET:-}
+    command: ["python", "-m", "ai_voice"]
+    network_mode: host            # SIP and RTP must leave from the host's own address and ports
+    stop_signal: SIGTERM
+    stop_grace_period: 20s
+    volumes:
+      - ./CAWP-API:/app
+    mem_limit: 256m
+
   # --- WebRTC test PBX + softphone end-to-end runners (profile "pbx-webrtc-test", Phase 5 P3) --
   # A copy of pbx-test adapted for browser media: WebRTC extensions 7001-7005 whose digest
   # credentials come from the application database (realtime PJSIP auths -> view pbx_ps_auths,

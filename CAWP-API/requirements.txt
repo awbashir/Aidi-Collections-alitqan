@@ -33,3 +33,4 @@ gunicorn==22.0.0
 simple-websocket==1.0.0
 orjson==3.10.7
 Flask-Compress==1.14
+websockets==13.1  # AI voice service: the OpenAI Realtime WebSocket (0092)

@@ -116,6 +116,8 @@ export const DERIVED_KEYS = {
     call_monitor: (p: Record<string, unknown>) => p.reports_calls === true || p.calls_manage === true,
     /* 2026-10-20: the team performance dashboard, supervisors and admins only (GET /v2/dashboards/team) */
     team_dashboard: (p: Record<string, unknown>) => p.calls_supervise === true || p.calls_manage === true,
+    /* 2026-11-04: the AI calling agent test page (GET/POST /v2/ai/test-calls, ai_admin) */
+    ai_test_call: (p: Record<string, unknown>) => p.ai_admin === true,
     /* 2026-10-29: the Alitqan performance board, beside it (GET /v2/dashboards/itqan, same keys) */
     itqan_dashboard: (p: Record<string, unknown>) => p.calls_supervise === true || p.calls_manage === true,
     /* Phase 6: the quality workspace (quality_review | quality_approve). */

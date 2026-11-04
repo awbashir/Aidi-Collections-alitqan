@@ -6991,6 +6991,70 @@
       "methodSupervisor": "How the supervisor scorecard is computed",
       "methodIntro": "Each criterion is scored out of 100 and multiplied by its weight. A criterion unknown for a collector (no target, no calls, no promise due) is left out of their score. Money: approved payments only, credited to the client's current owner.",
       "ratingRule": "Rating: 90+ excellent, 80+ very good, 70+ good, below that needs improvement. A supervisor is a supervisor user (not a system admin) with at least two collectors in their team."
+    },
+    "aitest": {
+      "nav": "AI calling agent test",
+      "title": "AI calling agent test",
+      "subtitle": "A real call to a number you type, where the AI talks with whoever answers",
+      "notReady": "The AI is not ready for voice calls",
+      "reason": {
+        "ai_policy_required": "No AI data policy is approved: approve one in the AI settings.",
+        "ai_policy_category_denied": "The data policy does not allow \"audio\" and \"transcripts\": allow both in the data policy.",
+        "model_not_set": "The voice model is not set on the server.",
+        "ai_not_configured": "The OpenAI key is not set on the server.",
+        "ai_disabled": "AI is turned off on the server."
+      },
+      "serviceDown": "The AI calling service is not running on the server, so no call can start.",
+      "disclaimer": "A real test call: use your own number or someone who agreed. The agent says it is an automated assistant. Limit {{secs}} seconds per call and {{n}} calls a day. Nothing is recorded on any client.",
+      "setup": "Call setup",
+      "number": "Mobile number",
+      "numberHint": "A Saudi number, e.g. 05XXXXXXXX",
+      "callerId": "Number shown",
+      "autoNumber": "Automatic",
+      "voice": "Voice",
+      "script": "Agent instructions",
+      "scriptHint": "What the agent says and how it behaves. Fixed rules are added: it says it is automated and never asks for secret data.",
+      "start": "Start the call",
+      "stop": "End the call",
+      "resetScript": "Restore the default instructions",
+      "liveCall": "Current call",
+      "pastCall": "Past call",
+      "backToLive": "Back to the current call",
+      "status": "Status",
+      "talk": "Talk time",
+      "noCall": "No call now",
+      "noTranscript": "No transcript yet",
+      "reasonLine": "Reason: {{code}} · PBX answer: {{sip}}",
+      "history": "My test calls",
+      "when": "Time",
+      "turns": "Turns",
+      "noHistory": "No test calls yet",
+      "role": {
+        "agent": "Agent",
+        "client": "Caller"
+      },
+      "state": {
+        "queued": "Waiting",
+        "preparing": "Preparing the AI",
+        "dialing": "Dialling",
+        "ringing": "Ringing",
+        "answered": "In the call"
+      },
+      "result": {
+        "completed": "Ended",
+        "no_answer": "No answer",
+        "busy": "Busy",
+        "congestion": "Could not connect (network)",
+        "unavailable": "Unavailable",
+        "denied": "The PBX refused the call",
+        "cancelled": "Cancelled",
+        "ai_refused": "AI refused (policy or quota)",
+        "ai_failed": "AI error",
+        "sip_failed": "PBX connection error",
+        "service_stopped": "The service stopped",
+        "time_limit": "Time limit reached",
+        "unknown": "Unknown"
+      }
     }
   }
 }

@@ -789,6 +789,13 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/phase6/voiceLab")),
     authority: [],
   },
+  /* AI calling agent test (`ai_test_call` = ai_admin, derived; 2026-11-04). */
+  {
+    key: "ai_test_call",
+    path: "/ai-test-call",
+    component: lazy(() => import("@/views/aiTestCall")),
+    authority: [],
+  },
   /* ── end Phase 6 Q3 ── */
 
   {

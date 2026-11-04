@@ -592,6 +592,18 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* AI calling agent test: a real call to a number you type (key `ai_test_call` = ai_admin). */
+  {
+    key: "ai_test_call",
+    group: NAV_GROUP_INTELLIGENCE_CONTROL,
+    path: "/ai-test-call",
+    title: "AI calling agent test",
+    translateKey: "p13.aitest.nav",
+    icon: "ai_test_call",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* ── end Phase 6 Q3 ── */
   {
     key: "users",
