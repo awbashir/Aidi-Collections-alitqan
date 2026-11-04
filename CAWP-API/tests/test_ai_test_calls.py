@@ -407,3 +407,14 @@ def test_daily_limit_is_off_by_default_and_optional(client, hdr, pgc, monkeypatc
     monkeypatch.setenv("AI_TEST_CALLS_PER_DAY", "25")
     r = place()
     assert r.status_code == 429 and r.get_json()["code"] == "ai_test_call_limit"
+
+
+def test_connect_failures_get_a_reason_the_page_explains():
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    from services.ai_voice.realtime import connect_failure_code
+    quota = ConnectionClosedError(Close(1013, "insufficient_quota.credit_balance_exhausted"), None)
+    assert connect_failure_code(quota) == "ai_credit_exhausted"
+    assert connect_failure_code(ConnectionClosedError(Close(1008, "rate_limit_exceeded"), None)) == "ai_rate_limited"
+    assert connect_failure_code(TimeoutError()) == "realtime_connect_failed"

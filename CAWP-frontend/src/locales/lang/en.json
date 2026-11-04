@@ -7059,7 +7059,13 @@
         "time_limit": "Time limit reached",
         "unknown": "Unknown"
       },
-      "disclaimerNoDaily": "A real test call: use your own number or someone who agreed. The agent says it is an automated assistant. Limit {{secs}} seconds per call. Nothing is recorded on any client."
+      "disclaimerNoDaily": "A real test call: use your own number or someone who agreed. The agent says it is an automated assistant. Limit {{secs}} seconds per call. Nothing is recorded on any client.",
+      "code": {
+        "ai_credit_exhausted": "The OpenAI account is out of credit: top it up in the OpenAI billing page",
+        "ai_rate_limited": "OpenAI rate limit reached for now: try again shortly",
+        "ai_key_rejected": "OpenAI rejected the key",
+        "realtime_connect_failed": "Could not connect to the OpenAI voice service"
+      }
     }
   }
 }

@@ -23,6 +23,18 @@ END_CALL_TOOL = {
 }
 
 
+# what OpenAI says when it refuses the connection (WebSocket close reason) -> our reason code
+CLOSE_REASONS = (("insufficient_quota", "ai_credit_exhausted"), ("rate_limit", "ai_rate_limited"),
+                 ("invalid_api_key", "ai_key_rejected"), ("401", "ai_key_rejected"))
+
+
+def connect_failure_code(exc: BaseException) -> str:
+    """A refused or dropped Realtime connection -> a reason code the page can explain."""
+    rcvd = getattr(exc, "rcvd", None)
+    text_ = f"{getattr(rcvd, 'reason', '') or ''} {exc}".lower()
+    return next((code for needle, code in CLOSE_REASONS if needle in text_), "realtime_connect_failed")
+
+
 def ws_url(base_url: str, model: str) -> str:
     """https://api.openai.com/v1 -> wss://api.openai.com/v1/realtime?model=<model> (http -> ws for tests)."""
     base = base_url.rstrip("/")

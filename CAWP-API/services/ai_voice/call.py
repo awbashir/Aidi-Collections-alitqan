@@ -372,9 +372,11 @@ class AiCall:
                                           on_error=self._ai_error)
         try:
             await self.link.open()
-        except Exception:  # noqa: BLE001
-            log.exception("ai call %s: realtime connect failed", self.call_id)
-            await self._mark(state="failed", result="ai_failed", reason="realtime_connect_failed", ended=True)
+        except Exception as e:  # noqa: BLE001
+            from services.ai_voice.realtime import connect_failure_code
+            code = connect_failure_code(e)
+            log.warning("ai call %s: realtime connect failed (%s): %s", self.call_id, code, e)
+            await self._mark(state="failed", result="ai_failed", reason=code, ended=True)
             return
         _t, self.rtp = await loop.create_datagram_endpoint(lambda: RtpEndpoint(self._client_audio),
                                                            local_addr=(self.cfg.local_ip, self.rtp_port))

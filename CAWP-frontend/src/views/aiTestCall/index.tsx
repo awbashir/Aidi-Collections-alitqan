@@ -238,7 +238,7 @@ const AiTestCallPage = () => {
                                         <Fact label={t('p13.aitest.callerId')}><Ltr>{shown.caller_id || t('p13.aitest.autoNumber')}</Ltr></Fact>
                                     </div>
                                     {shown.reason_code && !OPEN_STATES.includes(shown.state) && (
-                                        <div className="mb-3 text-[12px] text-gray-600">{t('p13.aitest.reasonLine', { code: shown.reason_code, sip: shown.sip_status ?? '—' })}</div>
+                                        <div className="mb-3 text-[12px] text-gray-600">{t('p13.aitest.reasonLine', { code: t(`p13.aitest.code.${shown.reason_code}`, { defaultValue: shown.reason_code }), sip: shown.sip_status ?? '—' })}</div>
                                     )}
                                     <Transcript call={shown} t={t} />
                                 </>
