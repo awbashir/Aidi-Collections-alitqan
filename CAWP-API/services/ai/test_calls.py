@@ -79,8 +79,12 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def full_instructions(script: str) -> str:
-    return script.strip() + GUARD
+GUARD_LIVE = GUARD.split(" إذا طلب")[0] + " إذا طلب المتحدث إنهاء المكالمة أو انتهى الحديث فقل كلمة وداع قصيرة."
+
+
+def full_instructions(script: str, *, live: bool = False) -> str:
+    """The script + the fixed rules; the Live API (gpt-live-*) has no end_call tool, so its rules don't name it."""
+    return script.strip() + (GUARD_LIVE if live else GUARD)
 
 
 def normalize_destination(raw) -> str:

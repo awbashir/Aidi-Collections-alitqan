@@ -186,6 +186,17 @@ export default function ReportsHub() {
                         </span>
                     </div>
 
+                    {perms.collector_report === true && (
+                        <section className="mb-8" data-testid="rca-hub">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                <Link to="/reports/collector-activity" data-testid="rca-hub-card"
+                                      className="flex min-w-0 flex-col rounded-lg border border-gray-300 bg-white p-5 transition-colors hover:border-azure-500 dark:border-night-border dark:bg-night-card">
+                                    <span className="text-[15px] font-extrabold text-navy-600 hover:text-azure-600 dark:text-gray-100">{t('rca.title')}</span>
+                                    <span className="mt-2 text-[12.5px] text-gray-600">{t('rca.hubDesc')}</span>
+                                </Link>
+                            </div>
+                        </section>
+                    )}
                     {(perms.reports_bi === true || perms.reports_sql === true) && (
                         <section className="mb-8" data-testid="rb-hub-builders">
                             <h4 className="mb-3 text-[15px] font-extrabold text-navy-600 dark:text-gray-100">{t('rb.hub.title')}</h4>

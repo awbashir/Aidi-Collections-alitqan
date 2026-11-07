@@ -14,6 +14,8 @@ User=cawp
 Group=cawp
 WorkingDirectory=/opt/alitqan/CAWP-API
 EnvironmentFile=/etc/alitqan/api.env
+# the calling agent's own model (AI_MODEL_REALTIME=gpt-live-1, 2026-11-05); optional, overrides api.env
+EnvironmentFile=-/etc/alitqan/ai-voice.env
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ExecStart=/opt/alitqan-runtime/venv/bin/python -m ai_voice
 Restart=always

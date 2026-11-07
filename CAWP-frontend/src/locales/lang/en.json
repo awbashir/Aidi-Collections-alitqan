@@ -7067,5 +7067,22 @@
         "realtime_connect_failed": "Could not connect to the OpenAI voice service"
       }
     }
+  },
+  "rca": {
+    "nav": "Employee report",
+    "title": "Employee report",
+    "subtitle": "Daily attendance to the system and answered calls, with charts and weekly totals",
+    "hubDesc": "An employee's daily attendance to the system and answered calls, with charts, tables and weekly totals; download as PDF or Word.",
+    "collector": "Employee",
+    "pickCollector": "Choose an employee",
+    "from": "From",
+    "to": "To",
+    "show": "Show report",
+    "pdf": "Download PDF",
+    "word": "Download Word",
+    "inactive": "inactive",
+    "tooLong": "The period is longer than the limit ({{days}} days).",
+    "empty": "Choose the employee and the period, then \"Show report\"",
+    "hint": "\"Download PDF\" opens the print window: choose \"Save as PDF\". Calls come from the PBX records, attendance from the system login log."
   }
 }

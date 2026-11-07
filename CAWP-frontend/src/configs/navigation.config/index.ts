@@ -269,6 +269,18 @@ const navigationConfig: NavigationTree[] = [
     authority: [],
     subMenu: [],
   },
+  /* Collector activity report (2026-11-05): attendance + answered calls, printable as PDF. */
+  {
+    key: "collector_report",
+    group: NAV_GROUP_RECOVERY_TEAM,
+    path: "/reports/collector-activity",
+    title: "Employee report",
+    translateKey: "rca.nav",
+    icon: "collector_report",
+    type: NAV_ITEM_TYPE_ITEM,
+    authority: [],
+    subMenu: [],
+  },
   /* Report center builders (2026-11-04): self-service BI and the SQL builder. */
   {
     key: "reports_bi",

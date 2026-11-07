@@ -329,6 +329,8 @@ services:
       AI_VOICE_LOCAL_IP: ${AI_VOICE_LOCAL_IP:-}
       AI_VOICE_SIP_USER: ${AI_VOICE_SIP_USER:-}
       AI_VOICE_SIP_SECRET: ${AI_VOICE_SIP_SECRET:-}
+      # the calling agent's own model (gpt-live-1 = OpenAI Live API); the API's voice lab keeps AI_MODEL_REALTIME
+      AI_MODEL_REALTIME: ${AI_VOICE_MODEL:-gpt-live-1}
     command: ["python", "-m", "ai_voice"]
     network_mode: host            # SIP and RTP must leave from the host's own address and ports
     stop_signal: SIGTERM

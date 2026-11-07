@@ -42,6 +42,7 @@ MODULES = [
     "api.previous_status_import",  # previous statuses import from the old system (0074)
     "api.team_dashboard",    # team performance dashboard: calls and status updates per user (2026-10-20)
     "api.home_dashboard",    # home dashboard v2: KPI cards, charts, leaderboard, portfolio, calls (2026-10-20)
+    "api.collector_report",  # collector activity report: attendance + answered calls, print-ready (2026-11-05)
     "api.ai_test_calls",     # AI calling agent test: a number, a script, a live AI call (0092, 2026-11-04)
     "api.itqan_performance",  # Alitqan performance board: collector and supervisor scorecards (2026-10-29)
     "api.report_builder",    # report center: self-service BI and SQL builder (0093, 2026-11-04)

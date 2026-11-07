@@ -418,3 +418,85 @@ def test_connect_failures_get_a_reason_the_page_explains():
     assert connect_failure_code(quota) == "ai_credit_exhausted"
     assert connect_failure_code(ConnectionClosedError(Close(1008, "rate_limit_exceeded"), None)) == "ai_rate_limited"
     assert connect_failure_code(TimeoutError()) == "realtime_connect_failed"
+
+
+def test_live_link_speaks_the_live_api_protocol():
+    """gpt-live-1 (2026-11-05): session.start with µ-law 8 kHz and the voice, waits for session.started,
+    audio both ways, transcript deltas flushed per side, session.close at the end; no end_call rule."""
+    import base64
+    import json
+
+    from websockets.asyncio.server import serve
+
+    from services.ai import gateway
+    from services.ai import test_calls as TC
+    from services.ai_voice.realtime import LiveLink, live_url
+    assert gateway.is_live_model("gpt-live-1") and not gateway.is_live_model("gpt-realtime")
+    assert "end_call" not in TC.full_instructions("x", live=True) and "end_call" in TC.full_instructions("x")
+    seen = {"events": []}
+
+    async def handler(ws):
+        seen["auth"], seen["path"] = ws.request.headers.get("Authorization"), ws.request.path
+        async for raw in ws:
+            ev = json.loads(raw)
+            seen["events"].append(ev)
+            if ev["type"] == "session.start":
+                await ws.send(json.dumps({"type": "session.started"}))
+            elif ev["type"] == "session.commentary.append":
+                assert ev["content"] and "delegation_id" in ev
+                await ws.send(json.dumps({"type": "session.output_audio.delta", "delta": base64.b64encode(b"\x55" * 160).decode()}))
+                for part in ("السلام ", "عليكم"):
+                    await ws.send(json.dumps({"type": "session.output_transcript.delta", "delta": part}))
+            elif ev["type"] == "session.input_audio.append":
+                await ws.send(json.dumps({"type": "session.input_transcript.delta", "delta": "ألو"}))
+                await ws.send(json.dumps({"type": "session.output_transcript.delta", "delta": " أهلا"}))  # overlap
+                await ws.send(json.dumps({"type": "session.input_transcript.delta", "delta": " نعم"}))
+            elif ev["type"] == "session.close":
+                await ws.send(json.dumps({"type": "session.closed", "usage": {}}))
+                await ws.close()
+
+    async def main():
+        got = {"audio": b"", "tr": []}
+        async with serve(handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            link = LiveLink(url=live_url(f"http://127.0.0.1:{port}/v1"), api_key="sk-test", model="gpt-live-1",
+                            instructions="قل مرحبا", voice="marin",
+                            on_audio=lambda b: got.__setitem__("audio", got["audio"] + b), on_barge=lambda: None,
+                            on_transcript=lambda r, t: got["tr"].append((r, t)), on_end_call=lambda: None,
+                            on_error=lambda c: None)
+            await link.open()
+            await link.greet()
+            await asyncio.sleep(0.1)
+            await link.append_audio(b"\x44" * 800)
+            await asyncio.sleep(1.5)
+            await link.close()
+        return got
+    got = asyncio.run(main())
+    assert seen["auth"] == "Bearer sk-test" and seen["path"] == "/v1/live/sessions"
+    start = seen["events"][0]
+    assert start["type"] == "session.start" and start["session"]["model"] == "gpt-live-1"
+    assert start["session"]["audio"] == {"format": {"type": "audio/pcmu", "rate": 8000}, "output": {"voice": "marin"}}
+    assert any(e["type"] == "session.close" for e in seen["events"])
+    assert got["audio"] == b"\x55" * 160
+    # a short overlap does not split a turn: the agent's line flushes on its pause, the client's on theirs
+    assert got["tr"] == [("agent", "السلام عليكم أهلا"), ("client", "ألو نعم")] or \
+        got["tr"] == [("agent", "السلام عليكم"), ("client", "ألو نعم"), ("agent", "أهلا")], got["tr"]
+
+
+def test_open_live_session_is_policy_checked_and_audited(tc_app, client, pgc, monkeypatch):
+    from extensions import db
+    from services.ai import gateway
+    configure(monkeypatch, realtime="gpt-live-1")
+    with tc_app.app_context():
+        with pytest.raises(gateway.AIRefused):                    # no approved policy yet
+            gateway.open_live_session(purpose="ai_test_call", categories=("audio", "transcripts"), actor_user_id=AI.admin)
+        db.session.commit()
+    insert_policy(pgc, allowed_categories=["audio", "transcripts"])
+    with tc_app.app_context():
+        out = gateway.open_live_session(purpose="ai_test_call", categories=("audio", "transcripts"),
+                                        entity_type="ai_test_call", entity_id="11111111-1111-4111-8111-111111111111",
+                                        actor_user_id=AI.admin)
+        db.session.commit()
+    assert out.model == "gpt-live-1" and out.api_key and "api_key" not in repr(out)
+    row = q1(pgc, "SELECT outcome, model, purpose FROM ai_provider_calls WHERE id = %s", out.call_id)
+    assert row == ("succeeded", "gpt-live-1", "ai_test_call")

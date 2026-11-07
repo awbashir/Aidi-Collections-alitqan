@@ -46,6 +46,7 @@ import {
   ChartPie, // self-service BI
   Database, // SQL builder
   Bot, // AI calling agent test
+  UserCheck, // collector activity report
 } from "lucide-react";
 
 
@@ -100,6 +101,7 @@ const navigationIcon: NavigationIcons = {
   /* Phase 6 Q3 (voice training lab) */
   voice_lab: <Mic strokeWidth={2} size={18} />,
   ai_test_call: <Bot strokeWidth={2} size={18} />,
+  collector_report: <UserCheck strokeWidth={2} size={18} />,
   /* Phase 6: AI administration and the quality workspace */
   ai_admin: <BrainCircuit strokeWidth={2} size={18} />,
   quality: <BadgeCheck strokeWidth={2} size={18} />,

@@ -702,6 +702,14 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/reportBuilder/sql")),
     authority: [],
   },
+  /* Collector activity report (`collector_report` = reports_performance | calls_supervise |
+   * calls_manage, derived; 2026-11-05). Static path: outranks `/reports/:id`. */
+  {
+    key: "collector_report",
+    path: "/reports/collector-activity",
+    component: lazy(() => import("@/views/reports/collectorActivity")),
+    authority: [],
+  },
   {
     key: "reports_any",
     path: "/reports/:id",

@@ -71,17 +71,27 @@ class Db:
         return self._tx(TC.abandon_open)
 
     def mint(self, row):
+        """-> (secret, model, ai_call_id, live). A Live API model (gpt-live-*) opens its own audited
+        session with the server key; any other model gets an ephemeral Realtime secret."""
+        from services.ai import config as ai_config
         from services.ai import gateway
         from services.ai import test_calls as TC
         with self.app.app_context():
             from extensions import db
+            model = ai_config.load().model(ai_config.REALTIME_SESSION)
             try:
+                if gateway.is_live_model(model):
+                    out = gateway.open_live_session(
+                        purpose="ai_test_call", categories=TC.CATEGORIES, entity_type="ai_test_call",
+                        entity_id=str(row["id"]), actor_user_id=str(row["created_by"]))
+                    db.session.commit()
+                    return out.api_key, out.model, out.call_id, True
                 out = gateway.mint_realtime_session(
                     purpose="ai_test_call", instructions=TC.full_instructions(row["instructions"]), voice=row["voice"],
                     expires_in_seconds=120, categories=TC.CATEGORIES, entity_type="ai_test_call",
                     entity_id=str(row["id"]), actor_user_id=str(row["created_by"]))
                 db.session.commit()
-                return out.client_secret, out.model, out.call_id
+                return out.client_secret, out.model, out.call_id, False
             except Exception:
                 db.session.commit()                 # keep the gateway's refused/failed audit row
                 raise
@@ -111,10 +121,14 @@ class Db:
             ON CONFLICT (id) DO UPDATE SET updated_at = now(), detail = EXCLUDED.detail"""), {"d": json.dumps(detail)}))
 
 
-def realtime_factory(*, secret, model, **kw):
+def realtime_factory(*, secret, model, live=False, **kw):
     from services.ai import config as ai_config
-    from services.ai_voice.realtime import RealtimeLink, ws_url
-    return RealtimeLink(url=ws_url(ai_config.load().base_url, model), secret=secret, **kw)
+    from services.ai_voice.realtime import LiveLink, RealtimeLink, live_url, ws_url
+    base = ai_config.load().base_url
+    if live:
+        kw.pop("transcribe_model", None)
+        return LiveLink(url=live_url(base), api_key=secret, model=model, **kw)
+    return RealtimeLink(url=ws_url(base, model), secret=secret, **kw)
 
 
 class Service:

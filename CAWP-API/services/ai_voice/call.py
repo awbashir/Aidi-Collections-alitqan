@@ -355,7 +355,9 @@ class AiCall:
     async def _run(self, loop):
         row = self.row
         try:
-            secret, model, ai_call_id = await self._db(self.db.mint, row)
+            minted = await self._db(self.db.mint, row)
+            secret, model, ai_call_id = minted[:3]
+            live = bool(minted[3]) if len(minted) > 3 else False
         except Exception as e:  # noqa: BLE001 - AIRefused / provider failure
             code = getattr(e, "code", None) or type(e).__name__
             refused = "refused" in type(e).__name__.lower() or code in ("ai_refused", "ai_not_configured")
@@ -365,7 +367,8 @@ class AiCall:
             return
         await self._mark(model=model, ai_call_id=ai_call_id)
         from services.ai.test_calls import full_instructions
-        self.link = self.realtime_factory(secret=secret, model=model, instructions=full_instructions(row["instructions"]),
+        self.link = self.realtime_factory(secret=secret, model=model, live=live,
+                                          instructions=full_instructions(row["instructions"], live=live),
                                           voice=row["voice"], transcribe_model=self.cfg.transcribe_model,
                                           on_audio=self._ai_audio, on_barge=self._ai_barge,
                                           on_transcript=self._ai_transcript, on_end_call=self._ai_end_call,
