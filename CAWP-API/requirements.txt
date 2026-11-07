@@ -24,7 +24,7 @@ psycopg2-binary==2.9.9
 flask_socketio==5.5.1
 redis==5.0.1
 python-dotenv==1.0.0
-paramiko==4.0.0
+paramiko==5.0.0
 sentry-sdk
 sentry-sdk[sqlalchemy]
 sentry-sdk[flask]
