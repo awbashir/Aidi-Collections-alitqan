@@ -49,7 +49,7 @@ export const clock = (seconds: number) => {
     return `${h ? `${h}:` : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(r).padStart(2, '0')}`
 }
 
-const ResultPill = ({ result }: { result: string }) => {
+export const ResultPill = ({ result }: { result: string }) => {
     const { t } = useTranslation()
     const r = RESULT_KEY[result]
     return (

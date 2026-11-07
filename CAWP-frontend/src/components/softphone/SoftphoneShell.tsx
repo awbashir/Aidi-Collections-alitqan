@@ -1,8 +1,11 @@
 /**
  * Shell integration of the in-app softphone: the header status chip and the docked panel.
  * Rendered in the header of every layout; it renders nothing unless the signed-in user holds
- * `calls_make` (the credential route's key). One engine per tab; the tabs decide which one
- * registers (Web Locks), the others show its status only.
+ * `calls_make` (the credential route's key) AND a calling administrator switched the softphone on
+ * for them (`softphone_enabled`, migration 0082; off by default: the users call from their own
+ * VoIP phones). The switch is read once per sign-in and when the tab becomes visible again.
+ * One engine per tab; the tabs decide which one registers (Web Locks), the others show its
+ * status only.
  *
  * Keyboard shortcuts (Alt+Shift, outside text fields): P panel, A answer, E end / reject,
  * M mute, H hold / resume.
@@ -13,7 +16,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Phone, PhoneCall } from 'lucide-react'
 import { useAppSelector } from '@/store'
-import { disposeSoftphoneEngine, softphoneEngine, useSoftphoneSnapshot } from '@/services/softphone'
+import { disposeSoftphoneEngine, softphoneApi, softphoneEngine, useSoftphoneSnapshot } from '@/services/softphone'
 import type { Snapshot, SoftphoneEngine } from '@/services/softphone'
 import SoftphonePanel from './SoftphonePanel'
 import { STATUS_TONE, statusLabel } from './labels'
@@ -121,11 +124,40 @@ const SoftphoneRoot = () => {
     )
 }
 
+/** The per-user switch (0082). Unknown (not loaded, or the request failed) counts as off. */
+function useSoftphoneEnabled(active: boolean, userId: string | undefined): boolean {
+    const [enabled, setEnabled] = useState(false)
+    useEffect(() => {
+        if (!active) {
+            setEnabled(false)
+            return undefined
+        }
+        let alive = true
+        const load = () =>
+            softphoneApi
+                .myCalling()
+                .then((me) => alive && setEnabled(me.softphone_enabled === true))
+                .catch(() => undefined)
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') void load()
+        }
+        void load()
+        document.addEventListener('visibilitychange', onVisible)
+        return () => {
+            alive = false
+            document.removeEventListener('visibilitychange', onVisible)
+        }
+    }, [active, userId])
+    return enabled
+}
+
 const SoftphoneShell = () => {
     const signedIn = useAppSelector((s) => s.auth.session.signedIn)
     const permissions = useAppSelector((s) => s.auth.user.permissions) as Record<string, unknown> | undefined
     const userId = useAppSelector((s) => s.auth.user.id)
-    if (!signedIn || permissions?.calls_make !== true) return null
+    const allowed = !!signedIn && permissions?.calls_make === true
+    const enabled = useSoftphoneEnabled(allowed, userId)
+    if (!allowed || !enabled) return null
     // a new user in this tab starts a fresh engine
     return <SoftphoneRoot key={userId || 'me'} />
 }

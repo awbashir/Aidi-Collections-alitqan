@@ -51,7 +51,7 @@ def test_collector_member_is_dispatched_and_reads_the_unassigned_case_only_durin
     assert client.get(f"/v2/cases/{free}/calls", headers=auth(w.c1)).status_code == 404
 
 
-def test_no_grant_without_an_unassigned_only_campaign(cp_app, client, auth, world, pgc):
+def test_no_unassigned_dispatch_without_an_unassigned_only_campaign(cp_app, client, auth, world, pgc):
     w = world
     free = make_case(pgc, None, w.portfolio)
     add_contact(pgc, free, number(7), default=True)

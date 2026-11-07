@@ -278,6 +278,34 @@ def test_rename(client, h, pgc, fake, B):
     assert st == 422 and body["error"] == {"reason": "required"}
 
 
+def test_new_sip_password_is_shown_once_and_never_stored(client, h, pgc, fake, B):
+    st, body = post(client, h(), "/v2/calling/pbx-extensions", {"name": "Desk phone", "reason": "new agent"})
+    ext = body["data"]["extension"]
+    assert "sip_secret" not in str(body) and "sip_password" not in str(body)      # the idempotent create
+    url = f"/v2/calling/pbx-extensions/{ext}/sip-password"
+    r = client.post(url, headers=h(idem=False), json={"reason": "configure the desk phone"})
+    d = r.get_json()["data"]
+    assert r.status_code == 200 and r.headers["Cache-Control"].startswith("no-store")
+    assert d["extension"] == ext and d["sip_username"] == ext and d["sip_password"] == f"fake-secret-{ext}-1"
+    assert d["sip_server"] == "127.0.0.1" and d["storage"] == "shown_once"
+    # not stored: neither in the idempotency store nor in the audit trail
+    assert q1(pgc, "SELECT count(*) FROM idempotency_keys WHERE response_body LIKE %s", "%fake-secret%")[0] == 0
+    a = q1(pgc, "SELECT reason, after::text FROM audit_events WHERE action = 'calling.pbx_extension.sip_password' "
+                "AND entity_id = %s ORDER BY occurred_at DESC LIMIT 1", ext)
+    assert a[0] == "configure the desk phone" and "fake-secret" not in a[1]
+    # a repeat sets another one; an Idempotency-Key is ignored, not replayed
+    r2 = client.post(url, headers=h(), json={"reason": "again"})
+    assert r2.get_json()["data"]["sip_password"] == f"fake-secret-{ext}-2"
+    # only app-created extensions, only calls_manage, a reason
+    st, body = post(client, h(), f"/v2/calling/pbx-extensions/{n(B, 0)}/sip-password", {"reason": "x"})
+    assert (st, body["code"]) == (409, "pbx_not_managed")
+    st, body = post(client, h(), url, {})
+    assert st == 422 and body["error"] == {"reason": "required"}
+    collector = new_user(pgc, CL.collector_role)
+    st, body = post(client, h(collector), url, {"reason": "x"})
+    assert st == 403
+
+
 def test_delete_rules(client, h, pgc, fake, B):
     st, body = post(client, h(), "/v2/calling/pbx-extensions", {"name": "Temp", "reason": "x"})
     ext = body["data"]["extension"]

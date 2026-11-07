@@ -37,6 +37,16 @@ export type SameIdentity = {
     truncated: boolean
     summary: { count: number; amount: string; paid: string; remaining: string }
     accounts: SameIdentityAccount[]
+    /** 2026-11-04: the opened case's contract, and each contract's totals (that contract first) */
+    contract?: Named | null
+    by_contract?: {
+        contract: Named | null
+        same_contract: boolean
+        count: number
+        amount: string
+        paid: string
+        remaining: string
+    }[]
 }
 
 export const sameIdentityApi = {

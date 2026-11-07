@@ -109,12 +109,30 @@ class FakeProvision:
                 return self.err(409, "exists", f"extension {e} already exists on the PBX")
             self.ext[e] = {"name": name, "managed": True}
             return 201, {"ok": True, "created": True, "item": self.item(e), "endpoint_verified": True, "webrtc": True}
-        m = re.fullmatch(r"/v1/extensions/([0-9]{2,6})(/rename)?", path)
+        m = re.fullmatch(r"/v1/extensions/([0-9]{2,6})(/rename|/secret|/webrtc)?", path)
         if not m:
             return self.err(404, "no_route")
         e = m.group(1)
         if e not in self.ext:
             return self.err(404, "not_found", f"extension {e} does not exist on the PBX")
+        if m.group(2) == "/webrtc" and method == "POST":
+            self.webrtc = getattr(self, "webrtc", set())
+            if e in self.in_call:
+                return self.err(409, "in_call")
+            if body.get("enabled"):
+                self.webrtc.add(e)
+                self.secrets = getattr(self, "secrets", 0) + 1
+                return 200, {"ok": True, "extension": e, "webrtc": True, "sip_username": e,
+                             "sip_secret": f"fake-webrtc-{e}-{self.secrets}"}
+            if e not in self.webrtc:
+                return self.err(409, "not_webrtc")
+            self.webrtc.discard(e)
+            return 200, {"ok": True, "extension": e, "webrtc": False}
+        if m.group(2) == "/secret" and method == "POST":
+            if not self.ext[e]["managed"]:
+                return self.err(409, "not_managed")
+            self.secrets = getattr(self, "secrets", 0) + 1
+            return 200, {"ok": True, "extension": e, "sip_username": e, "sip_secret": f"fake-secret-{e}-{self.secrets}"}
         if m.group(2) and method == "POST":
             self.ext[e]["name"] = body.get("name")
             return 200, {"ok": True, "renamed": True, "item": self.item(e)}

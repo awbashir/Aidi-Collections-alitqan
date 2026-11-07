@@ -38,6 +38,7 @@ from core import audit
 from core.api_response import NOT_FOUND, REVISION_CONFLICT, VALIDATION_FAILED, ApiError
 from services.calling import extensions as ext_svc
 from services.calling import pbx_provision as pbx
+from services.calling import softphone_access
 from services.calling.common import (USER_NAME_SQL, advisory_lock, bool_arg, extension_arg, iso, me, parse_uuid,
                                      required_text, s, sess)
 
@@ -354,6 +355,7 @@ def overview(args) -> dict:
         recs[r["extension"]] = r
     in_use = {r[0] for r in sess().execute(text(
         "SELECT DISTINCT extension FROM call_reservations WHERE released_at IS NULL AND extension IS NOT NULL"))}
+    softphone = softphone_access.enabled_map(o["user_id"] for o in owners.values())
     keys = set(owners) | set(recs) | set(inv or {})
     items = []
     for ext in keys:
@@ -380,7 +382,8 @@ def overview(args) -> dict:
             "pbx": ({k: p.get(k) for k in ("name", "tech", "managed", "endpoint", "state", "registered", "in_call",
                                            "channels")} if p else None),
             "owner": ({"id": s(o["user_id"]), "name": (o["name"] or "").strip() or None, "user_name": o["user_name"],
-                       "is_active": o["is_active"], "assignment_id": s(o["id"]), "assigned_at": iso(o["assigned_at"])}
+                       "is_active": o["is_active"], "assignment_id": s(o["id"]), "assigned_at": iso(o["assigned_at"]),
+                       "softphone_enabled": softphone.get(s(o["user_id"]), False)}
                       if o else None),
             "provisioning": record_json(rec),
             "in_use": ext in in_use,
@@ -407,7 +410,9 @@ def overview(args) -> dict:
     items.sort(key=lambda i: (len(i["extension"]), i["extension"]))
     return {"items": items, "counts": counts, "pbx_status": pbx_status,
             "asterisk": (raw or {}).get("asterisk") if raw else None,
-            "pbx_range": (raw or {}).get("range") if raw else None, "settings": st}
+            "pbx_range": (raw or {}).get("range") if raw else None,
+            # "sip" from the chan_sip script (desk phones: the page then offers a SIP password)
+            "pbx_tech": (raw or {}).get("tech") if raw else None, "settings": st}
 
 
 def users_without_extension(args) -> dict:
@@ -539,6 +544,37 @@ def rename(extension, body) -> dict:
                             "WHERE id = CAST(:id AS uuid)"), {"n": name, "id": str(rec_id)})
     audit.record("calling.pbx_extension.rename", "extension", extension, after={"name": name}, reason=reason)
     return {"extension": extension, "renamed": bool(res.get("renamed")), "pbx": res.get("item")}
+
+
+def new_sip_password(extension, body) -> dict:
+    """A new random SIP password for an app-created desk-phone extension (chan_sip PBX, Alitqan
+    2026-10-21), returned ONCE for the admin to type into the phone. The route is deliberately not
+    @idempotent (the idempotency store keeps the answer) and answers Cache-Control: no-store; the
+    audit event has the extension and the reason, never the password. A repeated call sets another
+    password (harmless). The phone stops registering until it gets the new one."""
+    extension = extension_arg(extension)
+    reason = required_text(body, "reason", max_len=1000)
+    unknown = set(body) - {"reason"}
+    if unknown:
+        raise ApiError(422, VALIDATION_FAILED, f"unknown fields: {', '.join(sorted(unknown))}",
+                       {k: "unknown" for k in unknown})
+    advisory_lock("calling_extension", f"ext:{extension}")
+    try:
+        res = pbx.new_secret(extension)
+    except pbx.ProvisionUnavailable as e:
+        raise ApiError(503, "pbx_unavailable", "the PBX provisioning API could not be reached",
+                       {"reason": e.reason}) from None
+    except pbx.ProvisionRefused as e:
+        raise _refusal(e, extension) from None
+    password = res.get("sip_secret")
+    if not isinstance(password, str) or not password:
+        raise ApiError(502, "pbx_bad_answer", "the PBX did not return a password", {"extension": extension})
+    owner = ext_svc.active_for_extension(extension)
+    audit.record("calling.pbx_extension.sip_password", "extension", extension, reason=reason,
+                 after={"owner_id": s(owner["user_id"]) if owner else None})
+    return {"extension": extension, "sip_username": res.get("sip_username") or extension,
+            "sip_password": password, "sip_server": pbx.sip_server(), "transport": "udp", "port": 5060,
+            "storage": "shown_once"}
 
 
 def delete(extension, body) -> dict:

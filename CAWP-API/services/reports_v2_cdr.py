@@ -166,7 +166,7 @@ _CDR_SQL = """
     SELECT calldate, src, dst, dcontext, channel, dstchannel, duration, billsec, disposition, uniqueid, recordingfile,
            userfield
       FROM asteriskcdrdb.cdr
-     WHERE calldate >= %s AND calldate < %s{extra}
+     WHERE {bound}calldate >= %s AND calldate < %s{extra}
      ORDER BY calldate, uniqueid
      LIMIT %s
 """
@@ -175,11 +175,31 @@ _CC_SQL = """
            a.number AS agent_number, cr.recordingfile
       FROM call_center.calls c
       LEFT JOIN call_center.agent a ON a.id = c.id_agent
-      LEFT JOIN call_center.call_recording cr ON cr.uniqueid = c.uniqueid
+      LEFT JOIN call_center.call_recording cr ON cr.id_call_outgoing = c.id AND cr.uniqueid = c.uniqueid
      WHERE c.start_time >= %s AND c.start_time < %s{extra}
      ORDER BY c.start_time, c.id, cr.id
      LIMIT %s
 """
+
+
+# 2026-10-25 (PBX CPU): Issabel's asteriskcdrdb.cdr has no calldate index; on an Asterisk <= 11 CDR
+# (no linkedid) the uniqueid "<epoch>.<seq>" is indexed, so the window is also bounded by uniqueid
+# (an hour wider each side; the calldate predicate keeps the rows exact), as services/calling/
+# monitor.py does. call_center.call_recording has no uniqueid index: the join goes through its
+# indexed id_call_outgoing and keeps the uniqueid equality (a retried dialer call keeps one row
+# whose uniqueid is the LAST attempt's; older attempts' recordings stay out, as before).
+_EPOCH_UNIQUEID: dict = {}
+
+
+def _uniqueid_bound(cur, lo, hi) -> tuple[str, list]:
+    if "cdr" not in _EPOCH_UNIQUEID:
+        cur.execute("SHOW COLUMNS FROM asteriskcdrdb.cdr LIKE %s", ("linkedid",))
+        _EPOCH_UNIQUEID["cdr"] = not cur.fetchall()
+    if not _EPOCH_UNIQUEID["cdr"]:
+        return "", []
+    zone = pbx_zone()
+    epoch = lambda v: int(v.replace(tzinfo=zone).timestamp())  # noqa: E731 - naive PBX wall clock
+    return "uniqueid >= %s AND uniqueid < %s AND ", [str(epoch(lo) - 3600), str(epoch(hi) + 3600)]
 
 
 def _like(text_value: str) -> str:
@@ -197,11 +217,13 @@ def _read(lo_utc: _dt.datetime, hi_utc: _dt.datetime, sources: tuple, number: st
         cur = conn.cursor(dictionary=True)
         try:
             if "cdr" in sources:
-                extra, params = "", [lo, hi]
+                bound, params = _uniqueid_bound(cur, lo, hi)
+                extra = ""
+                params += [lo, hi]
                 if number:
                     extra = " AND (src LIKE %s OR dst LIKE %s)"
                     params += [_like(number), _like(number)]
-                cur.execute(_CDR_SQL.format(extra=extra), (*params, limit + 1))
+                cur.execute(_CDR_SQL.format(bound=bound, extra=extra), (*params, limit + 1))
                 rows.extend(_cdr_row(r, zone) for r in cur.fetchall())
                 _dedupe_ids(rows)
             from core.config import Config

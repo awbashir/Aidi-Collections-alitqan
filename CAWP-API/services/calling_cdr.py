@@ -287,7 +287,7 @@ _REC_CC_SQL = """
     SELECT c.id, c.start_time, c.phone, c.duration, c.status, c.uniqueid, a.name AS agent_name,
            a.number AS agent_number, cr.recordingfile
       FROM call_center.call_recording cr
-      JOIN call_center.calls c ON c.uniqueid = cr.uniqueid
+      JOIN call_center.calls c ON c.id = cr.id_call_outgoing AND c.uniqueid = cr.uniqueid
       LEFT JOIN call_center.agent a ON a.id = c.id_agent
      WHERE cr.recordingfile IN ({marks}){window}
      ORDER BY c.id, cr.id

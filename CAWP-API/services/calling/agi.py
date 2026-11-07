@@ -19,6 +19,18 @@ Protocol (Asterisk FastAGI over TCP, line based):
     -> SET VARIABLE COLLECTIONS_GATE "ALLOW"       (last, only after the commit)
 Globals are read with GLOBAL() so a channel variable cannot stand in for them.
 
+Asterisk <= 11 (CALLING_PBX_EVENTS=legacy): the Originate ChannelId is ignored, so agi_uniqueid is
+an ordinary "<epoch>.<seq>" Uniqueid instead of `cawp-<attempt>`. It is accepted in that mode only;
+the one-shot token (bound to `cawp-<attempt>` as the app's id of the dispatch), agi_channel
+<driver>/<extension>-<hex>, context, destination and PBX epoch checks are unchanged. The token
+alone does not prove the channel: ALLOW needs the agent leg bound from this attempt's own
+OriginateResponse (its ActionID; services/calling/legacy_correlation.originate_binding) to BE
+agi_uniqueid. Asterisk 11's async Originate sends that response before the dialplan runs, but the
+evidence consumer may lag, so the hook polls the database for it (fresh reads, up to
+LEGACY_BIND_WAIT seconds, inside the exchange deadline) and then denies `agent_leg_unbound`. A
+refused or failed response denies (`agent_leg_refused`, `originate_failed`), another channel
+`agent_channel_mismatch`. On allow the channel is recorded (call_dispatch_tokens.bound_uniqueid).
+
 Hardening: peer allowlist (CIDRs or host names), bounded concurrent connections, a whole-
 exchange deadline (5 s), bounded line length/count, fixed command set, fixed decision reasons.
 Any failure or doubt denies (the dialplan hangs up without dialling). A lost reply after the
@@ -42,12 +54,19 @@ log = logging.getLogger("cawp.calling.agi")
 
 SCRIPT = "collections-authorize"
 SURVEY_SCRIPTS = ("collections-survey-offer", "collections-survey-result")
+# 2026-10-25 (0088): message campaigns (services/calling/message_campaign.py)
+MESSAGE_SCRIPTS = ("collections-message-authorize", "collections-message-agent")
+AI_SCRIPT = "collections-ai-authorize"                   # AI calling agent test (0092)
 MAX_LINE = 4096
 MAX_HEADERS = 64
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 CONTEXT_RE = re.compile(r"^collections-human-[a-z0-9_-]{1,50}$")
+LEGACY_UID_RE = re.compile(r"^[0-9]{1,12}\.[0-9]{1,9}$")       # Asterisk <= 11 Uniqueid "<epoch>.<seq>"
+LEGACY_BIND_WAIT = 2.5          # s: longest wait for the OriginateResponse binding (Asterisk 11)
+LEGACY_BIND_POLL = 0.1          # s between fresh reads while waiting
+LEGACY_REPLY_MARGIN = 1.0       # s of the exchange deadline kept for the replies after the decision
 GATE_VARS = ("COLLECTIONS_GATE", "COLLECTIONS_GATE_DESTINATION", "COLLECTIONS_GATE_EXTENSION",
              "COLLECTIONS_GATE_LIMIT", "COLLECTIONS_GATE_EXPIRES")
 
@@ -202,9 +221,19 @@ class AgiRequest:
     attempt_id: str | None = None
     token: str | None = None
     epoch_uuid: str | None = None
+    legacy: bool = False
+    bind_deadline: float | None = None      # monotonic: until when to wait for the agent leg binding
 
 
-def validate_environment(env: dict, req: AgiRequest):
+def _legacy_mode() -> bool:
+    from services.calling.common import pbx_events
+    try:
+        return pbx_events() == "legacy"
+    except ValueError:
+        raise AgiDeny("agi_internal_error") from None
+
+
+def validate_environment(env: dict, req: AgiRequest, legacy: bool | None = None):
     req.channel_id = env.get("agi_uniqueid")
     req.channel = env.get("agi_channel")
     req.driver = env.get("agi_type")
@@ -221,6 +250,11 @@ def validate_environment(env: dict, req: AgiRequest):
         raise AgiDeny("wrong_context")
     if not req.destination or not E164_RE.match(req.destination):
         raise AgiDeny("bad_destination")
+    req.legacy = _legacy_mode() if legacy is None else bool(legacy)
+    if req.legacy:
+        if not req.channel_id or not LEGACY_UID_RE.match(req.channel_id):
+            raise AgiDeny("bad_channel_id")
+        return
     if not req.channel_id or not re.fullmatch(r"cawp-[0-9a-f-]{36}", req.channel_id) \
             or not UUID_RE.match(req.channel_id[5:]):
         raise AgiDeny("bad_channel_id")
@@ -229,7 +263,8 @@ def validate_environment(env: dict, req: AgiRequest):
 _LOCK_TOKEN = text("""
     SELECT t.id, t.attempt_id, t.channel_id, t.context, t.destination, t.extension, t.max_call_seconds,
            t.pbx_epoch_uuid, t.expires_at, t.consumed_at, (t.expires_at <= now()) AS expired,
-           floor(extract(epoch FROM t.expires_at))::bigint AS expires_epoch, a.state AS attempt_state
+           floor(extract(epoch FROM t.expires_at))::bigint AS expires_epoch, a.state AS attempt_state,
+           a.pbx_epoch
       FROM call_dispatch_tokens t JOIN call_attempts a ON a.id = t.attempt_id
      WHERE t.token_sha256 = :h
        FOR UPDATE OF t
@@ -258,7 +293,7 @@ def authorize(session, req: AgiRequest) -> Decision:
         raise AgiDeny("token_missing")
     if not req.attempt_id or not UUID_RE.match(req.attempt_id):
         raise AgiDeny("attempt_missing")
-    if req.channel_id != f"cawp-{req.attempt_id}":
+    if not req.legacy and req.channel_id != f"cawp-{req.attempt_id}":
         raise AgiDeny("attempt_mismatch")
     t = session.execute(_LOCK_TOKEN, {"h": token_hash(req.token)}).mappings().first()
     if t is None:
@@ -268,7 +303,9 @@ def authorize(session, req: AgiRequest) -> Decision:
         raise AgiDeny("token_consumed", token_id=tid)
     if t["expired"]:
         raise AgiDeny("token_expired", token_id=tid)
-    if str(t["attempt_id"]) != req.attempt_id or t["channel_id"] != req.channel_id:
+    # the token names the app's id of the dispatch; on Asterisk 12+ that is also the AGI channel
+    app_channel = f"cawp-{req.attempt_id}" if req.legacy else req.channel_id
+    if str(t["attempt_id"]) != req.attempt_id or t["channel_id"] != app_channel:
         raise AgiDeny("token_mismatch", token_id=tid)
     if t["context"] != req.context or t["destination"] != req.destination:
         raise AgiDeny("token_mismatch", token_id=tid)
@@ -278,6 +315,20 @@ def authorize(session, req: AgiRequest) -> Decision:
         raise AgiDeny("epoch_mismatch", token_id=tid)
     if t["attempt_state"] in ("ended", "failed", "cancelled", "uncertain", "prepared"):
         raise AgiDeny("attempt_not_dispatchable", token_id=tid)
+    if req.legacy:
+        # Asterisk 11: this channel must be the agent leg bound from the attempt's own
+        # OriginateResponse; wait (bounded) for the evidence consumer to store it
+        from services.calling.legacy_correlation import AGENT_LEG_UNBOUND, agi_agent_check
+        while True:
+            refused = agi_agent_check(session, req.attempt_id, t["pbx_epoch"], req.channel_id)
+            if refused != AGENT_LEG_UNBOUND or req.bind_deadline is None:
+                break
+            left = req.bind_deadline - time.monotonic()
+            if left <= 0:
+                break
+            time.sleep(min(LEGACY_BIND_POLL, left))      # READ COMMITTED: the next read is fresh
+        if refused is not None:
+            raise AgiDeny(refused, token_id=tid)
     # P1: the case/contact safety rules can change while the agent's phone rings (a supervisor
     # locks the case, a wrap-up marks do-not-call or a wrong number): recheck them here, the
     # last point before the customer is dialled (services/calling/rules.py).
@@ -285,8 +336,15 @@ def authorize(session, req: AgiRequest) -> Decision:
     refused = agi_recheck(session, req.attempt_id)
     if refused is not None:
         raise AgiDeny(refused, token_id=tid)
-    session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now() WHERE id = CAST(:id AS uuid)"),
-                    {"id": tid})
+    if req.legacy:
+        from services.calling.legacy_correlation import bind_agent_leg
+        session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now(), bound_uniqueid = :u "
+                             "WHERE id = CAST(:id AS uuid)"), {"id": tid, "u": req.channel_id})
+        # idempotent: the consumer bound it from the OriginateResponse (fills the channel name only)
+        bind_agent_leg(session, t["pbx_epoch"], req.channel_id, req.attempt_id, channel=req.channel)
+    else:
+        session.execute(text("UPDATE call_dispatch_tokens SET consumed_at = now() WHERE id = CAST(:id AS uuid)"),
+                        {"id": tid})
     record_decision(session, "allow", "allowed", req, token_id=tid, lim=t["max_call_seconds"], exp=t["expires_at"])
     return Decision(True, "allowed", t["destination"], t["extension"], int(t["max_call_seconds"]),
                     int(t["expires_epoch"]))
@@ -370,6 +428,10 @@ class FastAgiServer(threading.Thread):
                 script = (env.get("agi_network_script") or "").strip("/")
                 if script in SURVEY_SCRIPTS:                     # post-call survey (services/calling/survey.py)
                     return self._survey(ch, env, peer, script)
+                if script == AI_SCRIPT:                          # AI calling agent test (0092)
+                    return self._ai(ch, env, peer)
+                if script in MESSAGE_SCRIPTS:                    # message campaigns (0088)
+                    return self._message(ch, env, peer, script)
                 validate_environment(env, req)
                 for name in GATE_VARS:                           # clear every output first
                     ch.set_var(name, "")
@@ -379,6 +441,8 @@ class FastAgiServer(threading.Thread):
                 req.attempt_id = (ch.get_var("COLLECTIONS_ATTEMPT") or "").strip().lower()
                 req.token = (ch.get_var("COLLECTIONS_TOKEN") or "").strip().lower()
                 req.epoch_uuid = (ch.get_global("COLLECTIONS_HUMAN_PBX_EPOCH") or "").strip().lower() or None
+                if req.legacy:
+                    req.bind_deadline = min(time.monotonic() + LEGACY_BIND_WAIT, ch.deadline - LEGACY_REPLY_MARGIN)
                 try:
                     decision = authorize(db.session, req)
                     db.session.commit()                       # durable BEFORE anything is published
@@ -419,6 +483,113 @@ class FastAgiServer(threading.Thread):
                 return Decision(False, deny.reason)
             finally:
                 db.session.remove()
+
+    def _message(self, ch: AgiChannel, env: dict, peer: str, script: str) -> Decision:
+        """collections-message-authorize: the one-shot token of a message call -> COLLECTIONS_MSG_GATE
+        ALLOW (published only after the commit); collections-message-agent: a free member's
+        extension -> COLLECTIONS_MSG_AGENT. Same peer allowlist and shared key as the gate."""
+        from extensions import db
+        from services.calling import message_campaign as MC
+        call_id = None
+        try:
+            if env.get("agi_network") != "yes":
+                raise AgiDeny("not_fastagi")
+            out = "COLLECTIONS_MSG_GATE" if script == "collections-message-authorize" else "COLLECTIONS_MSG_AGENT"
+            ch.set_var(out, "")                                   # cleared first
+            if out == "COLLECTIONS_MSG_GATE":
+                ch.set_var("COLLECTIONS_MSG_DESTINATION", "")
+                ch.set_var("COLLECTIONS_MSG_CID", "")
+            key = ch.get_global("COLLECTIONS_AGI_KEY") or ""
+            if not hmac.compare_digest(key.encode(), self.secret.encode()):
+                raise AgiDeny("agi_key_mismatch")
+            call_id = (ch.get_var("COLLECTIONS_MSG_CALL") or "").strip().lower()
+            if out == "COLLECTIONS_MSG_AGENT":
+                ext = MC.pick_member(db.session, call_id=call_id)
+                db.session.commit()
+                if ext:
+                    ch.set_var("COLLECTIONS_MSG_AGENT", ext)
+                log.info("AGI message agent call=%s member=%s peer=%s", call_id if UUID_RE.match(call_id) else None,
+                         "found" if ext else "none", peer)
+                return Decision(bool(ext), "member" if ext else "no_member")
+            destination = (env.get("agi_extension") or "").strip()
+            if not E164_RE.match(destination):
+                raise AgiDeny("destination_invalid")
+            token = (ch.get_var("COLLECTIONS_MSG_TOKEN") or "").strip().lower()
+            epoch_uuid = (ch.get_global("COLLECTIONS_HUMAN_PBX_EPOCH") or "").strip().lower() or None
+            allow, reason = MC.authorize(db.session, call_id=call_id, token=token, destination=destination,
+                                         epoch_uuid=epoch_uuid)
+            if not allow and UUID_RE.match(call_id or ""):
+                db.session.execute(text("UPDATE message_calls SET reason_code = :r, updated_at = now() "
+                                        "WHERE id = CAST(:id AS uuid) AND reason_code IS NULL"),
+                                   {"r": reason, "id": call_id})
+            db.session.commit()                                  # the token is consumed BEFORE the allow is published
+            if not allow:
+                raise AgiDeny(reason)
+            if time.monotonic() > ch.deadline:
+                raise AgiDeny("agi_timeout")
+            ch.set_var("COLLECTIONS_MSG_DESTINATION", destination)
+            caller_id = MC.gate_caller_id(db.session, call_id)    # 0090: the campaign's outbound number
+            db.session.commit()
+            if caller_id:
+                ch.set_var("COLLECTIONS_MSG_CID", caller_id)
+            ch.set_var("COLLECTIONS_MSG_GATE", "ALLOW")           # last
+            self.stats["allow"] += 1
+            log.info("AGI message allow call=%s peer=%s", call_id, peer)
+            return Decision(True, "allowed")
+        except AgiDeny as deny:
+            db.session.rollback()
+            self.stats["deny"] += 1
+            log.info("AGI message deny reason=%s call=%s peer=%s", deny.reason,
+                     call_id if call_id and UUID_RE.match(call_id) else None, peer)
+            return Decision(False, deny.reason)
+        except Exception:  # noqa: BLE001 - any doubt denies (the dialplan hangs up without dialling)
+            db.session.rollback()
+            log.exception("AGI message script failed")
+            return Decision(False, "agi_internal_error")
+
+    def _ai(self, ch: AgiChannel, env: dict, peer: str) -> Decision:
+        """collections-ai-authorize: the one-shot token of an AI test call -> COLLECTIONS_AI_GATE ALLOW
+        (published only after the commit), with the number to dial and the outbound number taken
+        from the call's row, never from the SIP request. Same peer allowlist and shared key."""
+        from extensions import db
+        from services.ai import test_calls as TC
+        call_id = None
+        try:
+            if env.get("agi_network") != "yes":
+                raise AgiDeny("not_fastagi")
+            for name in ("COLLECTIONS_AI_GATE", "COLLECTIONS_AI_DESTINATION", "COLLECTIONS_AI_CID"):
+                ch.set_var(name, "")                              # cleared first
+            key = ch.get_global("COLLECTIONS_AGI_KEY") or ""
+            if not hmac.compare_digest(key.encode(), self.secret.encode()):
+                raise AgiDeny("agi_key_mismatch")
+            call_id = (ch.get_var("COLLECTIONS_AI_CALL") or "").strip().lower()
+            token = (ch.get_var("COLLECTIONS_AI_TOKEN") or "").strip().lower()
+            allow, reason, out = TC.authorize(db.session, call_id=call_id, token=token)
+            if not allow and UUID_RE.match(call_id or ""):
+                db.session.execute(text("UPDATE ai_test_calls SET reason_code = :r, updated_at = now() "
+                                        "WHERE id = CAST(:id AS uuid) AND reason_code IS NULL"), {"r": reason, "id": call_id})
+            db.session.commit()                                  # the token is consumed BEFORE the allow is published
+            if not allow:
+                raise AgiDeny(reason)
+            if time.monotonic() > ch.deadline:
+                raise AgiDeny("agi_timeout")
+            ch.set_var("COLLECTIONS_AI_DESTINATION", out["destination"])
+            if out["caller_id"]:
+                ch.set_var("COLLECTIONS_AI_CID", out["caller_id"])
+            ch.set_var("COLLECTIONS_AI_GATE", "ALLOW")            # last
+            self.stats["allow"] += 1
+            log.info("AGI ai allow call=%s peer=%s", call_id, peer)
+            return Decision(True, "allowed")
+        except AgiDeny as deny:
+            db.session.rollback()
+            self.stats["deny"] += 1
+            log.info("AGI ai deny reason=%s call=%s peer=%s", deny.reason,
+                     call_id if call_id and UUID_RE.match(call_id) else None, peer)
+            return Decision(False, deny.reason)
+        except Exception:  # noqa: BLE001 - any doubt denies (the dialplan hangs up without dialling)
+            db.session.rollback()
+            log.exception("AGI ai script failed")
+            return Decision(False, "agi_internal_error")
 
     def _survey(self, ch: AgiChannel, env: dict, peer: str, script: str) -> Decision:
         """collections-survey-offer / -result: same peer allowlist and shared key as the gate."""

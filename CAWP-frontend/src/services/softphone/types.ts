@@ -16,6 +16,8 @@ export type SipCredential = {
     display_name: string
     wss_url: string
     ice_servers: RTCIceServer[]
+    /** SIP_RTCP_MUX_POLICY: 'negotiate' for a PBX without rtcp-mux (Asterisk 11); absent = 'require' */
+    rtcp_mux_policy?: 'require' | 'negotiate'
     issued_at: string
     expires_at: string
     ttl_seconds: number
@@ -29,6 +31,8 @@ export type SipCredential = {
 /** `GET /v2/me/sip-credentials`: never the secret. */
 export type SipCredentialStatus = {
     configured: boolean
+    /** 0082: switched on for this user by a calling administrator (off by default) */
+    enabled: boolean
     reason: string | null
     extension: string | null
     wss_url: string | null
@@ -49,6 +53,8 @@ export type MyCalling = {
         saved: boolean
         updated_at: string | null
     }
+    /** 0082: the in-app softphone is switched on for me (off by default: my own phone rings) */
+    softphone_enabled: boolean
     can_call: boolean
     reason: string | null
     active_attempt_id: string | null

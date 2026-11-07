@@ -1,0 +1,560 @@
+#!/usr/bin/php
+<?php
+/*
+ * CAWP extension provisioning on Issabel 4 / Asterisk 11 with chan_sip (Alitqan, 2026-10-21).
+ * The chan_sip, PHP 5.4 variant of cawp-ext-provision (the PJSIP / WebRTC one, Issabel 5). Same
+ * operations, same JSON contract, same vhost (cawp-provision.conf, index.php) and sudoers rule
+ * (installed as /usr/local/sbin/cawp-ext-provision on this PBX):
+ *
+ *   cawp-ext-provision list                  every IssabelPBX extension + live chan_sip state
+ *   cawp-ext-provision status <ext>          one extension
+ *   cawp-ext-provision create <ext> <name>   a desk-phone agent extension like TEMPLATE
+ *   cawp-ext-provision rename <ext> <name>   display name / caller ID name
+ *   cawp-ext-provision delete <ext>          only extensions this script created, no active channel
+ *   cawp-ext-provision secret <ext>          a new random SIP password for an extension this
+ *                                            script created, returned ONCE (the desk phone needs it)
+ *   cawp-ext-provision webrtc <ext> on|off   the in-app softphone (docs/alitqan-webrtc-softphone-plan.md):
+ *                                            `on` snapshots the extension's IssabelPBX sip rows (root-only,
+ *                                            DESK_DIR) and makes it a WebRTC extension with a new random
+ *                                            password, returned ONCE; `off` puts the snapshot back exactly
+ *                                            (the desk phone's own password included). Any extension of
+ *                                            the range, no active channel.
+ *
+ * Output: ONE JSON object on stdout, {"ok": true, ...} or {"ok": false, "http": <status>,
+ * "code": "<code>", "message": "..."}; exit 0 on success, 1 otherwise.
+ *
+ * Create replays what the IssabelPBX "Add Extension" page does for a Generic SIP device:
+ *   1. core_users_add + core_devices_add('sip') with the sip settings of the template extension
+ *      (except account/callerid/secret/dial/mailbox) and a random secret nobody sees. The users
+ *      call from their own desk phones: `secret` then sets a NEW random one and returns it once
+ *      (the app's create is idempotent and stores its answer, so the password is never in it);
+ *      the log never has it;
+ *   2. recording always (in/out, external/internal), like every agent here; no outbound caller
+ *      ID (each agent has their own: set it in IssabelPBX when needed);
+ *   3. retrieve_conf, need_reload reset, `core reload` (= the Apply Config button), then
+ *      `sip show peer <ext>` checks the peer exists.
+ * The extensions it created are listed in MANAGED (root-only); only those can be deleted.
+ * One lock serializes every write; every write is backed up first (BACKUP_DIR).
+ * Extensions outside RANGE_MIN..RANGE_MAX are refused. Asterisk down = state unknown (null).
+ */
+
+define('RANGE_MIN', 400);
+define('RANGE_MAX', 499);
+define('TEMPLATE', '401');
+define('MANAGED', '/var/lib/cawp-ext-provision/managed');
+define('LOCK', '/var/lock/cawp-ext-provision.lock');
+define('BACKUP_DIR', '/root/cawp-backup-ext');
+define('BACKUP_KEEP', 200);
+define('LOG', '/var/log/cawp-ext-provision.log');
+define('ASTERISK', '/usr/sbin/asterisk');
+define('RETRIEVE_CONF', '/var/lib/asterisk/bin/retrieve_conf');
+define('NAME_MAX', 40);
+define('DESK_DIR', '/var/lib/cawp-ext-provision/desk');
+define('WEBRTC_CERT', '/etc/asterisk/keys/cawp-webrtc.pem');
+define('WEBRTC_KEY', '/etc/asterisk/keys/cawp-webrtc.key');
+
+function cx_out($o, $rc = 0) {
+    echo json_encode($o, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), "\n";
+    exit($rc);
+}
+
+function cx_fail($http, $code, $message, $extra = array()) {
+    cx_plog('fail', $code . ': ' . $message);
+    cx_out(array('ok' => false, 'http' => $http, 'code' => $code, 'message' => $message) + $extra, 1);
+}
+
+function cx_plog($what, $detail = '') {
+    global $CAWP_OP, $CAWP_EXT;
+    @file_put_contents(LOG, sprintf("%s %s %s %s %s\n", date('c'), $CAWP_OP ? $CAWP_OP : '-', $CAWP_EXT ? $CAWP_EXT : '-',
+        $what, str_replace("\n", ' ', $detail)), FILE_APPEND);
+}
+
+function cx_valid_ext($e) {
+    if (!is_string($e) || !preg_match('/^[0-9]{2,6}$/', $e)) {
+        cx_fail(422, 'invalid_extension', 'the extension must be 2-6 digits');
+    }
+    if ((int)$e < RANGE_MIN || (int)$e > RANGE_MAX || $e[0] === '0') {
+        cx_fail(422, 'extension_out_of_range', sprintf('extensions %d-%d only', RANGE_MIN, RANGE_MAX));
+    }
+    return $e;
+}
+
+/* Letters (any script), marks, digits, space, . _ - only; spaces collapsed; 1..NAME_MAX. */
+function cx_valid_name($n) {
+    if (!is_string($n) || !mb_check_encoding($n, 'UTF-8')) {
+        cx_fail(422, 'invalid_name', 'the name must be UTF-8 text');
+    }
+    $n = preg_replace('/[^\p{L}\p{M}\p{N} ._-]/u', '', $n);
+    $n = trim(preg_replace('/\s+/u', ' ', $n));
+    if ($n === '' || mb_strlen($n, 'UTF-8') > NAME_MAX) {
+        cx_fail(422, 'invalid_name', 'the name must have 1-' . NAME_MAX . ' letters, digits, spaces or . _ -');
+    }
+    return $n;
+}
+
+function cx_random_hex($bytes) {
+    $strong = false;
+    $raw = openssl_random_pseudo_bytes($bytes, $strong);
+    if ($raw === false || !$strong) {
+        cx_fail(500, 'no_randomness', 'no cryptographic random source');
+    }
+    return bin2hex($raw);
+}
+
+function cx_ast($cmd, &$rc = null) {
+    $o = array();
+    exec(ASTERISK . ' -rx ' . escapeshellarg($cmd) . ' 2>&1', $o, $rc);
+    $text = implode("\n", $o);
+    if ($rc !== 0 || stripos($text, 'Unable to connect to remote asterisk') !== false) {
+        return null;                                       // Asterisk is down: unknown, never "absent"
+    }
+    return $text;
+}
+
+/* `sip show peers` -> [ext => [status, registered]] (null = Asterisk unreachable). Lines look like
+ * "401/401   10.10.20.31   D  N  A  5060  OK (12 ms)" or "415/415  (Unspecified)  D N A 0 UNKNOWN". */
+function cx_peer_states() {
+    $t = cx_ast('sip show peers');
+    if ($t === null) {
+        return null;
+    }
+    $res = array();
+    foreach (explode("\n", $t) as $line) {
+        if (!preg_match('/^([0-9A-Za-z_.-]+)(?:\/\S*)?\s+(\S+)\s+.*?\s(OK|LAGGED|UNREACHABLE|UNKNOWN|Unmonitored)\b(?:\s*\((\d+) ms\))?/', $line, $m)) {
+            continue;
+        }
+        $res[$m[1]] = array('state' => $m[3], 'host' => $m[2],
+                            'registered' => $m[2] !== '(Unspecified)' && in_array($m[3], array('OK', 'LAGGED', 'Unmonitored'), true));
+    }
+    return $res;
+}
+
+/* Active channels per extension, from `core show channels concise` (null = Asterisk unreachable). */
+function cx_channel_counts() {
+    $t = cx_ast('core show channels concise');
+    if ($t === null) {
+        return null;
+    }
+    $n = array();
+    foreach (explode("\n", $t) as $line) {
+        if (preg_match('/^SIP\/([0-9]{2,6})-[0-9a-f]{8}!/', $line, $m)) {
+            $n[$m[1]] = (isset($n[$m[1]]) ? $n[$m[1]] : 0) + 1;
+        }
+    }
+    return $n;
+}
+
+function cx_managed_list() {
+    if (!is_file(MANAGED)) {
+        return array();
+    }
+    $out = array();
+    foreach (file(MANAGED, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
+        if (preg_match('/^([0-9]{2,6})\b/', trim($l), $m)) {
+            $out[] = $m[1];
+        }
+    }
+    return $out;
+}
+
+function cx_managed_write($list) {
+    $dir = dirname(MANAGED);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0700, true);
+    }
+    $tmp = MANAGED . '.tmp-' . getmypid();
+    $text = "# extensions created by cawp-ext-provision (one per line; only these can be deleted from the app)\n"
+        . implode("\n", array_values(array_unique($list))) . "\n";
+    if (file_put_contents($tmp, $text) === false || !rename($tmp, MANAGED)) {
+        @unlink($tmp);
+        cx_fail(500, 'write_failed', 'cannot write ' . MANAGED);
+    }
+    @chmod(MANAGED, 0600);
+}
+
+function cx_backup($tag) {
+    global $db;
+    if (!is_dir(BACKUP_DIR)) {
+        mkdir(BACKUP_DIR, 0700, true);
+    }
+    $dir = BACKUP_DIR . '/' . date('Ymd-His') . '-' . getmypid() . '-' . $tag;
+    mkdir($dir, 0700);
+    if (is_file(MANAGED)) {
+        copy(MANAGED, $dir . '/managed');
+    }
+    // the IssabelPBX rows the change touches (users / devices / sip / ringgroups), as JSON
+    $rows = array();
+    foreach (array('users', 'devices', 'sip', 'ringgroups') as $table) {
+        $r = $db->getAll("SELECT * FROM $table", array(), DB_FETCHMODE_ASSOC);
+        $rows[$table] = DB::IsError($r) ? array('error' => $r->getMessage()) : $r;
+    }
+    file_put_contents($dir . '/issabel-rows.json', json_encode($rows, JSON_UNESCAPED_UNICODE));
+    chmod($dir . '/issabel-rows.json', 0600);
+    $all = glob(BACKUP_DIR . '/*', GLOB_ONLYDIR);
+    sort($all);
+    foreach (array_slice($all, 0, max(0, count($all) - BACKUP_KEEP)) as $old) {
+        array_map('unlink', glob($old . '/*'));
+        @rmdir($old);
+    }
+    return $dir;
+}
+
+function cx_apply_config() {
+    global $db;
+    $o = array();
+    exec(RETRIEVE_CONF . ' 2>&1', $o, $rc);
+    if ($rc !== 0) {
+        cx_fail(500, 'retrieve_conf_failed', 'retrieve_conf exited ' . $rc . ': ' . substr(implode(' ', $o), -400));
+    }
+    $db->query("UPDATE admin SET value = 'false' WHERE variable = 'need_reload'");
+    $r = cx_ast('core reload', $rc2);
+    return array('retrieve_conf' => 'ok', 'reload' => $r === null ? 'unreachable' : 'ok');
+}
+
+function cx_issabel_row($ext) {
+    global $db;
+    $u = $db->getRow('SELECT extension, name FROM users WHERE extension = ?', array($ext), DB_FETCHMODE_ASSOC);
+    $d = $db->getRow('SELECT id, tech, description FROM devices WHERE id = ?', array($ext), DB_FETCHMODE_ASSOC);
+    if (DB::IsError($u) || DB::IsError($d)) {
+        cx_fail(500, 'db_error', 'cannot read the IssabelPBX tables');
+    }
+    if (!$u && !$d) {
+        return null;
+    }
+    return array('extension' => $ext, 'name' => $u ? $u['name'] : ($d ? $d['description'] : null),
+                 'user' => (bool)$u, 'device' => (bool)$d, 'tech' => $d ? $d['tech'] : null);
+}
+
+function cx_describe($row, $states, $channels, $managed) {
+    $ext = $row['extension'];
+    $st = $states === null ? null : (isset($states[$ext]) ? $states[$ext] : false);
+    $ch = $channels === null ? null : (isset($channels[$ext]) ? $channels[$ext] : 0);
+    return array(
+        'extension' => $ext,
+        'name' => $row['name'],
+        'tech' => $row['tech'],
+        'managed' => in_array($ext, $managed, true),
+        // endpoint: true/false; null = Asterisk could not be asked (unknown)
+        'endpoint' => $st === null ? null : ($st !== false),
+        'state' => $st ? $st['state'] : null,
+        'registered' => $st === null ? null : ($st !== false && $st['registered']),
+        'in_call' => $ch === null ? null : ($ch > 0),
+        'channels' => $ch,
+    );
+}
+
+function cx_ringgroups_with($ext) {
+    global $db;
+    $r = $db->getAll('SELECT grpnum, grplist FROM ringgroups', array(), DB_FETCHMODE_ASSOC);
+    $hits = array();
+    if (!DB::IsError($r)) {
+        foreach ($r as $g) {
+            $members = array_map(function ($m) { return rtrim(trim($m), '#'); }, preg_split('/[-&]/', (string)$g['grplist']));
+            if (in_array($ext, $members, true)) {
+                $hits[] = $g['grpnum'];
+            }
+        }
+    }
+    return $hits;
+}
+
+function cx_peer_exists($ext) {
+    $show = cx_ast("sip show peer $ext");
+    if ($show === null) {
+        return null;
+    }
+    return stripos($show, "Peer $ext not found") === false && (bool)preg_match('/^\s*\* Name\s*:\s*' . $ext . '\s*$/m', $show);
+}
+
+/* ------------------------------------------------------------------------------- main */
+$argv = $_SERVER['argv'];
+$CAWP_OP = isset($argv[1]) ? $argv[1] : '';
+$CAWP_EXT = null;
+$ops = array('list' => 2, 'status' => 3, 'create' => 4, 'rename' => 4, 'delete' => 3, 'secret' => 3, 'webrtc' => 4);
+if (!isset($ops[$CAWP_OP])) {
+    cx_fail(422, 'invalid_operation', 'usage: cawp-ext-provision list | status <ext> | create <ext> <name> | rename <ext> <name> | delete <ext> | secret <ext> | webrtc <ext> on|off');
+}
+if (count($argv) !== $ops[$CAWP_OP]) {
+    cx_fail(422, 'invalid_arguments', "wrong number of arguments for $CAWP_OP");
+}
+if ($CAWP_OP !== 'list') {
+    $CAWP_EXT = cx_valid_ext($argv[2]);
+}
+$CAWP_NAME = in_array($CAWP_OP, array('create', 'rename'), true) ? cx_valid_name($argv[3]) : null;
+if ($CAWP_OP === 'webrtc' && !in_array($argv[3], array('on', 'off'), true)) {
+    cx_fail(422, 'invalid_arguments', 'webrtc takes on or off');
+}
+
+if (in_array($CAWP_OP, array('create', 'rename', 'delete', 'secret', 'webrtc'), true)) {
+    $lock = fopen(LOCK, 'c');
+    $deadline = time() + 120;
+    while (!flock($lock, LOCK_EX | LOCK_NB)) {
+        if (time() > $deadline) {
+            cx_fail(503, 'busy', 'another provisioning change is running');
+        }
+        usleep(250000);
+    }
+}
+
+// IssabelPBX bootstrap (globals $db, $astman, $amp_conf; core module functions)
+$bootstrap_settings['issabelpbx_auth'] = false;
+ob_start();
+include '/etc/issabelpbx.conf';
+ob_end_clean();
+global $db, $astman;
+if (!function_exists('core_users_add') || !isset($db)) {
+    cx_fail(500, 'bootstrap_failed', 'the IssabelPBX bootstrap did not load the core module');
+}
+
+if ($CAWP_OP === 'list') {
+    $users = $db->getAll('SELECT u.extension, u.name, d.tech FROM users u LEFT JOIN devices d ON d.id = u.extension
+                           ORDER BY LENGTH(u.extension), u.extension', array(), DB_FETCHMODE_ASSOC);
+    if (DB::IsError($users)) {
+        cx_fail(500, 'db_error', 'cannot read the IssabelPBX users table');
+    }
+    $states = cx_peer_states();
+    $channels = cx_channel_counts();
+    $managed = cx_managed_list();
+    $items = array();
+    foreach ($users as $u) {
+        $items[] = cx_describe(array('extension' => $u['extension'], 'name' => $u['name'], 'tech' => $u['tech']),
+                               $states, $channels, $managed);
+    }
+    cx_out(array('ok' => true, 'asterisk' => $states !== null, 'range' => array(RANGE_MIN, RANGE_MAX),
+                 'include_installed' => true, 'tech' => 'sip', 'items' => $items));
+}
+
+if ($CAWP_OP === 'status') {
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null) {
+        cx_fail(404, 'not_found', "extension $CAWP_EXT does not exist on the PBX");
+    }
+    cx_out(array('ok' => true, 'item' => cx_describe($row, cx_peer_states(), cx_channel_counts(), cx_managed_list())));
+}
+
+if ($CAWP_OP === 'create') {
+    if (cx_issabel_row($CAWP_EXT) !== null) {
+        cx_fail(409, 'exists', "extension $CAWP_EXT already exists on the PBX");
+    }
+    $sip = $db->getAssoc('SELECT keyword, data FROM sip WHERE id = ?', false, array(TEMPLATE));
+    if (DB::IsError($sip) || !$sip) {
+        cx_fail(500, 'template_missing', 'template extension ' . TEMPLATE . ' has no sip settings');
+    }
+    $bk = cx_backup("create-$CAWP_EXT");
+    foreach ($sip as $k => $v) {
+        if (!in_array($k, array('account', 'callerid', 'secret', 'dial', 'mailbox', 'md5secret'), true)) {
+            $_REQUEST['devinfo_' . $k] = $v;
+        }
+    }
+    // a random secret that no other device uses; returned once for the desk phone
+    do {
+        $secret = cx_random_hex(12);
+    } while ($db->getOne("SELECT COUNT(*) FROM sip WHERE keyword = 'secret' AND data = ?", array($secret)) > 0);
+    $_REQUEST['devinfo_secret'] = $secret;
+    $_REQUEST['devinfo_dial'] = '';
+    $_REQUEST['devinfo_mailbox'] = '';
+    $vars = array(
+        'extension' => $CAWP_EXT, 'name' => $CAWP_NAME, 'outboundcid' => '', 'sipname' => '', 'password' => '',
+        'voicemail' => 'novm', 'ringtimer' => 0, 'cfringtimer' => 0, 'concurrency_limit' => 0,
+        'answermode' => 'disabled', 'callwaiting' => 'enabled', 'noanswer' => '', 'recording' => '',
+        'noanswer_cid' => '', 'busy_cid' => '', 'chanunavail_cid' => '',
+        'recording_in_external' => 'recording_in_external=always',
+        'recording_out_external' => 'recording_out_external=always',
+        'recording_in_internal' => 'recording_in_internal=always',
+        'recording_out_internal' => 'recording_out_internal=always',
+        'recording_ondemand' => 'recording_ondemand=disabled', 'recording_priority' => 10, 'pinless' => 'disabled',
+    );
+    ob_start();
+    $okUser = core_users_add($vars);
+    $msg = ob_get_clean();
+    if ($okUser === false) {
+        cx_fail(500, 'create_failed', 'core_users_add refused: ' . trim(strip_tags($msg)));
+    }
+    ob_start();
+    $okDev = core_devices_add($CAWP_EXT, 'sip', '', 'fixed', $CAWP_EXT, $CAWP_NAME);
+    ob_end_clean();
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($okDev === false || $row === null || !$row['device']) {
+        ob_start();
+        core_devices_del($CAWP_EXT);
+        core_users_del($CAWP_EXT);
+        ob_end_clean();
+        needreload();
+        cx_fail(500, 'create_failed', 'core_devices_add failed (rolled back; backup ' . $bk . ')');
+    }
+    needreload();
+    $managed = cx_managed_list();
+    $managed[] = $CAWP_EXT;
+    cx_managed_write($managed);
+    $applied = cx_apply_config();
+    $peer = cx_peer_exists($CAWP_EXT);
+    cx_plog('ok', "created $CAWP_NAME peer=" . var_export($peer, true));
+    cx_out(array('ok' => true, 'created' => true,
+                 'item' => cx_describe(cx_issabel_row($CAWP_EXT), cx_peer_states(), cx_channel_counts(), cx_managed_list()),
+                 'endpoint_verified' => $peer, 'webrtc' => false, 'backup' => $bk) + $applied);
+}
+
+if ($CAWP_OP === 'rename') {
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null || !$row['user']) {
+        cx_fail(404, 'not_found', "extension $CAWP_EXT does not exist on the PBX");
+    }
+    if ($row['name'] === $CAWP_NAME) {
+        cx_out(array('ok' => true, 'renamed' => false,
+                     'item' => cx_describe($row, cx_peer_states(), cx_channel_counts(), cx_managed_list())));
+    }
+    $bk = cx_backup("rename-$CAWP_EXT");
+    $db->query('UPDATE users SET name = ? WHERE extension = ?', array($CAWP_NAME, $CAWP_EXT));
+    $db->query('UPDATE devices SET description = ? WHERE id = ?', array($CAWP_NAME, $CAWP_EXT));
+    $db->query("UPDATE sip SET data = ? WHERE id = ? AND keyword = 'callerid'", array($CAWP_NAME . ' <' . $CAWP_EXT . '>', $CAWP_EXT));
+    $astman->database_put('AMPUSER', "$CAWP_EXT/cidname", '"' . $CAWP_NAME . '"');   // quoted: the CLI splits on spaces
+    needreload();
+    $applied = cx_apply_config();
+    cx_plog('ok', "renamed to $CAWP_NAME");
+    cx_out(array('ok' => true, 'renamed' => true,
+                 'item' => cx_describe(cx_issabel_row($CAWP_EXT), cx_peer_states(), cx_channel_counts(), cx_managed_list()),
+                 'backup' => $bk) + $applied);
+}
+
+if ($CAWP_OP === 'delete') {
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null) {
+        cx_fail(404, 'not_found', "extension $CAWP_EXT does not exist on the PBX");
+    }
+    if (!in_array($CAWP_EXT, cx_managed_list(), true)) {
+        cx_fail(409, 'not_managed', "extension $CAWP_EXT was not created by the app; delete it in IssabelPBX");
+    }
+    $channels = cx_channel_counts();
+    if ($channels === null) {
+        cx_fail(503, 'asterisk_unreachable', 'cannot check the active channels; not deleting');
+    }
+    if (!empty($channels[$CAWP_EXT])) {
+        cx_fail(409, 'in_call', "extension $CAWP_EXT has {$channels[$CAWP_EXT]} active channel(s)");
+    }
+    $groups = cx_ringgroups_with($CAWP_EXT);
+    if ($groups) {
+        cx_fail(409, 'in_ring_group', "extension $CAWP_EXT is a member of ring group(s) " . implode(', ', $groups),
+                array('ring_groups' => $groups));
+    }
+    $bk = cx_backup("delete-$CAWP_EXT");
+    ob_start();
+    core_devices_del($CAWP_EXT);
+    core_users_del($CAWP_EXT);
+    if (function_exists('core_users_cleanastdb')) {
+        core_users_cleanastdb($CAWP_EXT);
+    }
+    ob_end_clean();
+    cx_managed_write(array_diff(cx_managed_list(), array($CAWP_EXT)));
+    needreload();
+    $applied = cx_apply_config();
+    $peer = cx_peer_exists($CAWP_EXT);
+    cx_plog('ok', 'deleted gone=' . var_export($peer === null ? null : !$peer, true));
+    cx_out(array('ok' => true, 'deleted' => true, 'extension' => $CAWP_EXT,
+                 'endpoint_gone' => $peer === null ? null : !$peer, 'backup' => $bk) + $applied);
+}
+
+if ($CAWP_OP === 'secret') {
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null || !$row['device'] || $row['tech'] !== 'sip') {
+        cx_fail(404, 'not_found', "SIP extension $CAWP_EXT does not exist on the PBX");
+    }
+    if (!in_array($CAWP_EXT, cx_managed_list(), true)) {
+        cx_fail(409, 'not_managed', "extension $CAWP_EXT was not created by the app; change its password in IssabelPBX");
+    }
+    $bk = cx_backup("secret-$CAWP_EXT");
+    do {
+        $secret = cx_random_hex(12);
+    } while ($db->getOne("SELECT COUNT(*) FROM sip WHERE keyword = 'secret' AND data = ?", array($secret)) > 0);
+    $r = $db->query("UPDATE sip SET data = ? WHERE id = ? AND keyword = 'secret'", array($secret, $CAWP_EXT));
+    if (DB::IsError($r) || $db->affectedRows() !== 1) {
+        cx_fail(500, 'secret_failed', 'the SIP password could not be changed');
+    }
+    needreload();
+    $applied = cx_apply_config();
+    cx_plog('ok', 'new SIP password set');                       // never the password itself
+    cx_out(array('ok' => true, 'extension' => $CAWP_EXT, 'sip_username' => $CAWP_EXT, 'sip_secret' => $secret,
+                 'backup' => $bk) + $applied);
+}
+
+if ($CAWP_OP === 'webrtc') {
+    $on = $argv[3] === 'on';
+    $row = cx_issabel_row($CAWP_EXT);
+    if ($row === null || !$row['device'] || $row['tech'] !== 'sip') {
+        cx_fail(404, 'not_found', "SIP extension $CAWP_EXT does not exist on the PBX");
+    }
+    $channels = cx_channel_counts();
+    if ($channels === null) {
+        cx_fail(503, 'asterisk_unreachable', 'cannot check the active channels; not changing the extension');
+    }
+    if (!empty($channels[$CAWP_EXT])) {
+        cx_fail(409, 'in_call', "extension $CAWP_EXT has {$channels[$CAWP_EXT]} active channel(s)");
+    }
+    $snapFile = DESK_DIR . "/$CAWP_EXT.json";
+    if (!$on && !is_file($snapFile)) {
+        cx_fail(409, 'not_webrtc', "extension $CAWP_EXT is not a WebRTC extension (no desk-phone snapshot)");
+    }
+    if ($on && (!is_file(WEBRTC_CERT) || !is_file(WEBRTC_KEY))) {
+        cx_fail(500, 'webrtc_cert_missing', 'the WebRTC DTLS certificate is not installed');
+    }
+    $bk = cx_backup("webrtc-$argv[3]-$CAWP_EXT");
+    $rows = $db->getAll('SELECT id, keyword, data, flags FROM sip WHERE id = ? ORDER BY flags', array($CAWP_EXT), DB_FETCHMODE_ASSOC);
+    if (DB::IsError($rows) || !$rows) {
+        cx_fail(500, 'db_error', "cannot read the sip settings of $CAWP_EXT");
+    }
+    if ($on) {
+        if (!is_file($snapFile)) {                    // a repeated "on" keeps the first (desk-phone) snapshot
+            if (!is_dir(DESK_DIR)) {
+                mkdir(DESK_DIR, 0700, true);
+            }
+            if (file_put_contents($snapFile, json_encode($rows, JSON_UNESCAPED_UNICODE)) === false) {
+                cx_fail(500, 'write_failed', 'cannot write the desk-phone snapshot');
+            }
+            chmod($snapFile, 0600);
+        }
+        do {
+            $secret = cx_random_hex(12);
+        } while ($db->getOne("SELECT COUNT(*) FROM sip WHERE keyword = 'secret' AND data = ?", array($secret)) > 0);
+        $set = array(
+            'secret' => $secret, 'transport' => 'ws,wss', 'avpf' => 'yes', 'force_avp' => 'yes', 'icesupport' => 'yes',
+            'encryption' => 'yes', 'dtlsenable' => 'yes', 'dtlsverify' => 'no', 'dtlssetup' => 'actpass',
+            'dtlscertfile' => WEBRTC_CERT, 'dtlsprivatekey' => WEBRTC_KEY, 'nat' => 'force_rport,comedia',
+            'disallow' => 'all', 'allow' => 'opus,ulaw,alaw', 'videosupport' => 'no',
+        );
+        $flag = (int)$db->getOne('SELECT COALESCE(MAX(flags), 1) FROM sip WHERE id = ?', array($CAWP_EXT));
+        foreach ($set as $k => $v) {
+            $n = $db->getOne('SELECT COUNT(*) FROM sip WHERE id = ? AND keyword = ?', array($CAWP_EXT, $k));
+            $r = $n > 0
+                ? $db->query('UPDATE sip SET data = ? WHERE id = ? AND keyword = ?', array($v, $CAWP_EXT, $k))
+                : $db->query('INSERT INTO sip (id, keyword, data, flags) VALUES (?, ?, ?, ?)', array($CAWP_EXT, $k, $v, ++$flag));
+            if (DB::IsError($r)) {
+                cx_fail(500, 'db_error', "cannot set $k on $CAWP_EXT (backup $bk)");
+            }
+        }
+    } else {
+        $snap = json_decode((string)file_get_contents($snapFile), true);
+        if (!is_array($snap) || !$snap) {
+            cx_fail(500, 'snapshot_invalid', "the desk-phone snapshot of $CAWP_EXT cannot be read (backup $bk)");
+        }
+        $db->query('DELETE FROM sip WHERE id = ?', array($CAWP_EXT));
+        foreach ($snap as $r0) {
+            $r = $db->query('INSERT INTO sip (id, keyword, data, flags) VALUES (?, ?, ?, ?)',
+                            array($CAWP_EXT, $r0['keyword'], $r0['data'], $r0['flags']));
+            if (DB::IsError($r)) {
+                cx_fail(500, 'db_error', "cannot restore $CAWP_EXT; restore the sip rows from $bk");
+            }
+        }
+        copy($snapFile, $bk . '/desk-snapshot.json');
+        chmod($bk . '/desk-snapshot.json', 0600);
+        unlink($snapFile);
+    }
+    needreload();
+    $applied = cx_apply_config();
+    cx_plog('ok', $on ? 'webrtc on (new password set)' : 'webrtc off (desk-phone settings restored)');
+    $out = array('ok' => true, 'extension' => $CAWP_EXT, 'webrtc' => $on, 'backup' => $bk,
+                 'item' => cx_describe(cx_issabel_row($CAWP_EXT), cx_peer_states(), cx_channel_counts(), cx_managed_list()));
+    if ($on) {
+        $out['sip_username'] = $CAWP_EXT;
+        $out['sip_secret'] = $secret;               // once, for the app to keep encrypted
+    }
+    cx_out($out + $applied);
+}

@@ -10,7 +10,8 @@ import pytest
 
 from services import team_dashboard
 from services.calling import monitor
-from test_calling_helpers import CL, cl, make_case, new_contract, new_supervisor, new_user, pgc, run  # noqa: F401
+from test_calling_helpers import (CL, add_contact, cl, make_case, new_contract, new_supervisor, new_user,  # noqa: F401
+                                  pgc, run)
 
 DAY = "2026-09-03"
 
@@ -251,3 +252,101 @@ def test_export_is_scoped_xlsx_and_audited(td_app, pgc, monkeypatch):
     n = scalar(pgc, "SELECT count(*) FROM audit_events WHERE action = 'team_dashboard.export' AND actor_user_id IN (%s, %s)",
                w["sup"], CL.super)
     assert n >= 2
+
+
+# --------------------------------------------------------------------------- one user's client updates
+def note_at(pgc, case, author, main, sub=None, *, at, text="Called", contact=None):
+    run(pgc, """INSERT INTO "Comments" (clint_id, user_id, "contactMethod_id", comment, comment_status_id,
+                                         comment_sub_status_id, create_at, update_at, "contactNumber")
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        case, author, CL.method, text, main, sub, f"{DAY} {at}:00+03", f"{DAY} {at}:00+03", contact)
+
+
+def test_user_updates_pair_each_update_with_the_users_call_to_that_client(td_app, pgc):
+    member, other = new_user(pgc, name="Updater"), new_user(pgc, name="Someone else")
+    _, portfolio = new_contract(pgc, "td updates contract")
+    a, b, c = (make_case(pgc, member, portfolio) for _ in range(3))
+    add_contact(pgc, a, "966501110001")
+    add_contact(pgc, b, "966502220002")
+    add_contact(pgc, c, "966503330003")
+    s1, s2 = status(pgc, "TD promise"), status(pgc, "TD no answer")
+    s1a = status(pgc, "TD promise-a", parent=s1)
+    ext = fresh_ext(pgc, "6")
+    own(pgc, member, ext)
+    note_at(pgc, a, member, s1, s1a, at="10:05")                       # a's answered call at 10:00
+    note_at(pgc, b, member, s2, at="11:00")                            # b's unanswered call at 10:58
+    note_at(pgc, c, member, s2, at="12:00")                            # c: only a call 5 h earlier -> unknown
+    note_at(pgc, a, member, s2, at="13:30", contact="0501110001")      # by the note's contacted number
+    note_at(pgc, a, other, s1, at="10:06")                             # someone else's update: not listed
+    at = lambda h, m=0: dt.datetime(2026, 9, 3, h, m)  # noqa: E731
+    rows = [
+        {"calldate": at(10), "channel": f"PJSIP/{ext}-1", "dstchannel": "SIP/ITC-1", "disposition": "ANSWERED",
+         "billsec": 95, "duration": 110, "linkedid": "U1", "uniqueid": "U1", "src": ext, "dst": "0501110001"},
+        {"calldate": at(10, 58), "channel": f"PJSIP/{ext}-2", "dstchannel": "SIP/ITC-2", "disposition": "NO ANSWER",
+         "billsec": 0, "duration": 30, "linkedid": "U2", "uniqueid": "U2", "src": ext, "dst": "+966502220002"},
+        {"calldate": at(7), "channel": f"PJSIP/{ext}-3", "dstchannel": "SIP/ITC-3", "disposition": "ANSWERED",
+         "billsec": 40, "duration": 45, "linkedid": "U3", "uniqueid": "U3", "src": ext, "dst": "0503330003"},
+        {"calldate": at(13, 25), "channel": f"PJSIP/{ext}-4", "dstchannel": "SIP/ITC-4", "disposition": "BUSY",
+         "billsec": 0, "duration": 8, "linkedid": "U4", "uniqueid": "U4", "src": ext, "dst": "0501110001"},
+    ]
+    d = call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": member}, user_id=CL.super, rows=rows)
+    assert d["user"]["id"] == member and d["user"]["extensions"] == [ext]
+    assert (d["updates"], d["clients"], d["total"]) == (4, 3, 4) and d["calls"]["available"] is True
+    by_time = {i["at"][11:16]: i for i in d["items"]}
+    assert [i["at"][11:16] for i in d["items"]] == ["10:30", "09:00", "08:00", "07:05"]      # UTC, newest first
+    first = by_time["07:05"]                                            # 10:05 Riyadh
+    assert first["client"]["case_id"] == a and first["status"]["id"] == s1 and first["sub_status"]["id"] == s1a
+    assert first["call"]["answered"] is True and first["call"]["talk_seconds"] == 95
+    assert by_time["08:00"]["call"]["answered"] is False and by_time["08:00"]["call"]["result"] == "NO ANSWER"
+    assert by_time["09:00"]["call"] is None                             # no call within 3 h: unknown
+    assert by_time["10:30"]["call"]["result"] == "BUSY"
+    page = call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": member, "page_size": "2", "page": "2"},
+                user_id=CL.super, rows=rows)
+    assert [i["at"][11:16] for i in page["items"]] == ["08:00", "07:05"] and page["total"] == 4
+
+
+def test_user_updates_scope_and_validation(td_app, pgc, monkeypatch):
+    from core.api_response import ApiError
+    w = world(pgc)
+    with pytest.raises(ApiError) as e:
+        call(td_app, team_dashboard.user_updates, {"from": DAY}, user_id=CL.super, rows=[])
+    assert e.value.status == 422
+    with pytest.raises(ApiError) as e:
+        call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": f"{w['member']},{w['other']}"},
+             user_id=CL.super, rows=[])
+    assert e.value.status == 422
+    with pytest.raises(ApiError) as e:                                  # outside the supervisor's team
+        call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": w["other"]}, user_id=w["sup"], rows=[])
+    assert e.value.status == 403
+    d = call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": w["member"]}, user_id=w["sup"], rows=[])
+    assert w["theirs"] not in {i["client"]["case_id"] for i in d["items"]}       # case outside the scope
+    assert d["updates"] == 3
+
+    def down(*a, **k):
+        raise ApiError(503, "cdr_unavailable", "the PBX call records are unavailable")
+    monkeypatch.setattr(monitor, "_cdr_rows", down)
+    d = call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": w["member"]}, user_id=CL.super)
+    assert d["calls"]["available"] is False and all(i["call"] is None for i in d["items"])
+    r = td_app.test_client().get("/v2/dashboards/team/user-updates", query_string={"from": DAY, "user_id": w["member"]},
+                                 headers=token(td_app, new_user(pgc)))
+    assert r.status_code == 403
+
+
+def test_a_supervisor_linked_only_to_a_contract_sees_that_contracts_users(td_app, pgc):
+    cid, portfolio = new_contract(pgc, "td sup contract only")
+    other_cid, other_portfolio = new_contract(pgc, "td sup contract other")
+    inside, outside = new_user(pgc, name="Inside"), new_user(pgc, name="Outside")
+    run(pgc, "UPDATE users SET contract_id = %s WHERE id = %s", cid, inside)
+    run(pgc, "UPDATE users SET contract_id = %s WHERE id = %s", other_cid, outside)
+    sup = new_supervisor(pgc, contracts=[cid])
+    s1 = status(pgc, "TD contract scope")
+    note(pgc, make_case(pgc, inside, portfolio), inside, s1)
+    note(pgc, make_case(pgc, outside, other_portfolio), outside, s1)
+    d = call(td_app, team_dashboard.dashboard, {"from": DAY}, user_id=sup, rows=[])
+    ids = {u["user_id"] for u in d["users"]}
+    assert d["scope"] == "team" and inside in ids and outside not in ids
+    assert call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": inside}, user_id=sup, rows=[])["updates"] == 1
+    from core.api_response import ApiError
+    with pytest.raises(ApiError) as e:
+        call(td_app, team_dashboard.user_updates, {"from": DAY, "user_id": outside}, user_id=sup, rows=[])
+    assert e.value.status == 403

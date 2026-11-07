@@ -65,7 +65,7 @@ export type ManagedExtension = {
     /** null = the PBX could not be read */
     on_pbx: boolean | null
     pbx: PbxExtensionInfo | null
-    owner: (ExtUserRef & { is_active: boolean | null; assignment_id: string; assigned_at: string }) | null
+    owner: (ExtUserRef & { is_active: boolean | null; assignment_id: string; assigned_at: string; softphone_enabled: boolean }) | null
     provisioning: ProvisionRequest | null
     in_use: boolean
     in_range: boolean
@@ -89,7 +89,19 @@ export type ExtOverview = {
     pbx_status: PbxStatus
     asterisk: boolean | null
     pbx_range: [number, number] | null
+    /** "sip" on a chan_sip PBX (desk phones: offer the SIP password); null otherwise / unknown */
+    pbx_tech?: string | null
     settings: ExtSettings
+}
+
+/** `POST .../<ext>/sip-password` (chan_sip PBX): shown once, never stored anywhere in the app. */
+export type SipPassword = {
+    extension: string
+    sip_username: string
+    sip_password: string
+    sip_server: string | null
+    transport: string
+    port: number
 }
 
 export type UserWithoutExtension = {
@@ -125,6 +137,19 @@ export const extProvisionApi = {
             body,
             key
         ),
+
+    /** 0082: the user's in-app softphone (off by default); off revokes their SIP credentials */
+    setSoftphone: (userId: string, body: { enabled: boolean; reason: string }, key: string) =>
+        v2Put<{ user_id: string; enabled: boolean; revision: number; credentials_revoked: number }>(
+            `/v2/calling/users/${enc(userId)}/softphone`,
+            body,
+            key
+        ),
+
+    /** A new SIP password for an app-created desk-phone extension; NOT idempotent on the server
+     * (the key the transport requires is sent and ignored). Keep the answer in component state only. */
+    newSipPassword: (extension: string, body: { reason: string }, key: string) =>
+        v2Post<SipPassword>(`/v2/calling/pbx-extensions/${enc(extension)}/sip-password`, body, key),
 
     remove: (extension: string, body: { reason: string }, key: string) =>
         v2Post<{ extension: string; deleted: boolean; cancelled: boolean }>(`/v2/calling/pbx-extensions/${enc(extension)}/delete`, body, key),

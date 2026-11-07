@@ -168,7 +168,9 @@
       "requests": "Requests"
     },
     "p4": {
-      "reports": "Reports hub"
+      "reports": "Reports hub",
+      "bi": "Self-service BI",
+      "sql": "SQL builder"
     },
     "p5": {
       "calls": "Calls",
@@ -2981,6 +2983,8 @@
       "downloadSummary": "Download users summary",
       "downloadCalls": "Download call details",
       "user": "User",
+      "contract": "Contract",
+      "allContracts": "All contracts",
       "allUsers": "All users",
       "clearUser": "Show all users",
       "title": "Call monitor",
@@ -3081,7 +3085,8 @@
       "minutes": "{{n}} min"
     },
     "perm": {
-      "section": "Workflow permissions (Phases 1–5)"
+      "section": "Workflow permissions (Phases 1–5)",
+      "calling": "Calling & campaigns"
     },
     "day": {
       "0": "Sun",
@@ -3200,7 +3205,7 @@
       "agent_hung_up": "You hung up",
       "customer_busy": "The customer's line was busy",
       "customer_no_answer": "The customer did not answer",
-      "customer_congestion": "The network was congested",
+      "customer_congestion": "Customer's phone is off or unreachable",
       "customer_unavailable": "The customer's number was unavailable",
       "agent_hung_up_while_ringing": "You hung up while the customer's phone rang",
       "not_bridged": "The legs were never bridged: no conversation",
@@ -3531,6 +3536,7 @@
       "windowMissing": "Not configured",
       "softphone": "Softphone",
       "noSoftphone": "Not available",
+      "softphoneOff": "Off: calls ring your own phone",
       "autoAnswer": "Auto-answer my calls",
       "canCall": "Click-to-call is available now (every call is still checked when you place it).",
       "howToCall": "Place calls from a case's contacts (the phone icon), or take part in a campaign.",
@@ -5423,7 +5429,11 @@
         "lastStatus": "Last note status",
         "lastNoteAt": "Last note date",
         "owner": "Collector"
-      }
+      },
+      "split": "In this contract: {{same}} · in other contracts: {{other}}",
+      "thisContract": "This contract",
+      "groupCount": "{{n}} accounts",
+      "noContract": "No contract"
     }
   },
   "p9": {
@@ -5946,6 +5956,8 @@
         "listenTo": "Listen to {{agent}}",
         "title": "Listening to {{agent}}",
         "connected": "Connected. Your softphone answered automatically.",
+        "ringingDesk": "Your phone on extension {{ext}} is ringing: pick it up to listen.",
+        "ringingSoftphone": "The in-app softphone (extension {{ext}}) is answering…",
         "ringingYou": "Ringing your extension {{ext}}…",
         "modeLabel": "Listening mode",
         "dismiss": "Close"
@@ -5955,6 +5967,30 @@
       }
     },
     "extprov": {
+      "sipPwButton": "New SIP password",
+      "sipPwTitle": "SIP password for extension {{ext}}",
+      "sipPwGenerate": "Set a new password",
+      "sipPwDefaultReason": "Configure the new desk phone",
+      "sipPwHintNew": "The PBX sets a random SIP password for the new extension. It is shown once: type it into the desk phone.",
+      "sipPwHintReset": "The PBX sets a new random SIP password. The phone on this extension stops registering until it gets the new password.",
+      "sipPwShownTitle": "Desk phone settings for extension {{ext}}",
+      "sipPwOnce": "Shown only now. The app does not keep this password: copy it into the phone before closing.",
+      "sipPwUser": "SIP user / authentication ID",
+      "sipPwPassword": "SIP password",
+      "sipPwServer": "SIP server (registrar)",
+      "sipPwDone": "Done, I have set the phone",
+      "copy": "Copy",
+      "copied": "Copied",
+      "softphoneCol": "In-app softphone",
+      "softphoneOn": "Enabled",
+      "softphoneOff": "Disabled",
+      "softphoneEnable": "Enable softphone",
+      "softphoneDisable": "Disable softphone",
+      "softphoneEnableTitle": "Enable the in-app softphone for {{name}}",
+      "softphoneDisableTitle": "Disable the in-app softphone for {{name}}",
+      "softphoneEnableHint": "The user's extension becomes a browser phone: their desk phone on this extension stops working until the softphone is disabled again. Refused while the extension is in a call.",
+      "softphoneDisableHint": "The browser softphone stops at once and the extension gets its desk-phone settings back, with its own password: the desk phone registers again by itself.",
+      "softphoneNote": "The in-app softphone is off for every user by default: users call from their own VoIP phones. Enable it per user here.",
       "nav": "Extensions",
       "title": "Extensions",
       "subtitle": "{{total}} extensions · {{assigned}} assigned · {{unassigned}} unassigned · {{registered}} connected now",
@@ -6172,6 +6208,10 @@
       }
     },
     "teamdash": {
+      "updatesTitle": "Client updates: {{name}}",
+      "updatesSubtitle": "{{updates}} updates on {{clients}} clients, newest first",
+      "updatesHint": "Click a user in the table to see the clients they updated.",
+      "upd": {"time": "Time", "client": "Client", "status": "Updated status", "callStatus": "Call status", "duration": "Call duration", "note": "Note", "noCall": "No call found", "noCallHint": "No call by this user to this client's numbers in the 3 hours before the update", "callsUnavailable": "The PBX call records are unavailable: call status and duration are unknown.", "empty": "No client updates in this period", "prev": "Previous", "next": "Next", "page": "Page {{page}} of {{pages}}", "inbound": "incoming"},
       "nav": "Team performance",
       "title": "Team performance dashboard",
       "subtitle": "Calls and client status updates per user",
@@ -6363,11 +6403,11 @@
     },
     "notes": {
       "applyAll": {
-        "label": "Apply to all the client's accounts ({{count}})",
-        "hintOn": "The same note is also saved on: {{accounts}}. The promise and the follow-up stay on this account only.",
-        "hintOff": "The note is saved on this account only. Other active accounts of the client: {{accounts}}.",
+        "label": "Apply to all the client's accounts in the same contract ({{count}})",
+        "hintOn": "The same note is also saved on the client's accounts in the same contract: {{accounts}}. Accounts in other contracts are not affected. The promise and the follow-up stay on this account only.",
+        "hintOff": "The note is saved on this account only. Other active accounts of the client in the same contract: {{accounts}}.",
         "tooMany": "This client has {{count}} other active accounts, more than the {{limit}} a note can be applied to: the note is saved on this account only.",
-        "title": "Applied to the client's accounts",
+        "title": "Applied to the client's accounts in the same contract",
         "applied": "The note was also applied to the accounts: {{accounts}}.",
         "skipped": "Not applied (the status belongs to another contract): {{accounts}}."
       },
@@ -6386,8 +6426,663 @@
         "hint": "A note with this status shows the promise amount and payment date (optional); when filled in, the promise is created with the note. Bulk notes and imports don't ask for it."
       },
       "err": {
-        "too_many_accounts": "The client has too many accounts to apply the note to all of them; untick \"Apply to all the client's accounts\"."
+        "too_many_accounts": "The client has too many accounts in this contract to apply the note to all of them; untick \"Apply to all the client's accounts in the same contract\"."
       }
     }
+  },
+  "p12": {
+    "campcases": {
+      "source": {
+        "label": "Choose customers",
+        "filter": "By filter",
+        "list": "Customer list (Excel or pasted ids)",
+        "listHint": "After creating the campaign, open its Pool tab, upload an Excel file or paste national ids or account numbers, then review the list and remove anyone before you start."
+      },
+      "skipPaid": {
+        "label": "Skip customers with any approved payment",
+        "hint": "The campaign never calls an account with any approved payment, even a partial one. Pending, rejected and reversed payments do not count."
+      },
+      "import": {
+        "title": "Add customers to the campaign list",
+        "matchBy": "Match by",
+        "identity": "National ID",
+        "account": "Account number",
+        "identityHint": "Every account of the matching customer is added.",
+        "accountHint": "Only the matching account is added.",
+        "file": "Excel or CSV file",
+        "column": "Column",
+        "columnHint": "The column with the numbers (1 = first). A header row is ignored.",
+        "upload": "Upload file",
+        "paste": "Or paste numbers (one per line)",
+        "addPasted": "Add numbers",
+        "result": "{{matched}} of {{values}} values matched: {{added}} new accounts added.",
+        "restored": "{{count}} removed accounts were restored.",
+        "notFound": "Not found or outside your scope ({{count}}):",
+        "needOne": "Choose a file or paste at least one number",
+        "notList": "This campaign chooses its customers by filter. To add customers from a file, edit it and choose Customer list."
+      },
+      "remove": "Remove",
+      "restore": "Restore",
+      "removedOk": "Customer removed from the campaign",
+      "restoredOk": "Customer restored",
+      "counts": "List: {{listed}} accounts · removed by hand: {{removed}}",
+      "reason": {
+        "removed_by_user": "Removed by hand",
+        "customer_in_call": "Customer is in another call now",
+        "answered_in_campaign": "Answered in this campaign (not called again)",
+        "case_has_payment": "Has an approved payment"
+      },
+      "progress": {
+        "called": "Called",
+        "answered": "Answered",
+        "waiting": "In the queue",
+        "waitingHint": "Customers in the pool the campaign has not called yet and that are not excluded for good."
+      },
+      "calledTab": "Called",
+      "called": {
+        "all": "All",
+        "answered": "Answered",
+        "notAnswered": "Not answered",
+        "col": {
+          "attempts": "Attempts",
+          "answered": "Answered",
+          "lastCall": "Last call",
+          "lastResult": "Last result",
+          "agent": "Agent"
+        },
+        "yes": "Yes",
+        "no": "No",
+        "empty": "The campaign has not called anyone yet",
+        "rule": "A customer who answered is never called again by this campaign: not on their other accounts, not on the number that answered."
+      },
+      "col": {
+        "action": "Action"
+      },
+      "endsAt": {
+        "label": "Campaign ends at (Riyadh time)",
+        "hint": "The campaign stops placing new calls at this time, lets the calls in progress finish, then stops. Leave empty for no limit.",
+        "past": "That time has passed.",
+        "short": "Ends"
+      },
+      "fill": {
+        "label": "When an agent runs out of their own clients: random clients of the campaign",
+        "hint": "An agent with no client of their own left gets random clients from the campaign's list, even if assigned to another collector. A promise to pay moves that client to them.",
+        "short": "Random fill"
+      }
+    },
+    "msg": {
+      "kind": {
+        "label": "Campaign type",
+        "agent": "Agents call",
+        "message": "Automatic voice message",
+        "badge": "Message campaign",
+        "hint": {
+          "agent": "The agent's phone rings first, then the client is dialled (as usual).",
+          "message": "The system dials the client and plays the recorded message when they answer: 1 = an agent, 2 = close. Upload the messages after creating the campaign."
+        }
+      },
+      "maxConcurrent": "Calls at the same time",
+      "maxConcurrentHint": "1 to 20 (the lines are shared with the agents; start small).",
+      "transfer": "Pressing 1 transfers the client to a free agent",
+      "transferHint": "A ready member's phone rings, with hold music for up to 60 s; if nobody is free the callback message plays and it is recorded.",
+      "notes": "Note recorded on the client for each result",
+      "notesHint": "Pick a status per result; a result without a status records no note.",
+      "noteFor": {
+        "no_agent": "Asked for an agent, none free",
+        "closed": "Chose to close (2)",
+        "no_choice": "Listened, no choice",
+        "listened": "Stayed on the line longer"
+      },
+      "contactMethod": "Contact method for the notes",
+      "sound": {
+        "title": "Voice messages",
+        "uploaded": "Message uploaded",
+        "required": "required",
+        "seconds": "{{n}} s",
+        "none": "Not uploaded",
+        "installed": "Installed on the PBX",
+        "notInstalled": "Not installed on the PBX",
+        "replace": "Replace",
+        "upload": "Upload",
+        "listen": "Listen",
+        "remove": "Remove",
+        "pauseFirst": "Pause the campaign to change its messages.",
+        "formats": "WAV or MP3, up to 2 minutes. Converted to the PBX format automatically.",
+        "col": {
+          "kind": "Message",
+          "file": "File",
+          "pbx": "PBX"
+        },
+        "kind": {
+          "message": "Message",
+          "callback": "Call-back",
+          "goodbye": "Goodbye"
+        },
+        "hint": {
+          "message": "Played when the client answers (twice at most)",
+          "callback": "When no agent is free after 1",
+          "goodbye": "After 2 (optional)"
+        }
+      },
+      "live": {
+        "title": "Message calls",
+        "dialing": "Dialling now",
+        "listening": "Listening",
+        "transferring": "Transferring",
+        "talking": "Talking to an agent",
+        "calls": "All calls",
+        "results": "Results",
+        "uncertain": "Uncertain calls: {{n}}",
+        "soundsMissing": "Some messages are not installed on the PBX; calls will not start."
+      },
+      "result": {
+        "no_answer": "No answer",
+        "busy": "Busy",
+        "unavailable": "Unavailable",
+        "congestion": "Phone off or unreachable",
+        "failed": "Could not call",
+        "denied": "Refused before dialling",
+        "no_trunk": "No line available",
+        "hung_up": "Client hung up",
+        "no_choice": "Listened, no choice",
+        "closed": "Chose to close (2)",
+        "no_agent": "Asked for an agent, none free",
+        "transferred": "Transferred to an agent",
+        "unknown": "Unknown"
+      },
+      "state": {
+        "sending": "Sending",
+        "dialing": "Dialling",
+        "answered": "Listening",
+        "transferring": "Transferring",
+        "talking": "Talking to an agent",
+        "ended": "Ended",
+        "failed": "Failed",
+        "uncertain": "Uncertain"
+      },
+      "calls": {
+        "result": "Result",
+        "when": "Time",
+        "state": "State",
+        "key": "Key",
+        "member": "Agent",
+        "empty": "The campaign has not called anyone yet",
+        "rule": "A client who answered is not called again by this campaign."
+      },
+      "part": {
+        "title": "Client transferred to you",
+        "rule": "Message campaign: the system dials the clients itself. Stay Ready so your phone rings when a client presses 1.",
+        "state": {
+          "ringing": "Ringing now",
+          "talking": "In a call",
+          "ended": "Call ended"
+        },
+        "open": "Open the client's page",
+        "waiting": "Ready to take transferred clients",
+        "notRunning": "The campaign is not running"
+      },
+      "err": {
+        "sounds_missing": "Upload the required messages and install them on the PBX before starting (the message, and the callback message when transfer is on).",
+        "message_campaign": "A message campaign dials the clients itself; stay ready to take a transferred client.",
+        "not_a_message_campaign": "This is not a message campaign.",
+        "listen_seconds": "Enter a time on the line from 1 to 600 seconds."
+      },
+      "plays": "Times the message plays",
+      "playsHint": "1 to 5 times when the client presses no key.",
+      "listenSeconds": "Time on the line (seconds)",
+      "listenSecondsHint": "A client who stays on the line longer than this after answering gets the status below, whatever they choose (1 to 600).",
+      "caller": {
+        "tab": "Outbound numbers",
+        "col": "Number shown",
+        "title": "The numbers the client sees",
+        "label": "Outbound numbers",
+        "hint": "Choose one number or more. The campaign's calls are shared evenly: the number with the fewest calls in this campaign goes next.",
+        "auto": "Automatic (first available line's number)",
+        "noTrunkShort": "not on the PBX",
+        "noTrunk": "Some selected numbers are not set up on the PBX: they show to the client normally, but clients who call them back may not get through.",
+        "save": "Save",
+        "saved": "Outbound numbers saved",
+        "running": "The campaign is running: the change applies to the next calls.",
+        "selectAll": "Select all numbers ({{n}})",
+        "clear": "Clear",
+        "count": "{{n}} numbers selected"
+      }
+    }
+  },
+  "rb": {
+    "add": "Add",
+    "remove": "Remove",
+    "run": "Run",
+    "save": "Save",
+    "name": "Name",
+    "yes": "Yes",
+    "no": "No",
+    "empty": "(empty)",
+    "weekOf": "Week of {{d}}",
+    "exportExcel": "Export to Excel",
+    "shared": "Shared",
+    "sharedBy": "Shared by {{name}}",
+    "prev": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{pages}}",
+    "shareHint": "Share with everyone who can open this page (they see it with their own client scope)",
+    "shareHintSql": "Share with the other SQL builder users",
+    "hub": {
+      "title": "Build your own",
+      "bi": "Self-service BI",
+      "sql": "SQL builder",
+      "biDesc": "Drag fields into rows, columns, values and filters to build a pivot table and chart. Save, load and export to Excel.",
+      "sqlDesc": "Visual query builder and SQL editor with a data dictionary of every table and field in Arabic and English. Read-only."
+    },
+    "bi": {
+      "title": "Self-service BI",
+      "subtitle": "Drag fields to build a report: pivot table, chart and Excel export.",
+      "scopeNote": "Results only include the clients you are allowed to see. Totals are exact and computed on the server.",
+      "moneyNote": "Approved collected counts approved payments only; pending, rejected and reversed payments are never included. Dates are Asia/Riyadh days.",
+      "dataset": "Dataset",
+      "dimensions": "Dimensions",
+      "measures": "Measures",
+      "searchFields": "Search fields",
+      "saved": "Saved reports",
+      "noSaved": "Nothing saved yet.",
+      "noDatasets": "No datasets are available.",
+      "zone": {
+        "rows": "Rows",
+        "columns": "Columns",
+        "values": "Values",
+        "filters": "Filters"
+      },
+      "short": {
+        "rows": "R",
+        "columns": "C",
+        "filters": "F"
+      },
+      "addTo": {
+        "rows": "Add to rows",
+        "columns": "Add to columns",
+        "filters": "Add as a filter",
+        "values": "Add to values"
+      },
+      "dropHint": "Drag a dimension here",
+      "dropMeasureHint": "Drag a measure here",
+      "dropFilterHint": "Drag a dimension here to filter",
+      "remove": "Remove {{name}}",
+      "grain": "Date grouping",
+      "grains": {
+        "day": "Day",
+        "week": "Week",
+        "month": "Month",
+        "quarter": "Quarter",
+        "year": "Year"
+      },
+      "op": {
+        "in": "is any of",
+        "not_in": "is none of",
+        "contains": "contains",
+        "is_empty": "is empty",
+        "not_empty": "is not empty",
+        "between": "between",
+        "eq": "is"
+      },
+      "from": "From",
+      "to": "To",
+      "value": "Value",
+      "containsHint": "Text to look for",
+      "searchValues": "Search values",
+      "chartType": "Chart type",
+      "chart": {
+        "bar": "Bar",
+        "line": "Line",
+        "pie": "Pie",
+        "table": "Table only"
+      },
+      "swap": "Swap rows and columns",
+      "meta": "{{rows}} rows · {{ms}} ms",
+      "total": "Total",
+      "other": "Other",
+      "needValue": "Add at least one measure to Values to see results.",
+      "truncated": "The result is larger than 5,000 cells and was cut. Add filters or fewer fields.",
+      "columnsTruncated": "Only the first 60 column headers are shown. Move a field to rows or add a filter.",
+      "noRows": "No data for this layout",
+      "noRowsHint": "Change the filters or the date range.",
+      "saveAs": "Save as…",
+      "saveChanges": "Save changes",
+      "saveTitle": "Save report",
+      "loaded": "Loaded: {{name}}",
+      "confirmDelete": "Delete \"{{name}}\"?"
+    },
+    "sql": {
+      "title": "SQL builder",
+      "subtitle": "{{n}} read-only tables, described field by field in Arabic and English.",
+      "safetyNote": "Queries run read-only on the curated reporting tables only: one SELECT, at most {{rows}} rows and {{s}} seconds. Every run is recorded.",
+      "dictionary": "Data dictionary",
+      "dictionaryHint": "Click a table or a field to use it.",
+      "searchDict": "Search tables and fields",
+      "useTable": "Use this table",
+      "joinsTo": "Joins:",
+      "mode": "Mode",
+      "tabBuilder": "Visual builder",
+      "tabEditor": "SQL editor",
+      "editor": "SQL editor",
+      "meta": "{{rows}} rows · {{ms}} ms",
+      "noRows": "The query returned no rows.",
+      "truncated": "Only the first {{n}} rows are shown. Add a LIMIT or filters; the Excel export can hold up to 50,000 rows.",
+      "lists": "Lists",
+      "savedQueries": "Saved queries",
+      "recentRuns": "My recent runs",
+      "saveTitle": "Save query",
+      "agg": {
+        "count": "Count",
+        "count_distinct": "Count distinct",
+        "sum": "Sum",
+        "avg": "Average",
+        "min": "Minimum",
+        "max": "Maximum"
+      },
+      "op": {
+        "between": "between",
+        "in": "in list",
+        "not_in": "not in list",
+        "contains": "contains",
+        "starts_with": "starts with",
+        "is_null": "is empty",
+        "not_null": "is not empty"
+      },
+      "b": {
+        "table": "Table",
+        "joins": "Joins",
+        "joinType": "Join type",
+        "left": "Keep all (LEFT)",
+        "inner": "Matching only (INNER)",
+        "addJoin": "Add a join",
+        "noJoins": "No joins.",
+        "columns": "Columns",
+        "column": "Column",
+        "agg": "Aggregate",
+        "noAgg": "No aggregate",
+        "noColumns": "Add at least one column.",
+        "groupedBy": "Grouped by: {{cols}}",
+        "filters": "Filters",
+        "noFilters": "No filters.",
+        "op": "Condition",
+        "listHint": "Values separated by commas",
+        "order": "Order by",
+        "dir": "Direction",
+        "asc": "Ascending",
+        "desc": "Descending",
+        "limit": "Row limit",
+        "buildRun": "Build and run",
+        "openEditor": "Open in SQL editor"
+      }
+    },
+    "type": {
+      "uuid": "id",
+      "text": "text",
+      "money": "money",
+      "number": "number",
+      "int": "integer",
+      "bool": "yes/no",
+      "date": "date",
+      "datetime": "date-time",
+      "json": "json"
+    },
+    "runs": {
+      "when": "When",
+      "kind": "Kind",
+      "outcome": "Outcome",
+      "rows": "Rows",
+      "what": "Query",
+      "dataset": "Dataset: {{ds}}",
+      "kinds": {
+        "bi_query": "BI report",
+        "bi_export": "BI export",
+        "sql_run": "SQL run",
+        "sql_export": "SQL export"
+      },
+      "outcomes": {
+        "ok": "OK",
+        "refused": "Refused",
+        "error": "Error",
+        "timeout": "Timed out"
+      }
+    },
+    "err": {
+      "query_timeout": "The query took too long. Narrow the filters or the date range.",
+      "sql_runner_not_configured": "The SQL runner is not configured yet (no read-only database login). Ask the system administrator.",
+      "sql_runner_unavailable": "The read-only database login could not connect. Try again later.",
+      "sql_reader_misconfigured": "The read-only database login has too many rights, so nothing was run. Ask the system administrator.",
+      "sql_requires_all_scope": "The SQL builder is for administrators who can see all clients.",
+      "sql_multiple_statements": "Run one statement at a time (remove the extra ';').",
+      "sql_not_select": "Only SELECT queries can run here.",
+      "sql_permission_denied": "Only the reporting tables in the data dictionary can be read.",
+      "sql_required": "Write a query first.",
+      "sql_too_long": "The query is too long.",
+      "sql_syntax": "The query has an unclosed quote or comment.",
+      "sql_error": "The database refused the query: {{msg}}",
+      "validation_failed": "Some fields are not valid. Check the layout and try again.",
+      "not_owner": "Only the owner can change this.",
+      "revision_conflict": "Someone changed this in the meantime. Reload it."
+    }
+  },
+  "p13": {
+    "itqan": {
+      "nav": "Alitqan performance",
+      "title": "Alitqan performance board",
+      "subtitle": "Collector and supervisor scorecards from the system's real data",
+      "scope": {
+        "all": "All collectors",
+        "team": "Your team",
+        "own": "Your own performance"
+      },
+      "month": "Month",
+      "portfolio": "Portfolio",
+      "allPortfolios": "All portfolios",
+      "workDays": "Working days: {{passed}} of {{total}} (Sunday to Thursday)",
+      "workDaysClosed": "Closed month: {{total}} working days",
+      "idle": "{{n}} accounts with no activity this month (no login, call, note or payment) are not scored: {{names}}",
+      "overview": "Where does the monthly target stand?",
+      "target": "Target",
+      "collected": "Collected",
+      "expected": "Expected to date",
+      "openPromises": "Open promises",
+      "gap": "Gap after promises",
+      "collectors": "Collectors",
+      "ofTarget": "{{p}} of target",
+      "pace": "{{p}} of expected",
+      "ratings": "Rating distribution",
+      "trend": "Collected over the last 6 months and this month",
+      "trendNoTargets": "Achievement for past months is unknown: the monthly target history starts when it was enabled.",
+      "trendCollector": "Target achievement (past months)",
+      "achievement": "Achievement",
+      "paceTitle": "Each collector against the expected to date",
+      "noTargets": "No targets this month",
+      "leaderboard": "Leaderboard",
+      "rowHint": "Click a row for the collector's card",
+      "collector": "Collector",
+      "score": "Score",
+      "rank": "Rank",
+      "ratingCol": "Rating",
+      "paceCol": "Of expected",
+      "supervisor": "Supervisor",
+      "none": "No collectors in this scope",
+      "close": "Close",
+      "criterion": "Criterion",
+      "weight": "Weight used",
+      "weightOriginal": "Original weight",
+      "indicator": "Indicator",
+      "how": {
+        "payments": "Approved collections / expected to date (target x working days passed / working days in the month).",
+        "calls": "App calls (click-to-call and campaigns) per working day / what the team's top 10% reach ({{calls}} a day); no daily call target is recorded.",
+        "reach": "Calls the client answered / all calls, against {{reach_target}}%.",
+        "ptp": "(kept rate + share of promises with a payment) / 2 for the promises due this month, against {{ptp_target}}%.",
+        "intensity": "Half for call attempts per client ({{attempts_full}} = full), half for notes a day ({{notes_full}} = full).",
+        "attendance": "Working days with a successful login / working days passed.",
+        "system": "Share of the collector's open clients with a note in the last {{system_days}} days."
+      },
+      "rating": {
+        "excellent": "Excellent",
+        "very_good": "Very good",
+        "good": "Good",
+        "needs_improvement": "Needs improvement"
+      },
+      "crit": {
+        "payments": "Payments",
+        "calls": "Productivity (calls)",
+        "reach": "Reach rate",
+        "ptp": "Promises and their quality",
+        "intensity": "Work intensity",
+        "attendance": "Attendance",
+        "system": "System update quality"
+      },
+      "critShort": {
+        "payments": "Payments",
+        "calls": "Calls",
+        "reach": "Reach",
+        "ptp": "Promises",
+        "intensity": "Intensity",
+        "attendance": "Attendance",
+        "system": "Updates"
+      },
+      "ind": {
+        "payments": "{{got}} of the expected {{exp}}",
+        "calls": "{{n}} calls a day (reference {{target}})",
+        "reach": "{{rate}} of calls (target {{target}}%)",
+        "ptp": "kept {{kept}}, with a payment {{paid}} ({{n}} promises due)",
+        "intensity": "{{attempts}} attempts per client, {{notes}} notes a day",
+        "attendance": "{{n}} login days of {{of}} working days",
+        "system": "{{rate}} of open clients noted within {{days}} days"
+      },
+      "dropped": "Criteria with no data in the system were dropped and their weights redistributed: {{list}}",
+      "drop": {
+        "resched": "Rescheduling",
+        "najiz": "Najiz payments",
+        "cooperation": "Commitment and cooperation",
+        "instructions": "Following instructions",
+        "supervision": "Supervision quality",
+        "reports": "Reports",
+        "notes_speed": "Handling remarks",
+        "turnover": "Staff turnover"
+      },
+      "supervisors": "Supervisor cards",
+      "teamOf": "team of {{n}} collectors",
+      "supCrit": {
+        "target": "Monthly target",
+        "quality": "Team quality",
+        "improvement": "Improvement"
+      },
+      "supHow": {
+        "target": "Team collected / team expected to date.",
+        "quality": "Average score of the team's collectors.",
+        "improvement": "The team's pace this month / its achievement last month (unknown when last month's target was not recorded)."
+      },
+      "supLine": "Collected {{got}} of {{target}} · last month {{prev}}",
+      "portfolios": "Cash and today's promises by portfolio",
+      "cash": "Cash",
+      "scheduled": "Scheduled",
+      "promisesToday": "Today's promises",
+      "advanced": "Strong-collector indicators",
+      "advancedHint": "The best in each column is highlighted in green",
+      "adv": {
+        "call_to_ptp": "Call to promise",
+        "kept_rate": "Promises kept",
+        "paid_rate": "Promise to payment",
+        "avg_payment": "Average payment",
+        "calls_per_contact": "Calls per contact",
+        "attempts_per_client": "Attempts per client",
+        "new_files_24h": "New files within 24h"
+      },
+      "methodCollector": "How the collector scorecard is computed",
+      "methodSupervisor": "How the supervisor scorecard is computed",
+      "methodIntro": "Each criterion is scored out of 100 and multiplied by its weight. A criterion unknown for a collector (no target, no calls, no promise due) is left out of their score. Money: approved payments only, credited to the client's current owner.",
+      "ratingRule": "Rating: 90+ excellent, 80+ very good, 70+ good, below that needs improvement. A supervisor is a supervisor user (not a system admin) with at least two collectors in their team."
+    },
+    "aitest": {
+      "nav": "AI calling agent test",
+      "title": "AI calling agent test",
+      "subtitle": "A real call to a number you type, where the AI talks with whoever answers",
+      "notReady": "The AI is not ready for voice calls",
+      "reason": {
+        "ai_policy_required": "No AI data policy is approved: approve one in the AI settings.",
+        "ai_policy_category_denied": "The data policy does not allow \"audio\" and \"transcripts\": allow both in the data policy.",
+        "model_not_set": "The voice model is not set on the server.",
+        "ai_not_configured": "The OpenAI key is not set on the server.",
+        "ai_disabled": "AI is turned off on the server."
+      },
+      "serviceDown": "The AI calling service is not running on the server, so no call can start.",
+      "disclaimer": "A real test call: use your own number or someone who agreed. The agent says it is an automated assistant. Limit {{secs}} seconds per call and {{n}} calls a day. Nothing is recorded on any client.",
+      "setup": "Call setup",
+      "number": "Mobile number",
+      "numberHint": "A Saudi number, e.g. 05XXXXXXXX",
+      "callerId": "Number shown",
+      "autoNumber": "Automatic",
+      "voice": "Voice",
+      "script": "Agent instructions",
+      "scriptHint": "What the agent says and how it behaves. Fixed rules are added: it says it is automated and never asks for secret data.",
+      "start": "Start the call",
+      "stop": "End the call",
+      "resetScript": "Restore the default instructions",
+      "liveCall": "Current call",
+      "pastCall": "Past call",
+      "backToLive": "Back to the current call",
+      "status": "Status",
+      "talk": "Talk time",
+      "noCall": "No call now",
+      "noTranscript": "No transcript yet",
+      "reasonLine": "Reason: {{code}} · PBX answer: {{sip}}",
+      "history": "My test calls",
+      "when": "Time",
+      "turns": "Turns",
+      "noHistory": "No test calls yet",
+      "role": {
+        "agent": "Agent",
+        "client": "Caller"
+      },
+      "state": {
+        "queued": "Waiting",
+        "preparing": "Preparing the AI",
+        "dialing": "Dialling",
+        "ringing": "Ringing",
+        "answered": "In the call"
+      },
+      "result": {
+        "completed": "Ended",
+        "no_answer": "No answer",
+        "busy": "Busy",
+        "congestion": "Could not connect (network)",
+        "unavailable": "Unavailable",
+        "denied": "The PBX refused the call",
+        "cancelled": "Cancelled",
+        "ai_refused": "AI refused (policy or quota)",
+        "ai_failed": "AI error",
+        "sip_failed": "PBX connection error",
+        "service_stopped": "The service stopped",
+        "time_limit": "Time limit reached",
+        "unknown": "Unknown"
+      },
+      "disclaimerNoDaily": "A real test call: use your own number or someone who agreed. The agent says it is an automated assistant. Limit {{secs}} seconds per call. Nothing is recorded on any client.",
+      "code": {
+        "ai_credit_exhausted": "The OpenAI account is out of credit: top it up in the OpenAI billing page",
+        "ai_rate_limited": "OpenAI rate limit reached for now: try again shortly",
+        "ai_key_rejected": "OpenAI rejected the key",
+        "realtime_connect_failed": "Could not connect to the OpenAI voice service"
+      }
+    }
+  },
+  "rca": {
+    "nav": "Employee report",
+    "title": "Employee report",
+    "subtitle": "Daily attendance to the system and answered calls, with charts and weekly totals",
+    "hubDesc": "An employee's daily attendance to the system and answered calls, with charts, tables and weekly totals; download as PDF or Word.",
+    "collector": "Employee",
+    "pickCollector": "Choose an employee",
+    "from": "From",
+    "to": "To",
+    "show": "Show report",
+    "pdf": "Download PDF",
+    "word": "Download Word",
+    "inactive": "inactive",
+    "tooLong": "The period is longer than the limit ({{days}} days).",
+    "empty": "Choose the employee and the period, then \"Show report\"",
+    "hint": "\"Download PDF\" opens the print window: choose \"Save as PDF\". Calls come from the PBX records, attendance from the system login log."
   }
 }

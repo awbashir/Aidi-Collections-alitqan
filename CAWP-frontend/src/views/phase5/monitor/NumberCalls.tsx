@@ -16,15 +16,15 @@ import { CallsTable } from './UserCalls'
 
 const PAGE_SIZE = 50
 
-const NumberCalls = ({ from, to, ext, number }: { from: string; to: string; ext: string; number: string }) => {
+const NumberCalls = ({ from, to, ext, contract, number }: { from: string; to: string; ext: string; contract?: string; number: string }) => {
     const { t } = useTranslation()
     const perms = usePermissions()
     const canListen = !!(perms.clints_callsRecords_play || perms.clints_callsRecords_download)
     const [page, setPage] = useState(1)
-    useEffect(() => setPage(1), [from, to, ext, number])
+    useEffect(() => setPage(1), [from, to, ext, contract, number])
     const q = useV2Query(
-        (signal) => callMonitorApi.calls({ from, to, extension: ext || undefined, number, page, page_size: PAGE_SIZE }, signal),
-        [from, to, ext, number, page]
+        (signal) => callMonitorApi.calls({ from, to, extension: ext || undefined, contract: contract || undefined, number, page, page_size: PAGE_SIZE }, signal),
+        [from, to, ext, contract, number, page]
     )
     const data = q.data
     return (

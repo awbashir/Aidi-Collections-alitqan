@@ -6,6 +6,7 @@ notes and contacts: out-of-scope rows answer 404, never 403, so an id never reve
 """
 from __future__ import annotations
 
+import os
 import re
 import uuid
 
@@ -26,6 +27,7 @@ IN_FLIGHT = ("authorized", "dispatched", "agent_ringing", "agent_answered", "cus
 TERMINAL = ("ended", "failed", "cancelled")
 MODES = ("manual", "click_to_call", "campaign")
 EXTENSION_RE = re.compile(r"^[0-9]{2,6}$")
+CHANNEL_DRIVERS = ("PJSIP", "SIP")
 E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 
 # Permission keys (registered in core/permissions.py by the lead)
@@ -36,6 +38,56 @@ CALLS_MANAGE = "calls_manage"    # calling admin: extensions, windows, blocks, o
 # review (uncertain calls, flags, release a stuck call), others' wrap-ups. calls_manage keeps it all.
 CALLS_SUPERVISE = "calls_supervise"
 SUPERVISE_KEYS = (CALLS_SUPERVISE, CALLS_MANAGE)
+
+
+def channel_driver() -> str:
+    """The channel driver of the agents' extensions: env CALLING_DRIVER, `PJSIP` (default) or `SIP`
+    (chan_sip, e.g. the Alitqan Issabel on Asterisk 11: agent channels `SIP/<ext>-<8 hex>`).
+
+    Read on every call (no cache) by the API (dispatch, monitor, call control) and by the calling
+    service (live snapshot, call-control worker); both must see the same value. Surrounding
+    blanks and case are ignored; unset or blank = PJSIP. Fail-safe: any other value raises
+    ValueError. A misconfigured driver is never guessed: nothing is originated, and the live
+    snapshot is not written, so the monitor reports the snapshot as stale ("unknown"), never as
+    "no calls"."""
+    value = (os.environ.get("CALLING_DRIVER") or "").strip().upper() or "PJSIP"
+    if value not in CHANNEL_DRIVERS:
+        raise ValueError("CALLING_DRIVER must be PJSIP or SIP")
+    return value
+
+
+PBX_EVENT_MODES = ("modern", "legacy")
+
+
+def pbx_events() -> str:
+    """Which AMI event model the PBX speaks: env CALLING_PBX_EVENTS, `modern` (default) or `legacy`.
+
+    modern  Asterisk 12+: the Originate ChannelId is the agent channel's Uniqueid (`cawp-<attempt>`),
+            events carry Linkedid, DialBegin/DialEnd and BridgeEnter/BridgeLeave.
+    legacy  Asterisk <= 11 (the Alitqan Issabel 4, Asterisk 11.25, AMI 1.3, chan_sip): the ChannelId
+            is ignored (Uniqueid "<epoch>.<seq>"), no Linkedid, `Dial` SubEvent Begin/End and
+            `Bridge` Link/Unlink. The agent leg is bound by the Originate's ActionID
+            (OriginateResponse) or the FastAGI hook (services/calling/legacy_correlation.py).
+
+    Read on every call (no cache), like channel_driver(); the API, the calling service and the
+    dialplan policy (`pbx_events`) must agree. Surrounding blanks and case are ignored; unset or
+    blank = modern. Fail-safe: any other value raises ValueError (nothing is originated)."""
+    value = (os.environ.get("CALLING_PBX_EVENTS") or "").strip().lower() or "modern"
+    if value not in PBX_EVENT_MODES:
+        raise ValueError("CALLING_PBX_EVENTS must be modern or legacy")
+    return value
+
+
+def pbx_version_mismatch(banner: str | None, mode: str | None = None) -> bool:
+    """True when the AMI greeting definitely disagrees with CALLING_PBX_EVENTS (`mode`, default the
+    setting); services/calling/ami.version_mismatch."""
+    from services.calling.ami import version_mismatch
+    return version_mismatch(banner, mode or pbx_events())
+
+
+def ami_major(banner: str | None) -> int | None:
+    from services.calling.ami import ami_major as _major
+    return _major(banner)
 
 
 def can_supervise() -> bool:

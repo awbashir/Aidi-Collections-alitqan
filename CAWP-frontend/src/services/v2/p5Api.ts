@@ -11,8 +11,14 @@
  * authorizes and queues; the `calling` service sends it (AMI "Success" = submitted).
  */
 import BaseService from '../BaseService'
-import { V2Error, v2Get, v2Patch, v2Post, v2Put } from './http'
+import { V2Error, v2Get, v2Patch, v2Post, v2Put, v2Request } from './http'
 import type {
+    CampaignSound,
+    OutboundNumber,
+    MessageCall,
+    SoundKind,
+    CalledListing,
+    CaseImportResult,
     CallDetail,
     CallList,
     CallQuery,
@@ -198,14 +204,14 @@ export const callingAdminApi = {
 
 /** Call monitor: live calls and calls by user over time (scope decided by the API). */
 export const callMonitorApi = {
-    live: (q: { extension?: string }, signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', q, signal),
-    stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day'; extension?: string; number?: string }, signal?: AbortSignal) =>
+    live: (q: { extension?: string; contract?: string }, signal?: AbortSignal) => v2Get<MonitorLive>('/v2/calling/monitor/live', q, signal),
+    stats: (q: { from?: string; to?: string; granularity?: 'hour' | 'day'; extension?: string; contract?: string; number?: string }, signal?: AbortSignal) =>
         v2Get<MonitorStats>('/v2/calling/monitor/stats', q, signal),
     /** One user's calls of the period, newest first (page_size max 200). */
-    calls: (q: { from?: string; to?: string; extension?: string; number?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+    calls: (q: { from?: string; to?: string; extension?: string; contract?: string; number?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
         v2Get<MonitorCallsPage>('/v2/calling/monitor/calls', q, signal),
     /** XLSX download with the bearer token: `summary` = the per-user table, `calls` = one row per call. */
-    download: async (kind: 'summary' | 'calls', q: { from?: string; to?: string; extension?: string; number?: string }) =>
+    download: async (kind: 'summary' | 'calls', q: { from?: string; to?: string; extension?: string; contract?: string; number?: string }) =>
         downloadXlsx(kind === 'summary' ? '/v2/calling/monitor/stats/export' : '/v2/calling/monitor/calls/export', q, `call-monitor-${kind}.xlsx`),
 }
 
@@ -319,4 +325,55 @@ export const campaignsApi = {
 
     pool: (id: string, q: { reason?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
         v2Get<PoolListing>(`/v2/campaigns/${enc(id)}/pool`, q, signal),
+
+    /** 2026-10-24: add customers to a customer-list campaign, by national id OR account number. */
+    importCases: (
+        id: string,
+        body: { match_by: 'identity' | 'account'; expected_revision: number } & ({ values: string[] } | { file: File; column?: number }),
+        key: string
+    ) => {
+        if ('file' in body) {
+            const form = new FormData()
+            form.append('match_by', body.match_by)
+            form.append('expected_revision', String(body.expected_revision))
+            if (body.column) form.append('column', String(body.column))
+            form.append('file', body.file)
+            return v2Request<CaseImportResult>(`/v2/campaigns/${enc(id)}/cases/import`, { method: 'post', data: form, idempotencyKey: key })
+        }
+        return v2Post<CaseImportResult>(`/v2/campaigns/${enc(id)}/cases/import`, body, key)
+    },
+
+    removeCases: (id: string, body: { expected_revision: number; case_ids: string[]; reason?: string }, key: string) =>
+        v2Post<{ removed: string[]; revision: number }>(`/v2/campaigns/${enc(id)}/cases/remove`, body, key),
+
+    restoreCases: (id: string, body: { expected_revision: number; case_ids: string[]; reason?: string }, key: string) =>
+        v2Post<{ restored: string[]; revision: number }>(`/v2/campaigns/${enc(id)}/cases/restore`, body, key),
+
+    called: (id: string, q: { answered?: '0' | '1'; page?: number; page_size?: number }, signal?: AbortSignal) =>
+        v2Get<CalledListing>(`/v2/campaigns/${enc(id)}/called`, q, signal),
+
+    /* 2026-10-25 (0088): message campaigns */
+    outboundNumbers: (signal?: AbortSignal) =>
+        v2Get<{ items: OutboundNumber[] }>('/v2/campaigns/outbound-numbers', undefined, signal),
+
+    sounds: (id: string, signal?: AbortSignal) =>
+        v2Get<{ items: CampaignSound[] }>(`/v2/campaigns/${enc(id)}/sounds`, undefined, signal),
+
+    uploadSound: (id: string, kind: SoundKind, file: File, key: string) => {
+        const form = new FormData()
+        form.append('file', file)
+        return v2Request<CampaignSound>(`/v2/campaigns/${enc(id)}/sounds/${enc(kind)}`, { method: 'post', data: form, idempotencyKey: key })
+    },
+
+    deleteSound: (id: string, kind: SoundKind, key: string) =>
+        v2Request<{ kind: SoundKind; deleted: boolean }>(`/v2/campaigns/${enc(id)}/sounds/${enc(kind)}`, { method: 'delete', idempotencyKey: key }),
+
+    /** The converted WAV as an object URL for an <audio> preview (the caller revokes it). */
+    soundUrl: async (id: string, kind: SoundKind) => {
+        const res = await BaseService({ url: `/v2/campaigns/${enc(id)}/sounds/${enc(kind)}/audio`, method: 'get', responseType: 'blob' })
+        return URL.createObjectURL(res.data as Blob)
+    },
+
+    messageCalls: (id: string, q: { result?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+        v2Get<Paged<MessageCall>>(`/v2/campaigns/${enc(id)}/message-calls`, q, signal),
 }

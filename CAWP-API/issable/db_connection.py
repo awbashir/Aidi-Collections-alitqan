@@ -30,6 +30,31 @@ _DAY_TOKEN = re.compile(r"^(20[0-9]{2})(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$"
 _EPOCH_NAME = re.compile(r"-(1[0-9]{9})\.[0-9]+\.[A-Za-z0-9]+$")
 _RIYADH = ZoneInfo("Asia/Riyadh")
 
+# 2026-10-25 (PBX CPU): the Issabel asteriskcdrdb.cdr has NO calldate index (only uniqueid), so
+# every date filter read all 2.66M rows, ~11 times a minute from the client notes page. On an
+# Asterisk <= 11 CDR (no linkedid column) the uniqueid is "<epoch>.<seq>" of the channel start,
+# so an added uniqueid range (the same days, an hour wider on each side; string comparison is
+# exact while epochs have 10 digits) uses that index. The original DATE() predicate stays, so the
+# rows are exactly the same. Asterisk 12+ CDRs (linkedid, Originate ChannelIds `cawp-...` as
+# uniqueid) get no bound. Cached per process. The bounds are computed here and sent as
+# parameters: a value built in SQL (CAST(... AS CHAR)) carries the connection's collation and the
+# Issabel column's differs (utf8mb4_unicode_ci) -> "Illegal mix of collations".
+_CDR_EPOCH_UNIQUEID: dict = {}
+_UID_BOUND = "uniqueid >= %s AND uniqueid < %s AND "
+
+
+def _pbx_day(value) -> _dt.date | None:
+    """The date part of a legacy date argument ('YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS'), else None."""
+    try:
+        return _dt.date.fromisoformat(str(value).strip()[:10])
+    except ValueError:
+        return None
+
+
+def _epoch(day: _dt.date) -> int:
+    from services.reports_v2_cdr import pbx_zone
+    return int(_dt.datetime.combine(day, _dt.time.min, pbx_zone()).timestamp())
+
 
 def _day_dir(file_name, calldate=None):
     """'YYYY/MM/DD' for a bare recording name, or None."""
@@ -105,6 +130,33 @@ class Issable_db():
         except Exception:  # noqa: BLE001
             pass
 
+    def _epoch_uniqueid(self) -> bool:
+        """Whether the CDR's uniqueid is the epoch-based Asterisk <= 11 one (no linkedid column)."""
+        if "cdr" not in _CDR_EPOCH_UNIQUEID:
+            cur = None
+            try:
+                cur = self._cursor()
+                cur.execute("SHOW COLUMNS FROM asteriskcdrdb.cdr LIKE %s", ("linkedid",))
+                _CDR_EPOCH_UNIQUEID["cdr"] = not cur.fetchall()
+            except Exception as error:  # noqa: BLE001 - no bound then (the query itself reports)
+                log.warning("CDR schema check failed: %s", error)
+                return False
+            finally:
+                if cur is not None:
+                    try:
+                        cur.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+        return _CDR_EPOCH_UNIQUEID["cdr"]
+
+    def _uid_bound(self, first_day, last_day) -> tuple[str, tuple]:
+        """(the uniqueid range predicate + " AND ", its parameters) covering the PBX days
+        first_day .. last_day (inclusive) an hour wider on each side, or ("", ())."""
+        lo, hi = _pbx_day(first_day), _pbx_day(last_day)
+        if lo is None or hi is None or not self._epoch_uniqueid():
+            return "", ()
+        return _UID_BOUND, (str(_epoch(lo) - 3600), str(_epoch(hi + _dt.timedelta(days=1)) + 3600))
+
     def _query(self, sql, params=()):
         """Run a parameterized query and return a list of dicts ([] on any failure)."""
         cur = None
@@ -146,24 +198,29 @@ class Issable_db():
         # clid: the caller ID of the caller. It is a varchar type and has the format "Name <Number>"
         # src:  the source of the call. It is a varchar type and has the format "Number"
         # dst: the destination of the call. It is a varchar type and has the format "Number"
+        from services.reports_v2_cdr import pbx_zone
+        today = _dt.datetime.now(pbx_zone()).date()
+        bound, bparams = self._uid_bound(today, today)
         return self._query(
             """
             SELECT * FROM asteriskcdrdb.cdr
-            WHERE DATE(calldate) = CURDATE()
+            WHERE {bound}DATE(calldate) = CURDATE()
             ORDER BY calldate DESC
-            """
+            """.format(bound=bound),
+            bparams,
         )
 
     def GetCallsByDate(self, start_date, end_date):
         # start_date / end_date come unvalidated from request.args; parameterized so they
         # cannot be turned into a UNION SELECT against asteriskcdrdb (review S7).
+        bound, bparams = self._uid_bound(start_date, end_date)
         return self._query(
             """
             SELECT * FROM asteriskcdrdb.cdr
-            WHERE DATE(calldate) BETWEEN %s AND %s AND src NOT LIKE '+%%' AND src NOT LIKE '0%%'
+            WHERE {bound}DATE(calldate) BETWEEN %s AND %s AND src NOT LIKE '+%%' AND src NOT LIKE '0%%'
             ORDER BY calldate DESC
-            """,
-            (start_date, end_date),
+            """.format(bound=bound),
+            bparams + (start_date, end_date),
         )
 
     def GetCallsFromCallCenter(self, start_date, end_date, mobile_numbers):
@@ -193,13 +250,14 @@ class Issable_db():
                 cr.recordingfile,
                 c.uniqueid
             FROM call_center.calls c
-            JOIN call_center.call_recording cr ON c.uniqueid = cr.uniqueid
+            JOIN call_center.call_recording cr ON cr.id_call_outgoing = c.id AND cr.uniqueid = c.uniqueid
             JOIN call_center.agent a ON c.id_agent = a.id
-            WHERE DATE(c.start_time) BETWEEN %s AND %s
+            WHERE c.start_time >= DATE(%s) AND c.start_time < DATE(%s) + INTERVAL 1 DAY
+            AND DATE(c.start_time) BETWEEN %s AND %s
             AND {mobile_filter}
             ORDER BY c.start_time DESC
         """.format(mobile_filter=mobile_filter)
-        return self._query(sql, (start_date, end_date, *mobile_params))
+        return self._query(sql, (start_date, end_date, start_date, end_date, *mobile_params))
 
     def GetAllCallsFromCallCenter(self, start_date, end_date):
         """
@@ -223,12 +281,13 @@ class Issable_db():
                 cr.recordingfile,
                 c.uniqueid
             FROM call_center.calls c
-            JOIN call_center.call_recording cr ON c.uniqueid = cr.uniqueid
+            JOIN call_center.call_recording cr ON cr.id_call_outgoing = c.id AND cr.uniqueid = c.uniqueid
             JOIN call_center.agent a ON c.id_agent = a.id
-            WHERE DATE(c.start_time) BETWEEN %s AND %s
+            WHERE c.start_time >= DATE(%s) AND c.start_time < DATE(%s) + INTERVAL 1 DAY
+            AND DATE(c.start_time) BETWEEN %s AND %s
             ORDER BY c.start_time DESC
             """,
-            (start_date, end_date),
+            (start_date, end_date, start_date, end_date),
         )
 
     def GetCombinedCalls(self, start_date, end_date, mobile_numbers):
@@ -269,12 +328,13 @@ class Issable_db():
         mobile_filter, mobile_params = self._mobile_like_clause(mobile_numbers, ["dst", "src"])
         if mobile_filter is None:
             return []
+        bound, bparams = self._uid_bound(start_date, end_date)
         sql = """
             SELECT * FROM asteriskcdrdb.cdr
-            WHERE DATE(calldate) BETWEEN %s AND %s AND {mobile_filter}
+            WHERE {bound}DATE(calldate) BETWEEN %s AND %s AND {mobile_filter}
             ORDER BY calldate DESC
-        """.format(mobile_filter=mobile_filter)
-        return self._query(sql, (start_date, end_date, *mobile_params))
+        """.format(bound=bound, mobile_filter=mobile_filter)
+        return self._query(sql, bparams + (start_date, end_date, *mobile_params))
 
     def genrate_call_path(self, file_name, calldate=None):
         """

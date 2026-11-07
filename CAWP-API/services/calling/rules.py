@@ -278,6 +278,11 @@ def evaluate(*, actor_id, case_id, contact_id, own_attempt=None, extension=None,
     which = active_reservation_conflict(actor_id, case_id, own["extension"], own_attempt=own_attempt)
     if which:
         raise RuleRefused("calling_reserved", {"reserved": which})
+    if sess().execute(text("""SELECT EXISTS (SELECT 1 FROM message_calls WHERE case_id = CAST(:c AS uuid)
+                                 AND state IN ('sending', 'dialing', 'answered', 'transferring', 'talking'))"""),
+                      {"c": str(case_id)}).scalar():
+        # 2026-10-25 (0088): a message campaign is calling this client right now (a case-level conflict)
+        raise RuleRefused("calling_reserved", {"reserved": "case", "by": "message_call"})
     return Plan(actor_id=str(actor_id), case_id=str(case_id), contact_id=str(contact_id), destination=destination,
                 extension=own["extension"], checked_at=now.isoformat(), outstanding=f"{balance:.2f}", window=window)
 

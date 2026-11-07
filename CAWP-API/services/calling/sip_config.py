@@ -15,6 +15,15 @@ leaves the server: browsers only get short-lived TURN credentials derived from i
     SIP_INTERNAL_DIAL_PATTERN    what the dialpad and transfer accept (default ^[0-9]{3,6}$: internal
                                  extensions only; an E.164 or national number never matches)
     SIP_ECHO_TEST_EXTENSION      an echo-test extension for the diagnostics panel (optional)
+    SIP_CREDENTIAL_MODE          realtime (default: per-issue credentials checked by the PBX through the
+                                 PJSIP realtime view, 0056) | static (chan_sip PBX, e.g. Issabel 4 /
+                                 Asterisk 11: the extension's own WebRTC password, kept encrypted by the
+                                 app, 0083; needs SIP_STATIC_SECRET_KEY and the PBX provisioning API)
+    SIP_RTCP_MUX_POLICY          require (default) | negotiate: the browser's RTCPeerConnection rtcpMuxPolicy.
+                                 Asterisk 11 has no rtcp-mux; Chrome's default `require` then never
+                                 connects the media (measured on the Alitqan Issabel, Chrome 155), while
+                                 `negotiate` gives two-way Opus over DTLS 1.2 (the softphone then also uses
+                                 bundlePolicy `balanced`: `max-bundle` makes Chrome reject Asterisk 11's answer)
     SIP_EXTERNAL_DIAL_PATTERN    opt-in: outside numbers the dialpad may call directly through the PBX's
                                  outbound routes (unset = click-to-call only, the default). Such calls
                                  are not case-linked attempts: no calling-window check, no wrap-up;
@@ -50,6 +59,8 @@ class SipSettings:
     internal_dial_pattern: str
     echo_test_extension: str | None
     external_dial_pattern: str | None = None
+    credential_mode: str = "realtime"
+    rtcp_mux_policy: str = "require"
 
 
 def _int(name: str, default: int, lo: int, hi: int) -> int:
@@ -106,8 +117,15 @@ def load() -> SipSettings:
             re.compile(external_pattern)
         except re.error:
             external_pattern = None
+    mode = (os.getenv("SIP_CREDENTIAL_MODE") or "realtime").strip().lower()
+    if mode not in ("realtime", "static"):
+        raise ApiError(503, NOT_CONFIGURED, "SIP_CREDENTIAL_MODE must be realtime or static",
+                       {"setting": "SIP_CREDENTIAL_MODE"})
+    mux = (os.getenv("SIP_RTCP_MUX_POLICY") or "require").strip().lower()
+    if mux not in ("require", "negotiate"):
+        mux = "require"
     return SipSettings(
-        wss_url=wss, domain=domain, realm=realm, ttl_seconds=ttl, register_expires=register_expires,
+        credential_mode=mode, rtcp_mux_policy=mux, wss_url=wss, domain=domain, realm=realm, ttl_seconds=ttl, register_expires=register_expires,
         issue_limit=_int("SIP_ISSUE_LIMIT", 30, 1, 1000), stun_urls=_urls("SIP_STUN_URLS"),
         turn_urls=_urls("SIP_TURN_URLS") if turn_secret else (), turn_secret=turn_secret,
         internal_dial_pattern=pattern, echo_test_extension=echo, external_dial_pattern=external_pattern)

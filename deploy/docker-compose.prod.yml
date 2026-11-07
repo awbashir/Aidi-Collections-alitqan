@@ -4,7 +4,8 @@
 # Differences from the dev stack:
 #   * no host ports for db / redis / api: only the proxy (80/443) is published;
 #   * the code is baked into the images (no source bind mounts, no dump mount);
-#   * the Postgres password comes from deploy/prod.env, and Postgres gets more memory.
+#   * the Postgres password comes from deploy/prod.env, and Postgres gets more memory
+#     (sized for the Alitqan server 10.10.10.150: 6 CPU, 8 GB RAM).
 # Paths here are relative to the project directory (the first -f file's directory).
 services:
   db:
@@ -13,17 +14,17 @@ services:
     command:
       - postgres
       - -c
-      - shared_buffers=4GB
+      - shared_buffers=2GB
       - -c
-      - effective_cache_size=16GB
+      - effective_cache_size=5GB
       - -c
       - work_mem=32MB
       - -c
-      - maintenance_work_mem=1GB
+      - maintenance_work_mem=512MB
       - -c
       - random_page_cost=1.1
       - -c
-      - max_connections=200
+      - max_connections=150
       - -c
       - jit=off
     # Published only for the PBX's realtime SIP-auth lookup (view pbx_ps_auths, role

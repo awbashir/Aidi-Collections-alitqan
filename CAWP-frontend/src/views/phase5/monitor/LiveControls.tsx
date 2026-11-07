@@ -4,9 +4,11 @@
  * A supervisor (calls_supervise or calls_manage) with an extension can LISTEN to an agent's
  * connected call in their scope (SuperAdmin every extension, a supervisor their team's; the API
  * refuses the rest), then switch to WHISPER (only the agent hears them) or JOIN (barge: everyone
- * hears), and stop. The PBX rings the supervisor's own extension and the in-app softphone answers
- * that call by itself (it carries our X-CAWP-Control tag); nobody hears the supervisor while
- * listening. Every start, mode change and stop is audited on the server.
+ * hears), and stop. The PBX rings the supervisor's own extension: with the in-app softphone
+ * switched on (0082) the softphone opens and answers that call by itself (it carries our
+ * X-CAWP-Control tag); with it off (the default) the supervisor's own phone rings and they pick
+ * it up. Nobody hears the supervisor while listening. Every start, mode change and stop is
+ * audited on the server.
  */
 import classNames from 'classnames'
 import { useTranslation } from 'react-i18next'
@@ -78,7 +80,11 @@ export const ListenPanel = ({ listen }: { listen: ListenState }) => {
         : leg === 'up'
         ? t('p10.callctl.monitor.connected')
         : leg === 'ringing'
-        ? t('p10.callctl.monitor.ringingYou', { ext: c.from.extension })
+        ? listen.softphone === false
+            ? t('p10.callctl.monitor.ringingDesk', { ext: c.from.extension })
+            : listen.softphone
+            ? t('p10.callctl.monitor.ringingSoftphone', { ext: c.from.extension })
+            : t('p10.callctl.monitor.ringingYou', { ext: c.from.extension })
         : t('p10.callctl.sending')
     const refused = c.last_op && ['refused', 'rejected', 'unacknowledged', 'expired'].includes(c.last_op.state)
     return (

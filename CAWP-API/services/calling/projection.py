@@ -8,10 +8,23 @@ depend on the order in which events arrived.
 
 Facts and rules (docs/phase5-spec.md "Evidence, not inference"):
 
-* the AGENT leg is the app-issued channel `cawp-<attempt>` (the Originate's ChannelId);
+* the AGENT leg is the app-issued channel `cawp-<attempt>` (the Originate's ChannelId); on
+  Asterisk <= 11 (CALLING_PBX_EVENTS=legacy, which ignores ChannelId) the leg bound by the
+  Originate's ActionID or the FastAGI hook (call_legs role agent; services/calling/legs.py);
 * a CUSTOMER leg is the destination of a DialBegin whose caller is the agent leg. Anything
   else linked to the attempt is `other`; a second customer leg or a bridge with more than
-  the two legs is an ambiguous topology -> `uncertain`;
+  the two legs is an ambiguous topology -> `uncertain`. One attempt dials the customer ONCE:
+  the dialplan policy `trunks` selects one trunk before its single Dial (never a retry on another
+  trunk), so a second customer leg is always `multiple_customer_legs`;
+* legacy events (services/calling/legacy_events.py): a `Dial` End has no DestUniqueid, so it
+  is the status of the agent's latest customer dial and never by itself an answer (the customer
+  answered = its own Newstate Up); a `Bridge` Link is a two-member bridge "<uidA>|<uidB>", and a
+  Link of a leg with a channel that is neither leg is an ambiguous topology (unless the call was
+  handed over by call control); an Unlink of the two legs without their Link is
+  `bridge_unobserved` (never "not bridged"); a Masquerade/Rename of a leg, or the Hangup of its
+  `<ZOMBIE>` (Asterisk 11 swaps the channel underneath: Redirect, hold, transfer, pickup) is
+  `leg_masqueraded`: the leg's later events no longer carry its Uniqueid, so its end and duration
+  cannot be read from the evidence (reconciliation / review decide);
 * agent ringing / answered: agent Newstate 4-5 / 6 (or OriginateResponse Success);
 * customer answered: the customer leg's Newstate 6 or DialEnd ANSWER for it;
 * BRIDGED (a conversation) needs ALL of: the attempt passed the gate (an AGI `allow` or the
@@ -73,6 +86,8 @@ DIAL_STATUS_REASON = {"BUSY": "customer_busy", "NOANSWER": "customer_no_answer",
 AGENT_CAUSE_REASON = {17: "agent_busy", 18: "agent_no_answer", 19: "agent_no_answer", 21: "agent_rejected"}
 # OriginateResponse Reason (Asterisk AST_CONTROL_*): 1 hangup, 3 ring timeout, 5 busy, 8 congestion
 ORIGINATE_REASON = {1: "agent_rejected", 3: "agent_no_answer", 5: "agent_busy", 8: "agent_unavailable"}
+# Asterisk 11 events that swap a leg's channel (legacy_events.py: a `<ZOMBIE>` Hangup is MasqueradeZombie)
+MASQUERADE_EVENTS = frozenset({"Masquerade", "Rename", "MasqueradeZombie"})
 # CollectionsCall states of the call-control dialplan (services/calling/callctl_dialplan.py)
 TRANSFER_STATES = frozenset({"transfer_blind", "transferred"})
 HANDOVER_STATES = frozenset({"transfer_blind", "transferred", "customer_on_hold", "conference"})
@@ -167,19 +182,20 @@ def _order(e):
     return (ts is None, ts or 0, e.get("id") or 0)
 
 
-def derive(attempt_id: str, events, agi=()) -> Facts:
+def derive(attempt_id: str, events, agi=(), agent: str | None = None, *, agent_conflict: bool = False) -> Facts:
     """Pure: stored events (dicts: id, event, state, pbx_ts, uniqueid, linkedid, payload
-    [, received_at]) + AGI decisions (dicts: decision, reason) -> Facts."""
-    agent = f"cawp-{attempt_id}"
+    [, received_at]) + AGI decisions (dicts: decision, reason) -> Facts. `agent` is the agent
+    leg's Uniqueid (default the app-issued `cawp-<attempt>`; Asterisk 11: the bound leg);
+    `agent_conflict`: more than one agent leg was bound (ambiguous)."""
+    agent = agent or f"cawp-{attempt_id}"
     facts = Facts(agent=agent)
     evs = sorted((dict(e) for e in events), key=_order)
     for e in evs:
         e["payload"] = e.get("payload") or {}
     # pass 1: which channels are customer legs (DialBegin from the agent leg)
     for e in evs:
-        p = e["payload"]
         if e["event"] == "DialBegin" and e.get("uniqueid") == agent:
-            dest = p.get("DestUniqueid")
+            dest = e["payload"].get("DestUniqueid")
             if dest and dest != agent and dest not in facts.customer:
                 facts.customer[dest] = Leg(dest, dial_ts=_ts(e))
     facts.agent_leg = Leg(agent)
@@ -212,6 +228,7 @@ def derive(attempt_id: str, events, agi=()) -> Facts:
             dest, status = p.get("DestUniqueid"), (p.get("DialStatus") or "").upper() or None
             if status:
                 facts.dial_status = status
+            # an explicit DestUniqueid only (Asterisk 12+): an Asterisk 11 Dial End names no leg
             if dest in facts.customer and status == "ANSWER" and facts.customer[dest].answered is None:
                 facts.customer[dest].answered = ts
         elif ev == "BridgeEnter" and leg is not None:
@@ -228,6 +245,19 @@ def derive(attempt_id: str, events, agi=()) -> Facts:
         elif ev == "Hangup" and leg is not None:
             if leg.hangup is None:
                 leg.hangup, leg.cause = ts, _int(p.get("Cause"))
+        elif ev in MASQUERADE_EVENTS and leg is not None:
+            facts.ambiguity = facts.ambiguity or "leg_masqueraded"
+        elif ev == "OriginateResponse" and p.get("correlated_by") == "action_id":
+            # Asterisk 11: attributed by the Originate's ActionID (legacy_correlation.py); a failure
+            # names no channel (Uniqueid <null>)
+            if (p.get("binding") or "").startswith("refused:"):
+                facts.ambiguity = facts.ambiguity or p["binding"][len("refused:"):]
+            elif p.get("Response") == "Success" and uid != agent:
+                facts.ambiguity = facts.ambiguity or "agent_leg_conflict"
+            elif facts.originate is None:
+                facts.originate = (p.get("Response"), _int(p.get("Reason")), ts)
+                if p.get("Response") == "Success" and facts.agent_answered is None:
+                    facts.agent_answered = ts
         elif ev == "OriginateResponse" and uid == agent and facts.originate is None:
             facts.originate = (p.get("Response"), _int(p.get("Reason")), ts)
             if p.get("Response") == "Success" and facts.agent_answered is None:
@@ -246,8 +276,36 @@ def derive(attempt_id: str, events, agi=()) -> Facts:
                 facts.agent_leg.hangup = ts
                 facts.agent_leg.cause = _int(p.get("Cause"))
     facts.gate_passed = facts.agi_allow or "authorized" in facts.user_states
+    if agent_conflict:
+        facts.ambiguity = facts.ambiguity or "agent_leg_conflict"
     _conclude(facts)
     return facts
+
+
+def _customer_leg(f: Facts):
+    """The call's customer leg: the only one. None = several (ambiguous: one attempt dials the
+    customer once; the `trunks` policy selects a trunk before its one Dial and never retries)."""
+    legs = list(f.customer.values())
+    return legs[0] if len(legs) == 1 else None
+
+
+def _unobserved_legacy_bridge(a: Leg, c: Leg | None) -> bool:
+    """Asterisk 11: both legs left a two-party bridge ("<uidA>|<uidB>") that we never saw them
+    enter (the Link was lost): whether they talked, and for how long, is unknown."""
+    if c is None:
+        return False
+    left = {b for b, _t in a.leaves if b and "|" in b} & {b for b, _t in c.leaves if b and "|" in b}
+    entered = {b for b, _t, _m in a.enters} & {b for b, _t, _m in c.enters}
+    return bool(left - entered)
+
+
+def _foreign_legacy_bridge(f: Facts, c: Leg | None) -> bool:
+    """An Asterisk 11 two-party bridge ("<uidA>|<uidB>") of the agent or customer leg with a
+    channel that is neither leg (call control's hand-over excepted)."""
+    if HANDOVER_STATES & set(f.user_states):
+        return False
+    mine = {bid for bid, _t, _m in f.agent_leg.enters} | ({bid for bid, _t, _m in c.enters} if c else set())
+    return any(bid and "|" in bid and bid in f.other_bridges for bid in mine)
 
 
 def _bridge_overlap(a: Leg, c: Leg):
@@ -293,10 +351,13 @@ def _first_to_hang_up(c: Leg, a: Leg) -> str:
 
 def _conclude(f: Facts) -> None:
     a = f.agent_leg
-    if len(f.customer) > 1:
+    c = _customer_leg(f) if f.customer else None
+    if f.customer and c is None:
         f.ambiguity = "multiple_customer_legs"
-    if f.customer:
         c = next(iter(f.customer.values()))
+    if _foreign_legacy_bridge(f, c):
+        f.ambiguity = f.ambiguity or "bridge_topology_ambiguous"
+    if f.customer:
         f.customer_dialing = c.dial_ts
         f.customer_answered = c.answered
         overlap = _bridge_overlap(a, c)
@@ -310,6 +371,8 @@ def _conclude(f: Facts) -> None:
                 f.bridge_end = end
     elif "customer_dialing" in f.user_states and f.gate_passed:
         f.customer_dialing = f.user_states["customer_dialing"][0]
+    if _unobserved_legacy_bridge(a, c):
+        f.ambiguity = f.ambiguity or "bridge_unobserved"
 
     agent_gone = a.hangup is not None
     if f.ambiguity:
@@ -329,6 +392,9 @@ def _conclude(f: Facts) -> None:
         f.hangup_cause = a.cause
         if "denied" in f.user_states or (f.agi_deny and not f.agi_allow):
             f.terminal, f.reason = "failed", "authorization_denied"
+        elif f.gate_passed and "no_trunk" in f.user_states:
+            # the `trunks` dialplan found no reachable trunk and hung up without any Dial
+            f.terminal, f.reason = "failed", "no_trunk_available"
         elif f.gate_passed:
             # The gate allowed a customer dial. Without a customer leg the call is over only when
             # the agent's own hangup handler says no Dial ran (empty DIALSTATUS, no customer_dialing).
@@ -345,7 +411,6 @@ def _conclude(f: Facts) -> None:
             f.terminal = "failed"
             f.reason = AGENT_CAUSE_REASON.get(a.cause, "agent_unavailable")
         return
-    c = next(iter(f.customer.values()))
     handed_over = bool(HANDOVER_STATES & set(f.user_states)) and f.bridged is not None
     if handed_over and agent_gone and (c.hangup is None or a.hangup <= c.hangup):
         # call control: the collector's part ends with the agent's leg (the customer may talk on)
@@ -390,8 +455,10 @@ def load(session, attempt_id, epoch):
 
 
 def facts_for(session, attempt_id, epoch) -> Facts:
+    from services.calling.legs import agent_uids
     events, agi = load(session, attempt_id, epoch)
-    return derive(str(attempt_id), events, agi)
+    agents = agent_uids(session, attempt_id, epoch)
+    return derive(str(attempt_id), events, agi, agents[0] if agents else None, agent_conflict=len(agents) > 1)
 
 
 def walk(src: str, dst: str) -> list[str] | None:
@@ -589,7 +656,8 @@ def project(session, attempt_id, *, trigger_event_id=None) -> dict | None:
 PROJECTION_REASONS = frozenset({
     *DIAL_STATUS_REASON.values(), *AGENT_CAUSE_REASON.values(), *ORIGINATE_REASON.values(),
     "agent_unavailable", "authorization_denied", "agent_hung_up_before_dial", "agent_hung_up",
-    "customer_hung_up", "customer_not_answered", "customer_answer_not_observed", "transferred"})
+    "customer_hung_up", "customer_not_answered", "customer_answer_not_observed", "transferred",
+    "no_trunk_available"})
 
 
 def _refinable(current, new) -> bool:

@@ -74,6 +74,9 @@ NEW_PERMISSIONS: tuple[PermissionKey, ...] = (
     # Phase 4: reports without a legacy screen
     PermissionKey("reports_performance", _RECOVERY, "Performance reports", "تقارير الأداء"),
     PermissionKey("reports_calls", _RECOVERY, "Call reports", "تقارير المكالمات"),
+    # 2026-11-04: report center builders (docs/report-builder-plan.md)
+    PermissionKey("reports_bi", _RECOVERY, "Self-service BI (scoped)", "منشئ التقارير الذاتي (ضمن النطاق)"),
+    PermissionKey("reports_sql", _RECOVERY, "SQL builder (all data, admins)", "منشئ استعلامات SQL (كل البيانات، للمدراء)"),
     # Phase 5: human calling
     PermissionKey("calls", _DAILY, "Calls and call log", "المكالمات وسجلها"),
     PermissionKey("calls_make", _DAILY, "Make calls (click-to-call, softphone)", "إجراء المكالمات"),

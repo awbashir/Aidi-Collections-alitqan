@@ -115,6 +115,74 @@ def _settings(raw, base: dict) -> dict:
     return out
 
 
+MAX_ENDS_AT_DAYS = 366
+
+
+def _ends_at(body):
+    """2026-10-25 (0087): `ends_at` = an ISO-8601 date-time with an offset in the future (at most
+    MAX_ENDS_AT_DAYS ahead), or null (no limit)."""
+    raw = body.get("ends_at")
+    if raw is None:
+        return None
+    try:
+        v = _dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        v = None
+    if v is None or v.tzinfo is None:
+        raise _err(422, VALIDATION_FAILED, "ends_at must be an ISO-8601 date-time with an offset", {"ends_at": "invalid"})
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if v <= now:
+        raise _err(422, VALIDATION_FAILED, "ends_at must be in the future", {"ends_at": "past"})
+    if v > now + _dt.timedelta(days=MAX_ENDS_AT_DAYS):
+        raise _err(422, VALIDATION_FAILED, f"ends_at must be within {MAX_ENDS_AT_DAYS} days", {"ends_at": "too_far"})
+    return v
+
+
+MESSAGE_KEYS = ("max_concurrent", "message_transfer", "message_notes", "message_plays", "message_caller_ids")
+
+
+def _message_fields(body, *, kind: str, base: dict | None = None) -> dict:
+    """2026-10-25 (0088): max_concurrent (1..20), message_transfer (bool), message_notes (see
+    services/calling/message_campaign.validate_notes); 2026-10-29 (0089): message_plays (1..5);
+    2026-10-31 (0091): message_caller_ids (outbound_numbers, rotated; empty = automatic); only for kind `message`."""
+    from services.calling import message_campaign as MC
+    base = base or {"max_concurrent": 5, "message_transfer": True, "message_notes": None, "message_plays": 2,
+                    "message_caller_ids": []}
+    keys = set(MESSAGE_KEYS) & set(body)
+    if kind != "message":
+        if keys:
+            raise _err(422, VALIDATION_FAILED, f"{', '.join(sorted(keys))} apply to message campaigns only",
+                       {k: "not_applicable" for k in keys})
+        return dict(base)
+    out = dict(base)
+    if "max_concurrent" in body:
+        v = body["max_concurrent"]
+        if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 20:
+            raise _err(422, VALIDATION_FAILED, "max_concurrent must be an integer 1..20", {"max_concurrent": "invalid"})
+        out["max_concurrent"] = v
+    if "message_transfer" in body:
+        if not isinstance(body["message_transfer"], bool):
+            raise _err(422, VALIDATION_FAILED, "message_transfer must be true or false", {"message_transfer": "invalid"})
+        out["message_transfer"] = body["message_transfer"]
+    if "message_plays" in body:
+        v = body["message_plays"]
+        if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 5:
+            raise _err(422, VALIDATION_FAILED, "message_plays must be an integer 1..5", {"message_plays": "invalid"})
+        out["message_plays"] = v
+    if "message_caller_ids" in body:
+        out["message_caller_ids"] = MC.validate_caller_ids(body["message_caller_ids"])
+    if "message_notes" in body:
+        out["message_notes"] = MC.validate_notes(body["message_notes"])
+    return out
+
+
+def _fill_random(body) -> bool:
+    v = body.get("fill_random", False)
+    if not isinstance(v, bool):
+        raise _err(422, VALIDATION_FAILED, "fill_random must be true or false", {"fill_random": "invalid"})
+    return v
+
+
 def _name(body) -> str:
     v = body.get("name")
     if not isinstance(v, str) or not v.strip():
@@ -169,9 +237,22 @@ def _team_sql() -> tuple[str, dict]:
         return "TRUE", {}
     team = sorted(set(scope.user_ids or []) | {uid})
     params["v_team"] = team
+    # 2026-10-31 (customer request): a supervisor also reaches the campaigns of their contracts:
+    # the pool's contracts or portfolios, or a customer on the campaign's list
+    contracts = ""
+    if scope.contract_ids:
+        params["v_cids"] = sorted(scope.contract_ids)
+        contracts = (""" OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(coalesce(cp.pool -> 'contract_ids', '[]')) vc
+                          WHERE vc = ANY(CAST(:v_cids AS text[])))
+             OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(coalesce(cp.pool -> 'portfolio_ids', '[]')) vp
+                          JOIN portfolios vpf ON vpf.id::text = vp
+                         WHERE vpf.contract_id::text = ANY(CAST(:v_cids AS text[])))
+             OR EXISTS (SELECT 1 FROM campaign_list_cases vl JOIN clints vlc ON vlc.id = vl.case_id
+                          JOIN portfolios vlp ON vlp.id = vlc.portfolios_id
+                         WHERE vl.campaign_id = cp.id AND vlp.contract_id::text = ANY(CAST(:v_cids AS text[])))""")
     return (f"({member} OR cp.created_by = ANY(CAST(:v_team AS uuid[])) OR EXISTS ("
             "SELECT 1 FROM campaign_members tm WHERE tm.campaign_id = cp.id "
-            "AND tm.user_id = ANY(CAST(:v_team AS uuid[]))))"), params
+            f"AND tm.user_id = ANY(CAST(:v_team AS uuid[]))){contracts})"), params
 
 
 def load(campaign_id, *, lock: str | None = None, manage: bool = False) -> dict:
@@ -210,8 +291,20 @@ def campaign_view(c: dict) -> dict:
         "updated_at": iso(c["updated_at"]), "started_at": iso(c["started_at"]), "paused_at": iso(c["paused_at"]),
         "drain_requested_at": iso(c["drain_requested_at"]), "stopped_at": iso(c["stopped_at"]),
         "stop_reason": c["stop_reason"], "members": {"active": int(counts["active"]), "total": int(counts["total"])},
+        "ends_at": iso(c.get("ends_at")), "fill_random": bool(c.get("fill_random")),   # 2026-10-25 (0087)
+        "kind": c.get("kind") or "agent",                                             # 2026-10-25 (0088)
+        "message": ({"max_concurrent": int(c["max_concurrent"]), "transfer": bool(c["message_transfer"]),
+                     "notes": c.get("message_notes"), "plays": int(c.get("message_plays") or 2),
+                     "caller_ids": list(c.get("message_caller_ids") or [])}
+                    if c.get("kind") == "message" else None),
+        "cases": _case_counts(c["id"]),                 # 2026-10-24: customer list / hand removals (0086)
         "revision": int(c["revision"]),
     }
+
+
+def _case_counts(campaign_id) -> dict:
+    from services.calling.campaign_cases import list_counts
+    return list_counts(campaign_id)
 
 
 def detail(campaign_id) -> dict:
@@ -276,8 +369,15 @@ def pool_scope() -> dict:
 
 
 def create(body: dict) -> str:
-    _unknown(body, {"name", "pool", "settings", "member_ids"})
+    _unknown(body, {"name", "pool", "settings", "member_ids", "ends_at", "fill_random", "kind", *MESSAGE_KEYS})
     name = _name(body)
+    ends_at, fill = _ends_at(body), _fill_random(body)
+    kind = body.get("kind", "agent")
+    if kind not in ("agent", "message"):
+        raise _err(422, VALIDATION_FAILED, "kind must be agent or message", {"kind": "invalid"})
+    if kind == "message" and fill:
+        raise _err(422, VALIDATION_FAILED, "random fill applies to agent campaigns only", {"fill_random": "not_applicable"})
+    msg = _message_fields(body, kind=kind)
     pool = P.validate_pool(body.get("pool"))
     P.check_pool_statuses(pool, me())
     settings = _settings(body.get("settings"), DEFAULTS)
@@ -285,22 +385,28 @@ def create(body: dict) -> str:
     _check_members_allowed(members)
     cid = str(sess().execute(text("""
         INSERT INTO campaigns (name, pool, next_mode, wrapup_delay_seconds, max_attempts_per_day, cooldown_minutes,
-                               lease_seconds, created_by)
-        VALUES (:n, CAST(:p AS jsonb), :nm, :wd, :ma, :cd, :ls, CAST(:by AS uuid)) RETURNING id"""),
+                               lease_seconds, created_by, ends_at, fill_random, kind, max_concurrent, message_transfer,
+                               message_notes, message_plays, message_caller_ids)
+        VALUES (:n, CAST(:p AS jsonb), :nm, :wd, :ma, :cd, :ls, CAST(:by AS uuid), :ea, :fr, :kind, :mc, :mt,
+                CAST(:mn AS jsonb), :mp, :mcid) RETURNING id"""),
         {"n": name, "p": json.dumps(pool), "nm": settings["next_mode"], "wd": settings["wrapup_delay_seconds"],
          "ma": settings["max_attempts_per_day"], "cd": settings["cooldown_minutes"], "ls": settings["lease_seconds"],
-         "by": me()}).scalar())
+         "by": me(), "ea": ends_at, "fr": fill, "kind": kind, "mc": msg["max_concurrent"], "mt": msg["message_transfer"],
+         "mn": json.dumps(msg["message_notes"]) if msg["message_notes"] is not None else None,
+         "mp": msg["message_plays"], "mcid": msg["message_caller_ids"]}).scalar())
     for u in members:
         sess().execute(text("INSERT INTO campaign_members (campaign_id, user_id, added_by) "
                             "VALUES (CAST(:c AS uuid), CAST(:u AS uuid), CAST(:by AS uuid))"),
                        {"c": cid, "u": u, "by": me()})
     audit.record("campaign.create", "campaign", cid, after={"name": name, "pool": pool, "settings": settings,
-                                                             "member_ids": members})
+                                                             "member_ids": members, "fill_random": fill,
+                                                             "kind": kind, "message": msg,
+                                                             "ends_at": ends_at.isoformat() if ends_at else None})
     return cid
 
 
 def update(campaign_id, body: dict, expected) -> str:
-    _unknown(body, {"expected_revision", "name", "pool", "settings"})
+    _unknown(body, {"expected_revision", "name", "pool", "settings", "ends_at", "fill_random", *MESSAGE_KEYS})
     camp = load(campaign_id, lock="update", manage=True)
     _check_revision(camp, expected)
     if camp["status"] == "stopped":
@@ -316,6 +422,36 @@ def update(campaign_id, body: dict, expected) -> str:
         params["p"] = json.dumps(pool)
         sets.append("pool = CAST(:p AS jsonb)")
         before["pool"], after["pool"] = camp["pool"], pool
+    if "ends_at" in body:
+        ea = _ends_at(body)
+        if ea != camp.get("ends_at"):
+            params["ea"] = ea
+            sets.append("ends_at = :ea")
+            before["ends_at"], after["ends_at"] = iso(camp.get("ends_at")), iso(ea)
+    if set(MESSAGE_KEYS) & set(body):
+        cur = {"max_concurrent": camp["max_concurrent"], "message_transfer": camp["message_transfer"],
+               "message_notes": camp.get("message_notes"), "message_plays": camp.get("message_plays") or 2,
+               "message_caller_ids": list(camp.get("message_caller_ids") or [])}
+        new = _message_fields(body, kind=camp.get("kind") or "agent", base=cur)
+        for k, col in (("max_concurrent", "max_concurrent"), ("message_transfer", "message_transfer"),
+                       ("message_plays", "message_plays"), ("message_caller_ids", "message_caller_ids")):
+            if new[k] != cur[k]:
+                params[f"m_{k}"] = new[k]
+                sets.append(f"{col} = :m_{k}")
+                before[k], after[k] = cur[k], new[k]
+        if new["message_notes"] != cur["message_notes"]:
+            params["m_notes"] = json.dumps(new["message_notes"]) if new["message_notes"] is not None else None
+            sets.append("message_notes = CAST(:m_notes AS jsonb)")
+            before["message_notes"], after["message_notes"] = cur["message_notes"], new["message_notes"]
+    if "fill_random" in body:
+        fr = _fill_random(body)
+        if fr and camp.get("kind") == "message":
+            raise _err(422, VALIDATION_FAILED, "random fill applies to agent campaigns only",
+                       {"fill_random": "not_applicable"})
+        if fr != bool(camp.get("fill_random")):
+            params["fr"] = fr
+            sets.append("fill_random = :fr")
+            before["fill_random"], after["fill_random"] = bool(camp.get("fill_random")), fr
     if "settings" in body:
         new = _settings(body.get("settings"), _settings_of(camp))
         for k, v in new.items():
@@ -372,6 +508,16 @@ def transition(campaign_id, action: str, body: dict, expected) -> dict:
                                      "AND active"), {"c": str(campaign_id)}).scalar()
         if not active:
             raise _err(409, "no_members", "add at least one active member before starting the campaign")
+        if camp.get("ends_at") is not None and camp["ends_at"] <= _dt.datetime.now(_dt.timezone.utc):
+            raise _err(409, "campaign_time_limit_passed", "the campaign's end time has passed; change it to start",
+                       {"ends_at": iso(camp["ends_at"])})
+        if camp.get("kind") == "message":                 # 2026-10-25 (0088): the audio must be on the PBX
+            from services.calling import message_campaign as MC
+            installed = {s_["kind"] for s_ in MC.sounds(campaign_id) if s_["installed"]}
+            need = {"message"} | ({"callback"} if camp["message_transfer"] else set())
+            if need - installed:
+                raise _err(409, "sounds_missing", "upload the messages (and install them on the PBX) before starting",
+                           {"missing": sorted(need - installed)})
         sets += ["started_at = coalesce(started_at, now())", "paused_at = NULL"]
     elif action == "pause":
         sets.append("paused_at = now()")
@@ -562,6 +708,8 @@ def request_next(campaign_id, body: dict) -> dict:
     from services.calling import rules as R
     _unknown(body, set())
     camp = _member_campaign(campaign_id, lock="share")
+    if camp.get("kind") == "message":
+        raise _err(409, "message_campaign", "a message campaign dials the clients itself; stay ready to take a transfer")
     if camp["status"] != "running":
         raise _err(409, "campaign_not_running", f"the campaign is {camp['status']}", {"status": camp["status"]})
     active = sess().execute(text("""SELECT attempt_id FROM call_reservations WHERE collector_user_id = CAST(:u AS uuid)
@@ -775,9 +923,24 @@ def my_status(campaign_id) -> dict:
                  "requested_at": iso(nxt),
                  "expires_at": iso(nxt + _dt.timedelta(seconds=CD.NEXT_REQUEST_TTL_SECONDS)) if nxt else None},
         "attempt": attempt,
+        "message_transfer": _message_transfer(camp),
         "heartbeat_after_ms": max(3000, int(camp["lease_seconds"]) * 1000 // 3),
         "poll_after_ms": 1000 if view["state"] in ("on_call", "ready") else 3000,
     }
+
+
+def _message_transfer(camp) -> dict | None:
+    if camp.get("kind") != "message":
+        return None
+    from services.calling import message_campaign as MC
+    return MC.member_transfer(camp["id"], me())
+
+
+def _message_summary(camp) -> dict | None:
+    if camp.get("kind") != "message":
+        return None
+    from services.calling import message_campaign as MC
+    return MC.summary(camp)
 
 
 def live_view(campaign_id) -> dict:
@@ -809,6 +972,7 @@ def live_view(campaign_id) -> dict:
         "all_time": {"attempts": int(totals["attempts"]), "uncertain": int(totals["uncertain"]),
                      "awaiting_wrapup": int(totals["awaiting_wrapup"])},
         "outstanding_calls": CD.outstanding_calls(sess(), campaign_id),
+        "messages": _message_summary(camp),               # 2026-10-25 (0088): message campaigns only
         "poll_after_ms": 2000 if camp["status"] in ("running", "draining") else 10000,
     }
 
@@ -819,7 +983,7 @@ def _pool_summary(camp, active_ids) -> dict:
     now = time.monotonic()
     if hit is not None and hit[0] > now and hit[1] == k:
         return {**hit[2], "cached": True}
-    out = P.summary(camp, active_ids)
+    out = _with_progress(camp, P.summary(camp, active_ids))
     if len(_summary_cache) > 500:
         _summary_cache.clear()
     _summary_cache[str(camp["id"])] = (now + SUMMARY_TTL_SECONDS, k, out)
@@ -834,6 +998,13 @@ def pool_view(campaign_id, args, page, size, offset) -> dict:
     reasons = [x for x in (args.get("reason") or "").split(",") if x]
     out = P.listing(camp, active_ids, reason=reasons or None, page=page, size=size, offset=offset,
                     show_numbers=has_permission("clints_details"))
-    out["summary"] = P.summary(camp, active_ids)
+    out["summary"] = _with_progress(camp, P.summary(camp, active_ids))
     return out
+
+
+def _with_progress(camp, summary: dict) -> dict:
+    """2026-10-24: + "called" / "answered" (customers this campaign dialled / that answered) and
+    "waiting" (in the pool, not excluded for good, never dialled by this campaign: the queue)."""
+    from services.calling.campaign_cases import called_counts
+    return {**summary, **called_counts(camp["id"])}
 

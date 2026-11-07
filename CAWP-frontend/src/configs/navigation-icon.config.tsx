@@ -42,6 +42,11 @@ import {
   BrainCircuit, // Phase 6: AI administration
   BadgeCheck, // Phase 6: quality workspace
   ChartColumnStacked, // team performance dashboard
+  Trophy, // Alitqan performance board
+  ChartPie, // self-service BI
+  Database, // SQL builder
+  Bot, // AI calling agent test
+  UserCheck, // collector activity report
 } from "lucide-react";
 
 
@@ -90,8 +95,13 @@ const navigationIcon: NavigationIcons = {
   calling_extensions: <Hash strokeWidth={2} size={18} />,
   call_monitor: <Activity strokeWidth={2} size={18} />,
   team_dashboard: <ChartColumnStacked strokeWidth={2} size={18} />,
+  itqan_dashboard: <Trophy strokeWidth={2} size={18} />,
+  reports_bi: <ChartPie strokeWidth={2} size={18} />,
+  reports_sql: <Database strokeWidth={2} size={18} />,
   /* Phase 6 Q3 (voice training lab) */
   voice_lab: <Mic strokeWidth={2} size={18} />,
+  ai_test_call: <Bot strokeWidth={2} size={18} />,
+  collector_report: <UserCheck strokeWidth={2} size={18} />,
   /* Phase 6: AI administration and the quality workspace */
   ai_admin: <BrainCircuit strokeWidth={2} size={18} />,
   quality: <BadgeCheck strokeWidth={2} size={18} />,

@@ -84,7 +84,7 @@ LIVE_STATES = ("prepared", "authorized", "dispatched", "agent_ringing", "agent_a
 # re-evaluated by the rules when offered again)
 RECHECK_MINUTES = {"case_paid": 30, "status_stops_campaigns": 30, "destination_invalid": 30, "no_callable_contact": 30, "contact_not_found": 5,
                    "contact_deleted": 5, "contact_blocked": 5, "case_archived": 1, "case_locked": 1,
-                   "do_not_call": 1, "calling_review_pending": 1}
+                   "do_not_call": 1, "calling_review_pending": 1, "customer_in_call": 1}
 
 
 # audit fields of what the calling service does by itself (no request, no person)
@@ -109,7 +109,8 @@ def _day(session):
 def claim_recheck(session, attempt) -> str | None:
     """Called by dispatch.claim() for a campaign attempt, right before the token and the Originate."""
     r = session.execute(text("""
-        SELECT c.status, m.active, r.state, (r.lease_until > clock_timestamp()) AS lease_live
+        SELECT c.status, m.active, r.state, (r.lease_until > clock_timestamp()) AS lease_live,
+               (c.ends_at IS NOT NULL AND c.ends_at <= clock_timestamp()) AS time_up
           FROM campaigns c
           LEFT JOIN campaign_members m ON m.campaign_id = c.id AND m.user_id = CAST(:u AS uuid)
           LEFT JOIN campaign_readiness r ON r.campaign_id = c.id AND r.user_id = CAST(:u AS uuid)
@@ -119,6 +120,8 @@ def claim_recheck(session, attempt) -> str | None:
         return "campaign_missing"
     if r["status"] != "running":
         return f"campaign_{r['status']}"
+    if r["time_up"]:
+        return "campaign_time_limit"                  # 2026-10-25 (0087): queued before the sweep
     if not r["active"]:
         return "member_inactive"
     if r["state"] not in ("ready", "wrap_up"):
@@ -213,6 +216,38 @@ def _try_case_lock(session, case_id) -> bool:
                                 {"k": f"calling_dispatch:case:{case_id}"}).scalar())
 
 
+def _identity_key(session, identity_number) -> str | None:
+    from services.same_identity import IDENTITY_KEY_SQL
+    return session.execute(text(f"SELECT {IDENTITY_KEY_SQL.format(col='CAST(:v AS text)')}"),
+                           {"v": identity_number}).scalar()
+
+
+def _try_identity_lock(session, identity_number) -> bool:
+    """2026-10-24: one dispatch per CUSTOMER at a time (every account with the same identity key),
+    held to the end of the dispatch transaction, after which the reservation exists."""
+    key = _identity_key(session, identity_number)
+    if not key:
+        return True
+    return bool(session.execute(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:k, 0))"),
+                                {"k": f"calling_dispatch:identity:{key}"}).scalar())
+
+
+def _customer_answered(session, identity_number, case_id, answered: dict) -> bool:
+    """The customer already answered a call of this campaign (this case or the same identity key).
+    Re-read under the customer's lock: a call may have been answered since `answered` was read."""
+    if case_id in answered["cases"]:
+        return True
+    key = _identity_key(session, identity_number)
+    if key and key in answered["keys"]:
+        return True
+    return False
+
+
+def _customer_in_call(session, identity_number) -> bool:
+    key = _identity_key(session, identity_number)
+    return bool(key) and key in P.live_identity_keys(session)
+
+
 def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatched_by: str,
                     audit_kw: dict | None = None) -> dict:
     """Dispatch the member's next case. The member row must be locked by the caller.
@@ -229,17 +264,42 @@ def dispatch_member(session, campaign: dict, member: dict, *, transport, dispatc
         return {"blocked": code, "detail": detail}
     clock = P._clock()
     tried = set()
-    for cand in P.candidates(campaign, uid, limit=CANDIDATES_PER_DISPATCH, clock=clock):
+    answered = None
+
+    def pool_order():
+        """Own cases first; with campaigns.fill_random (2026-10-25) then random cases of the pool."""
+        yield from P.candidates(campaign, uid, limit=CANDIDATES_PER_DISPATCH, clock=clock)
+        if campaign.get("fill_random"):
+            yield from P.candidates(campaign, uid, limit=CANDIDATES_PER_DISPATCH, clock=clock, fill=True,
+                                    exclude=tried)
+
+    for cand in pool_order():
         case_id = str(cand["case_id"])
+        if case_id in tried:
+            continue
         tried.add(case_id)
         if not _try_case_lock(session, case_id):
             continue                                       # another loop is on this case right now
+        if not _try_identity_lock(session, cand["idn"]):
+            continue                                       # another loop is on this customer right now
         if _stops(session, case_id):                 # 0080: a stopping status recorded since the read
             _exclude(session, cid, case_id, "status_stops_campaigns")
             continue
-        contact, choice = P.choose_contact(cand["idn"], campaign_id=cid, case_id=case_id)
+        # 2026-10-24, under the customer's lock: answered in this campaign / in a call right now
+        answered = answered if answered is not None else P.answered_facts(cid)
+        if _customer_answered(session, cand["idn"], case_id, answered):
+            _exclude(session, cid, case_id, "answered_in_campaign", until="infinity")
+            continue
+        if _customer_in_call(session, cand["idn"]):
+            _exclude(session, cid, case_id, "customer_in_call")
+            continue
+        contact, choice = P.choose_contact(cand["idn"], campaign_id=cid, case_id=case_id,
+                                           skip_numbers=answered["numbers"])
         if contact is None:
-            _exclude(session, cid, case_id, "no_callable_contact")
+            if choice == "answered":                       # every callable number was already reached
+                _exclude(session, cid, case_id, "answered_in_campaign", {"numbers": "answered"}, until="infinity")
+            else:
+                _exclude(session, cid, case_id, "no_callable_contact")
             continue
         priority = "callback_due" if cand["callback_due"] else "normal"
         try:
@@ -315,6 +375,20 @@ def _record_dispatch(session, campaign, uid, attempt_id, case_id, contact_id, ch
 
 
 # --------------------------------------------------------------------------- housekeeping
+def expire_campaigns(session, *, audit_kw=None) -> list[str]:
+    """2026-10-25 (0087): running / paused campaigns whose ends_at has passed -> draining (no new
+    call; the ones in progress finish and are wrapped up; finish_drain then stops it)."""
+    rows = session.execute(text("""
+        UPDATE campaigns SET status = 'draining', drain_requested_at = coalesce(drain_requested_at, now())
+         WHERE status IN ('running', 'paused') AND ends_at IS NOT NULL AND ends_at <= clock_timestamp()
+        RETURNING id::text, ends_at"""), {}).all()
+    kw = dict(SYSTEM_AUDIT if audit_kw is None else audit_kw)
+    for cid, ends_at in rows:
+        audit.record("campaign.time_limit", "campaign", cid, after={"status": "draining", "ends_at": ends_at.isoformat()},
+                     reason="the campaign's end time was reached", session=session, **kw)
+    return [r[0] for r in rows]
+
+
 def outstanding_calls(session, campaign_id) -> int:
     return int(session.execute(text("""
         SELECT count(*) FROM call_attempts a
@@ -325,8 +399,13 @@ def outstanding_calls(session, campaign_id) -> int:
 
 
 def finish_drain(session, campaign_id, *, audit_kw=None) -> bool:
-    """draining -> stopped once every campaign call ended and was wrapped up (or released)."""
+    """draining -> stopped once every campaign call ended and was wrapped up (or released), and
+    (message campaigns, 0088) no message call is live."""
     if outstanding_calls(session, campaign_id):
+        return False
+    if session.execute(text("""SELECT EXISTS (SELECT 1 FROM message_calls WHERE campaign_id = CAST(:c AS uuid)
+                                  AND state IN ('sending', 'dialing', 'answered', 'transferring', 'talking'))"""),
+                       {"c": str(campaign_id)}).scalar():
         return False
     row = session.execute(text("""
         UPDATE campaigns SET status = 'stopped', stopped_at = now(), stop_reason = 'drained'
@@ -452,10 +531,12 @@ class CampaignDispatcher(threading.Thread):
     def run_once(self) -> int:
         self.stats["ticks"] += 1
         self.last_tick_at = time.time()
-        ids = self._tx(lambda s: [str(r[0]) for r in s.execute(text(
-            "SELECT id FROM campaigns WHERE status IN ('running', 'draining') ORDER BY created_at, id")).all()])
+        for cid in self._tx(expire_campaigns):
+            log.info("campaign %s reached its end time -> draining", cid)
+        rows = self._tx(lambda s: [(str(r[0]), r[1]) for r in s.execute(text(
+            "SELECT id, kind FROM campaigns WHERE status IN ('running', 'draining') ORDER BY created_at, id")).all()])
         dispatched = 0
-        for cid in ids:
+        for cid, kind in rows:
             if self.stopping.is_set():
                 break
             hk = self._tx(lambda s: housekeeping(s, cid, respect_fence=self.respect_fence))
@@ -463,6 +544,8 @@ class CampaignDispatcher(threading.Thread):
             if hk.get("drained"):
                 self.stats["drained"] += 1
                 log.info("campaign %s drained -> stopped", cid)
+            if kind == "message":
+                continue                              # 2026-10-25: services/calling/message_campaign.py dials those
             if self.transport() is None:
                 continue                              # never authorize a call without a connected PBX session
             for _ in range(self.max_per_tick):

@@ -500,3 +500,34 @@ def mint_realtime_session(*, purpose: str, instructions: str, voice: str | None 
     return RealtimeOutput(client_secret=result.client_secret, expires_at=result.expires_at,
                           session_id=result.session_id, call_id=call_id, model=m.model,
                           policy_revision=r.policy.revision, latency_ms=m.latency_ms)
+
+
+@dataclasses.dataclass(frozen=True)
+class LiveOutput:
+    api_key: str = dataclasses.field(repr=False)    # the server's own key: for the server-side socket only
+    base_url: str
+    call_id: str
+    model: str
+    policy_revision: int
+
+
+def is_live_model(model: str | None) -> bool:
+    """OpenAI's Live API models (wss://.../live/sessions, not the Realtime API): gpt-live-*."""
+    return bool(model) and str(model).startswith("gpt-live")
+
+
+def open_live_session(*, purpose: str, categories=(), entity_type: str | None = None, entity_id=None,
+                      actor_user_id=None, request_id=None) -> LiveOutput:
+    """A server-side Live API session (2026-11-05, gpt-live-1): the same readiness, approved policy,
+    daily quota and audit row as any provider call; the Live API takes the project key on the server's
+    own WebSocket (no ephemeral secret), so the key is handed to that socket only, never stored."""
+    from services.ai.provider import CallMeta
+    ctx, cfg, r = _prepare(REALTIME_SESSION, purpose, categories, actor_user_id, request_id, entity_type, entity_id, None)
+
+    class _Opened:
+        meta = CallMeta(model=r.model, attempts=1, latency_ms=0, http_status=None, provider_request_id=None,
+                        usage=Usage(), input_bytes=0)
+
+    _result, call_id = _run(ctx, cfg, r, lambda provider: _Opened())
+    return LiveOutput(api_key=cfg.api_key, base_url=cfg.base_url, call_id=call_id, model=r.model,
+                      policy_revision=r.policy.revision)

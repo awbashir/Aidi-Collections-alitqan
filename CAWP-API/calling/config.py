@@ -35,6 +35,20 @@ never contacted by default, from development, tests or a mis-set variable.
     CALLING_CAMPAIGN_POLL_MS     campaign dispatcher poll interval (default 500)
   (API side, read by services/calling/dispatch.py: CALLING_CONTEXT, CALLING_DRIVER,
    CALLING_AGENT_RING_SECONDS, CALLING_MAX_CALL_SECONDS, CALLING_DISPATCH_TTL_SECONDS)
+  CALLING_DRIVER is ALSO read by this service (services/calling/common.channel_driver: the live
+  channel snapshot's agent channels and the call-control worker's Originates/tags): set the same
+  PJSIP | SIP value for the API and this service.
+    CALLING_PBX_EVENTS           modern | legacy  the PBX's AMI event model (common.pbx_events;
+                                 default modern = Asterisk 12+). `legacy` = Asterisk <= 11 (the Alitqan
+                                 Issabel 4: Asterisk 11.25, AMI 1.3, chan_sip): the Originate ChannelId
+                                 is ignored, so the agent leg is bound by the Originate's ActionID
+                                 (OriginateResponse) or the FastAGI hook, and Dial/Bridge events are
+                                 normalised (services/calling/legacy_events.py, legacy_correlation.py).
+                                 Set the SAME value for the API and this service, and generate the
+                                 dialplan with policy "pbx_events": "legacy". The dispatcher refuses a
+                                 call (pbx_version_mismatch) when the AMI greeting contradicts it
+                                 (AMI 1.x = Asterisk <= 11). Alitqan: CALLING_DRIVER=SIP,
+                                 CALLING_PBX_EVENTS=legacy.
 """
 from __future__ import annotations
 
@@ -151,6 +165,8 @@ def load(env=None) -> CallingConfig:
     )
     if (env.get("CALLING_CDR_SOURCE") or "none").strip().lower() not in ("none", "csv", "mysql"):
         raise ConfigError("CALLING_CDR_SOURCE must be none, csv or mysql")
+    if (env.get("CALLING_PBX_EVENTS") or "").strip().lower() not in ("", "modern", "legacy"):
+        raise ConfigError("CALLING_PBX_EVENTS must be modern or legacy")
     if cfg.enabled:
         validate(cfg)
     return cfg

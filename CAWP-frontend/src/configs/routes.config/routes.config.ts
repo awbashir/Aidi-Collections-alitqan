@@ -19,6 +19,13 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/teamDashboard")),
     authority: [],
   },
+  /* Alitqan performance board (`itqan_dashboard` = calls_supervise | calls_manage, derived; 2026-10-29). */
+  {
+    key: "itqan_dashboard",
+    path: "/itqan-dashboard",
+    component: lazy(() => import("@/views/itqanDashboard")),
+    authority: [],
+  },
   {
     key: "users",
     path: "/users",
@@ -680,6 +687,29 @@ export const protectedRoutes = [
     component: lazy(() => import("@/views/phase4/hub")),
     authority: [],
   },
+  /* Report center builders (2026-11-04, docs/report-builder-plan.md): self-service BI
+   * (`reports_bi`, scoped) and the SQL builder (`reports_sql`, the API also requires an
+   * all-clients scope). Static paths outrank `/reports/:id`. */
+  {
+    key: "reports_bi",
+    path: "/reports/bi",
+    component: lazy(() => import("@/views/reportBuilder/bi")),
+    authority: [],
+  },
+  {
+    key: "reports_sql",
+    path: "/reports/sql",
+    component: lazy(() => import("@/views/reportBuilder/sql")),
+    authority: [],
+  },
+  /* Collector activity report (`collector_report` = reports_performance | calls_supervise |
+   * calls_manage, derived; 2026-11-05). Static path: outranks `/reports/:id`. */
+  {
+    key: "collector_report",
+    path: "/reports/collector-activity",
+    component: lazy(() => import("@/views/reports/collectorActivity")),
+    authority: [],
+  },
   {
     key: "reports_any",
     path: "/reports/:id",
@@ -765,6 +795,13 @@ export const protectedRoutes = [
     key: "voice_lab",
     path: "/voice-lab",
     component: lazy(() => import("@/views/phase6/voiceLab")),
+    authority: [],
+  },
+  /* AI calling agent test (`ai_test_call` = ai_admin, derived; 2026-11-04). */
+  {
+    key: "ai_test_call",
+    path: "/ai-test-call",
+    component: lazy(() => import("@/views/aiTestCall")),
     authority: [],
   },
   /* ── end Phase 6 Q3 ── */

@@ -176,7 +176,7 @@ const Campaigns = () => {
                     campaign={null}
                     initialFilter={launchFilter}
                     onClose={() => setCreating(false)}
-                    onSaved={(c) => navigate(`/campaigns/${c.id}`)}
+                    onSaved={(c) => navigate(c.pool.case_list || c.kind === 'message' ? `/campaigns/${c.id}#tab=pool` : `/campaigns/${c.id}`)}
                 />
             )}
         </div>

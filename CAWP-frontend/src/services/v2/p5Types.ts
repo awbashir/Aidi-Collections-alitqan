@@ -303,6 +303,8 @@ export type MyCallingInfo = {
         updated_at: Iso | null
     }
     window: WindowStatus
+    /** 0082: the in-app softphone is switched on for me (off by default: my own phone rings) */
+    softphone_enabled?: boolean
     can_call: boolean
     reason: string | null
     active_attempt_id: string | null
@@ -444,11 +446,17 @@ export type CallingHoliday = { date: string; label?: string }
 export type MonitorScope = 'all' | 'team' | 'own'
 export type MonitorAgent = { extension: string; user_id: string | null; name: string | null }
 
+/** A contract of the scope's users (the call monitor's contract filter, 2026-10-21). */
+export type MonitorContract = { id: string; name: string; users: number }
+
 export type MonitorLive = {
     scope: MonitorScope
     /** The user filter applied (an extension), and every extension the scope allows (for the filter). */
     extension: string | null
     options: MonitorAgent[]
+    /** the contract filter in effect (null: none) and the scope's contracts */
+    contract?: string | null
+    contracts?: MonitorContract[]
     snapshot: { captured_at: Iso | null; ok: boolean; error: string | null; age_seconds: number | null; stale: boolean }
     summary: { active_calls: number; talking: number; ringing: number; in_ivr: number; agents_on_call: number; agents: number }
     calls: Array<{
@@ -487,6 +495,9 @@ export type MonitorStats = {
     scope: MonitorScope
     extension: string | null
     options: MonitorAgent[]
+    /** the contract filter in effect (null: none) and the scope's contracts */
+    contract?: string | null
+    contracts?: MonitorContract[]
     from: string
     to: string
     granularity: 'hour' | 'day'
@@ -615,6 +626,10 @@ export type CampaignPool = {
     filter: Record<string, unknown>
     /** 2026-10-21: only cases with no collector (saved only when true) */
     unassigned_only?: boolean
+    /** 2026-10-24: the pool is the campaign's customer list (Excel / pasted ids) */
+    case_list?: boolean
+    /** 2026-10-24: no case with any approved payment */
+    skip_any_payment?: boolean
 }
 
 /** 2026-10-21: the number a campaign call dialled (`number` needs clints_details) and its place
@@ -642,6 +657,15 @@ export type Campaign = {
     stopped_at: Iso | null
     stop_reason: 'discarded' | 'stopped' | 'drained' | null
     members: { active: number; total: number }
+    /** 2026-10-24: customer-list size and hand removals */
+    cases?: { listed: number; removed: number }
+    /** 2026-10-25 (0087): stops by itself at this time (null = no limit) */
+    ends_at?: Iso | null
+    /** 2026-10-25 (0087): an agent with no callable client of their own gets random pool clients of any owner */
+    fill_random?: boolean
+    /** 2026-10-25 (0088): 'message' = the PBX dials the client and plays the uploaded message */
+    kind?: CampaignKind
+    message?: { max_concurrent: number; transfer: boolean; notes: MessageNotes | null; plays?: number; caller_ids?: string[] } | null
     revision: number
     my_membership?: { active: boolean } | null
     my_readiness?: {
@@ -719,6 +743,8 @@ export type MyCampaignStatus = {
     attempt: LiveCall | null
     heartbeat_after_ms: number
     poll_after_ms: number
+    /** 2026-10-25 (0088): the client a message campaign transferred to me (key 1) */
+    message_transfer?: MessageTransfer | null
     dispatch?: {
         attempt_id?: string
         case_id?: string
@@ -736,6 +762,10 @@ export type PoolSummary = {
     excluded: Record<string, number>
     evaluated_at: Iso
     cached?: boolean
+    /** 2026-10-24: the queue (never dialled, not excluded for good) and the customers called / that answered */
+    waiting?: number
+    called?: number
+    answered?: number
 }
 
 export type CampaignLive = {
@@ -748,6 +778,8 @@ export type CampaignLive = {
     all_time: { attempts: number; uncertain: number; awaiting_wrapup: number }
     outstanding_calls: number
     poll_after_ms: number
+    /** 2026-10-25 (0088): message campaigns only */
+    messages?: MessageSummary | null
 }
 
 export type RosterItem = {
@@ -777,11 +809,111 @@ export type PoolItem = {
 
 export type PoolListing = Paged<PoolItem> & { summary: PoolSummary }
 
+/** 2026-10-24: POST /v2/campaigns/:id/cases/import */
+export type CaseImportResult = {
+    match_by: 'identity' | 'account'
+    values: number
+    matched_values: number
+    not_found_count: number
+    not_found: string[]
+    cases_matched: number
+    cases_added: number
+    cases_restored: number
+    revision: number
+}
+
+/** 2026-10-24: GET /v2/campaigns/:id/called */
+export type CalledItem = {
+    case: { id: string; name: string | null; account_number: string | null }
+    attempts: number
+    answered: boolean
+    last_call_at: Iso | null
+    last_state: string | null
+    last_reason: string | null
+    last_outcome: string | null
+    last_agent: UserRef | null
+}
+export type CalledListing = Paged<CalledItem> & { counts: { called: number; answered: number } }
+
+/* ------------------------------------------------------------------ message campaigns (0088) */
+export type CampaignKind = 'agent' | 'message'
+export type MessageNoteResult = 'no_agent' | 'closed' | 'no_choice'
+export type MessageNotes = Partial<Record<MessageNoteResult, { status_id: string; sub_status_id: string | null }>> & {
+    contact_method_id?: string
+    /** 2026-10-29 (0089): more than `seconds` on the line after answering -> this status, whatever the key */
+    listened?: { status_id: string; sub_status_id: string | null; seconds: number }
+}
+export type SoundKind = 'message' | 'callback' | 'goodbye'
+export type CampaignSound = {
+    kind: SoundKind
+    name: string | null
+    duration_seconds: number
+    size: number
+    uploaded_at: Iso | null
+    installed_at: Iso | null
+    installed: boolean
+    pbx_error?: string | null
+}
+export type MessageCallResult =
+    | 'no_answer' | 'busy' | 'unavailable' | 'congestion' | 'failed' | 'denied' | 'no_trunk' | 'hung_up'
+    | 'no_choice' | 'closed' | 'no_agent' | 'transferred' | 'unknown'
+export type MessageCallState = 'sending' | 'dialing' | 'answered' | 'transferring' | 'talking' | 'ended' | 'failed' | 'uncertain'
+/** 2026-10-31 (0090): pbx_trunk null = the number has no trunk on the PBX */
+export type OutboundNumber = { number: string; pbx_trunk: string | null }
+export type MessageCall = {
+    id: string
+    /** the number the PBX reported using on this dial */
+    caller_id?: string | null
+    case: { id: string; name: string | null; account_number: string | null }
+    state: MessageCallState
+    result: MessageCallResult | null
+    key: string | null
+    dial_status: string | null
+    member: UserRef | null
+    recording: string | null
+    note_id: string | null
+    reason_code: string | null
+    created_at: Iso
+    answered_at: Iso | null
+    member_answered_at: Iso | null
+    ended_at: Iso | null
+}
+export type MessageSummary = {
+    now: { dialing: number; listening: number; transferring: number; talking: number }
+    uncertain: number
+    calls: number
+    clients_called: number
+    clients_answered: number
+    results: Partial<Record<MessageCallResult, number>>
+    waiting: number
+    max_concurrent: number
+    sounds: CampaignSound[]
+}
+export type MessageTransfer = {
+    call_id: string
+    case: { id: string; name: string | null; account_number: string | null }
+    state: MessageCallState
+    result: MessageCallResult | null
+    transferred_at: Iso | null
+    answered_at: Iso | null
+    ended_at: Iso | null
+}
+
 export type CampaignBody = {
     name?: string
     pool?: CampaignPool
     settings?: Partial<CampaignSettings>
     member_ids?: string[]
+    ends_at?: string | null
+    fill_random?: boolean
+    kind?: CampaignKind
+    max_concurrent?: number
+    message_transfer?: boolean
+    message_notes?: MessageNotes | null
+    /** 2026-10-29 (0089): 1..5 */
+    message_plays?: number
+    /** 2026-10-31 (0091): outbound numbers, used in rotation; empty = automatic */
+    message_caller_ids?: string[]
 }
 
 /* ------------------------------------------------------------------ PBX evidence (P4) */

@@ -3,6 +3,7 @@
  *
  *   GET /v2/dashboards/team         ?from&to&granularity&contract_id&user_id (comma-separated)&group
  *   GET /v2/dashboards/team/export  XLSX of the same query (audited)
+ *   GET /v2/dashboards/team/user-updates  one user's client updates, each with the call it reports (2026-10-21)
  *
  * The API decides the scope (SuperAdmin every user, a supervisor their team and only notes on
  * cases in their scope). Call figures are null when the PBX call records are unavailable
@@ -79,10 +80,47 @@ export type TeamDashboard = {
     series: { bucket: string; total: number; by_status: Record<string, number> }[]
 }
 
+/** One update (note) of one user, with the status it set and the call it reports (null = unknown). */
+export type TeamUserUpdate = {
+    note_id: string
+    at: string
+    client: { case_id: string; name: string | null; account_number: string | null }
+    status: { id: string; name: string | null; color: string | null } | null
+    sub_status: { id: string; name: string | null; color: string | null } | null
+    comment: string | null
+    call: {
+        at: string
+        direction: 'outbound' | 'inbound'
+        answered: boolean
+        result: string | null
+        talk_seconds: number
+        ring_seconds: number
+        extension: string
+        recorded: boolean
+    } | null
+}
+
+export type TeamUserUpdates = {
+    scope: 'all' | 'team' | 'own'
+    user: { id: string; name: string | null; extensions: string[] }
+    from: string
+    to: string
+    contract_id: string | null
+    calls: { available: boolean; error: string | null; truncated: boolean; extensions: string[] }
+    updates: number
+    clients: number
+    items: TeamUserUpdate[]
+    total: number
+    page: number
+    page_size: number
+}
+
 const clean = (q: object) => Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== null && v !== ''))
 
 export const teamDashboardApi = {
     get: (q: TeamDashboardQuery, signal?: AbortSignal) => v2Get<TeamDashboard>('/v2/dashboards/team', clean(q), signal),
+    userUpdates: (q: { user_id: string; from?: string; to?: string; contract_id?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+        v2Get<TeamUserUpdates>('/v2/dashboards/team/user-updates', clean(q), signal),
     /** XLSX download with the bearer token, saved under the server's file name. */
     download: async (q: TeamDashboardQuery) => {
         let res

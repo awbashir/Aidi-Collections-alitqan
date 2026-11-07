@@ -549,14 +549,21 @@ def _tomorrow():
     return (dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).date() + dt.timedelta(days=1)).isoformat()
 
 
-def _call_and_wrap(cp_app, client, auth, pgc, cid, w, user, **body):
-    """One campaign call for `user`: dispatched, bridged, ended and wrapped up (no_answer unless
-    `body` says otherwise). -> the dispatch result."""
-    from test_calling_campaign_helpers import note_body
+def _call_and_wrap(cp_app, client, auth, pgc, cid, w, user, *, answered=False, **body):
+    """One campaign call for `user`: dispatched, the customer leg dialled (bridged when `answered`,
+    else NOT answered), ended and wrapped up (no_answer unless `body` says otherwise). -> the
+    dispatch result. (An answered call takes the customer out of the campaign for good, 2026-10-24.)"""
+    from test_calling_campaign_helpers import note_body, to_state
     got = dispatched(tick(cp_app, cid, w))
     assert len(got) == 1 and got[0]["user_id"] == user, got
     a = got[0]["attempt_id"]
-    bridge(pgc, a)
+    run(pgc, "UPDATE call_dispatch_queue SET state = 'sending', claimed_at = now(), claimed_by = 't' "
+             "WHERE attempt_id = %s AND state = 'queued'", a)
+    run(pgc, "UPDATE call_dispatch_queue SET state = 'submitted', finished_at = now(), result_code = 'submitted', "
+             "ami_response = 'Success' WHERE attempt_id = %s AND state = 'sending'", a)
+    run(pgc, "UPDATE call_attempts SET pbx_epoch = 'e', pbx_channel_id = 'cawp-' || id::text WHERE id = %s", a)
+    to_state(pgc, a, ["dispatched", "agent_answered", "customer_dialing"]
+             + (["customer_answered", "bridged"] if answered else []))
     end_call(pgc, a)
     payload = {"expected_revision": q1(pgc, "SELECT revision FROM call_attempts WHERE id = %s", a)[0],
                "outcome": "no_answer", "note": note_body("campaign call")}
@@ -568,8 +575,8 @@ def _call_and_wrap(cp_app, client, auth, pgc, cid, w, user, **body):
 
 def test_campaign_rotates_through_every_callable_number(cp_app, client, auth, world, pgc):
     """A 3-number client: each number is dialled before any is retried (default first, then the
-    newest; in the next round the last successful one after the default); a blocked number is
-    never dialled. Max attempts and the cooldown stay per case."""
+    newest); a blocked number is never dialled. Max attempts and the cooldown stay per case. (The
+    calls are not answered: an answered one would end the campaign for this customer.)"""
     from test_calling_campaign_helpers import add_contact, number
     w = world
     case, default = case_for(pgc, w.c1, w.portfolio)
@@ -592,16 +599,16 @@ def test_campaign_rotates_through_every_callable_number(cp_app, client, auth, wo
     ev = q1(pgc, """SELECT after -> 'contact_rotation' FROM audit_events WHERE action = 'campaign.dispatch'
                      AND entity_id = %s ORDER BY occurred_at DESC LIMIT 1""", cid)[0]
     assert ev == {"position": 1, "of": 3, "round_tried": 0}
-    # round 2 goes on with the number that last answered after the default (older, bridged last)
+    # round 2 goes on in the same order (no number was answered: default, then the newest)
     got = dispatched(tick(cp_app, cid, w))
     live = client.get(f"/v2/campaigns/{cid}/live", headers=auth(w.supervisor)).get_json()["data"]
     dialed = live["members"][0]["current_attempt"]["dialed"]
-    assert dialed["contact_id"] == older and (dialed["position"], dialed["of"]) == (2, 3)
-    assert dialed["number"] == q1(pgc, 'SELECT contact FROM "ClintContacts" WHERE id = %s', older)[0]
+    assert dialed["contact_id"] == newer and (dialed["position"], dialed["of"]) == (2, 3)
+    assert dialed["number"] == q1(pgc, 'SELECT contact FROM "ClintContacts" WHERE id = %s', newer)[0]
     items = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(w.supervisor)).get_json()["data"]["items"]
     last = items[0]["last_dialed"]
-    assert items[0]["case"]["id"] == case and last["contact_id"] == older and last["of"] == 3
-    assert got[0]["contact_id"] == older
+    assert items[0]["case"]["id"] == case and last["contact_id"] == newer and last["of"] == 3
+    assert got[0]["contact_id"] == newer
 
 
 def test_status_that_blocks_the_dialed_number(cp_app, client, auth, world, pgc):
@@ -645,8 +652,9 @@ def test_stopping_status_is_rechecked_before_the_originate(cp_app, client, auth,
 
 def test_promise_on_an_unassigned_campaign_case_assigns_it_to_the_caller(cp_app, client, auth, world, pgc):
     """Unassigned + promise -> the case goes to the agent who made the call, in the wrap-up's
-    transaction (clints.user_id, "SepcifyUsers", campaign_case_assignments, audit). A case that
-    has a collector is never taken from them."""
+    transaction (clints.user_id, "SepcifyUsers", campaign_case_assignments, audit). 2026-10-29
+    (0089): a case that has a collector moves to the agent too (campaign calls only), the previous
+    collector kept in previous_user_id."""
     from test_calling_campaign_helpers import add_contact, make_case, note_body, number
     from test_calling_c2c_helpers import new_supervisor
     w = world
@@ -659,7 +667,7 @@ def test_promise_on_an_unassigned_campaign_case_assigns_it_to_the_caller(cp_app,
     cu = new_campaign(client, auth, w, owner=CP.super, members=[agent], settings=settings,
                       pool={"contract_ids": [w.contract], "unassigned_only": True})
     ready(pgc, cu, agent, lease_seconds=300)
-    got = _call_and_wrap(cp_app, client, auth, pgc, cu, w, agent, outcome="promise_discussed",
+    got = _call_and_wrap(cp_app, client, auth, pgc, cu, w, agent, answered=True, outcome="promise_discussed",
                          note=note_body("will pay"), promise={"amount": "100", "due_date": _tomorrow()})
     assert got["case_id"] == free
     assert q1(pgc, "SELECT user_id::text FROM clints WHERE id = %s", free) == (agent,)
@@ -676,15 +684,13 @@ def test_promise_on_an_unassigned_campaign_case_assigns_it_to_the_caller(cp_app,
     live = client.get(f"/v2/campaigns/{cu}/live", headers=auth(CP.super)).get_json()["data"]
     assert live["members"][0]["today"]["assigned_by_promise"] == 1 and live["today"]["assigned_by_promise"] == 1
     act(client, auth, CP.super, cu, "stop")
-    # a case WITH a collector: the promise never moves it
+    # a case WITH a collector (2026-10-29): the promise moves it to the agent who called
     cid = new_campaign(client, auth, w, owner=CP.super, members=[agent], settings=settings,
                        pool={"contract_ids": [w.contract]})
     ready(pgc, cid, agent, lease_seconds=300)
-    got = _call_and_wrap(cp_app, client, auth, pgc, cid, w, agent, outcome="connected", note=note_body("ok"),
+    got = _call_and_wrap(cp_app, client, auth, pgc, cid, w, agent, answered=True, outcome="connected", note=note_body("ok"),
                          promise={"amount": "50", "due_date": _tomorrow(), "agreed": True})
     assert got["case_id"] == owned
-    assert q1(pgc, "SELECT user_id::text FROM clints WHERE id = %s", owned) == (w.c1,)
-    assert q1(pgc, "SELECT count(*) FROM campaign_case_assignments WHERE case_id = %s", owned) == (0,)
-    pool = client.get(f"/v2/campaigns/{cid}/pool", headers=auth(CP.super)).get_json()["data"]["items"]
-    by_case = {i["case"]["id"]: i for i in pool}
-    assert by_case[owned]["assigned_by_campaign"] is None and by_case[free]["assigned_by_campaign"] is None
+    assert q1(pgc, "SELECT user_id::text FROM clints WHERE id = %s", owned) == (agent,)
+    assert q1(pgc, """SELECT user_id::text, previous_user_id::text, cause FROM campaign_case_assignments
+                       WHERE attempt_id = %s""", got["attempt_id"]) == (agent, w.c1, "promise")

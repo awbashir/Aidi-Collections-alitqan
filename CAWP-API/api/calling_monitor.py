@@ -2,6 +2,9 @@
 
   GET /v2/calling/monitor/live    live calls (calling service snapshot) + agent status     reports_calls | calls_manage
       ?extension=<ext>             optional user filter, only within the caller's scope (403 outside)
+      ?contract=<uuid>             optional (2026-10-21): only the users of that contract (users.contract_id),
+                                   within the scope; every monitor route takes it; live/stats list
+                                   `contracts` [{id, name, users}] of the scope's users for the filter
   GET /v2/calling/monitor/stats   calls by user over time from the PBX call records          reports_calls | calls_manage
       ?from=YYYY-MM-DD&to=YYYY-MM-DD&granularity=hour|day&extension=<ext>
                                      (Asia/Riyadh; default today by hour; 31 days max)
@@ -52,7 +55,7 @@ REPORTS_CALLS = "reports_calls"
 @jwt_required()
 @permission_required(REPORTS_CALLS, CALLS_MANAGE)
 def monitor_live():
-    return ok(monitor_svc.live(extension=request.args.get("extension")))
+    return ok(monitor_svc.live(extension=request.args.get("extension"), contract=request.args.get("contract")))
 
 
 @bp.get("/v2/calling/monitor/stats")

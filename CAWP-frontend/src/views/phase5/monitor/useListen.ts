@@ -1,6 +1,6 @@
 /** The call monitor's listening state (LiveControls.tsx): my capabilities and open listening session. */
 import { useCallback, useEffect, useState } from 'react'
-import { callControlApi, pollControl } from '@/services/softphone'
+import { callControlApi, pollControl, softphoneApi } from '@/services/softphone'
 import type { CallControl, ControlCapabilities, SpyMode } from '@/services/softphone'
 import type { MonitorLive } from '@/services/v2'
 
@@ -8,9 +8,14 @@ export type LiveCall = MonitorLive['calls'][number]
 
 export type ListenState = ReturnType<typeof useListen>
 
-/** My capabilities and my open listening session, kept fresh while the page is open. */
+/**
+ * My capabilities and my open listening session, kept fresh while the page is open.
+ * `softphone`: my in-app softphone is switched on (0082). Off (the default), the PBX rings my
+ * own phone on my extension and I pick it up there; null = not known yet.
+ */
 export function useListen() {
     const [caps, setCaps] = useState<ControlCapabilities | null>(null)
+    const [softphone, setSoftphone] = useState<boolean | null>(null)
     const [control, setControl] = useState<CallControl | null>(null)
     const [error, setError] = useState<unknown>(null)
     const [busy, setBusy] = useState(false)
@@ -25,6 +30,10 @@ export function useListen() {
                 if (open) setControl(open)
             })
             .catch(() => setCaps(null))
+        softphoneApi
+            .myCalling()
+            .then((me) => !ctrl.signal.aborted && setSoftphone(me.softphone_enabled === true))
+            .catch(() => undefined)
         return () => ctrl.abort()
     }, [])
 
@@ -63,5 +72,5 @@ export function useListen() {
     )
 
     const open = !!control && !control.ended_at && ['queued', 'active'].includes(control.state)
-    return { caps, control, open, error, busy, start, command, dismiss: () => setControl(null) }
+    return { caps, softphone, control, open, error, busy, start, command, dismiss: () => setControl(null) }
 }

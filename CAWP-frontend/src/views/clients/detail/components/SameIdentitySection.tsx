@@ -8,8 +8,10 @@
  * only, the same rule as the balance card. Archived accounts (also the renamed
  * `<account>-أرشيف<n>` records) appear only when the checkbox is on.
  * Renders nothing when the role cannot read the case.
+ * 2026-11-04: the accounts are grouped by contract (this case's contract first), each group with
+ * its own count and money; the summary row says how many are in this contract and in others.
  */
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
@@ -196,6 +198,17 @@ const SameIdentitySection = ({ caseId }: { caseId: string }) => {
                             )}
                         </button>
 
+                        {count > 0 && data.by_contract && (
+                            <div data-testid="p8-sameid-split">
+                                <Note className="mt-2">
+                                    {t('p8.sameid.split', {
+                                        same: data.by_contract.filter((g) => g.same_contract).reduce((n, g) => n + g.count, 0),
+                                        other: data.by_contract.filter((g) => !g.same_contract).reduce((n, g) => n + g.count, 0),
+                                    })}
+                                </Note>
+                            </div>
+                        )}
+
                         {count === 0 && (
                             <Note className="mt-2">
                                 {withArchived ? t('p8.sameid.emptyWithArchived') : t('p8.sameid.empty')}
@@ -220,9 +233,40 @@ const SameIdentitySection = ({ caseId }: { caseId: string }) => {
                                             </Tr>
                                         </THead>
                                         <TBody>
-                                            {data.accounts.map((a) => (
-                                                <AccountRow key={a.id} a={a} />
-                                            ))}
+                                            {(data.by_contract || [{ contract: null, same_contract: true, count, amount: data.summary.amount, paid: data.summary.paid, remaining: data.summary.remaining }]).map((g) => {
+                                                const rows = data.by_contract
+                                                    ? data.accounts.filter((a) => (a.contract?.id ?? null) === (g.contract?.id ?? null))
+                                                    : data.accounts
+                                                if (!rows.length) return null
+                                                return (
+                                                    <Fragment key={g.contract?.id ?? 'none'}>
+                                                        {data.by_contract && (
+                                                            <Tr className="bg-gray-50 dark:bg-night-raised" data-testid="p8-sameid-group">
+                                                                <Td colSpan={3} className="font-extrabold text-navy-600 dark:text-gray-100">
+                                                                    <span dir="auto">{g.contract?.name || t('p8.sameid.noContract')}</span>
+                                                                    {g.same_contract && (
+                                                                        <span className="ms-2">
+                                                                            <PlainBadge size="row" tone="neutral">
+                                                                                {t('p8.sameid.thisContract')}
+                                                                            </PlainBadge>
+                                                                        </span>
+                                                                    )}
+                                                                    <span className="ms-2 text-[12px] font-bold text-gray-600">
+                                                                        {t('p8.sameid.groupCount', { n: g.count })}
+                                                                    </span>
+                                                                </Td>
+                                                                <Td className="text-end font-extrabold"><MoneyText value={g.amount} /></Td>
+                                                                <Td className="text-end font-extrabold"><MoneyText value={g.paid} /></Td>
+                                                                <Td className="text-end font-extrabold"><MoneyText value={g.remaining} strong /></Td>
+                                                                <Td colSpan={3} />
+                                                            </Tr>
+                                                        )}
+                                                        {rows.map((a) => (
+                                                            <AccountRow key={a.id} a={a} />
+                                                        ))}
+                                                    </Fragment>
+                                                )
+                                            })}
                                         </TBody>
                                     </Table>
                                 </TableFrame>

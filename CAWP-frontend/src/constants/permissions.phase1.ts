@@ -61,6 +61,9 @@ export const PHASE1_PERMISSIONS: Phase1Permission[] = [
     // Phase 4: reports without a legacy screen
     { key: 'reports_performance', group: 'recovery_team', label_en: 'Performance reports', label_ar: 'تقارير الأداء', admin_default: true },
     { key: 'reports_calls', group: 'recovery_team', label_en: 'Call reports', label_ar: 'تقارير المكالمات', admin_default: true },
+    // 2026-11-04: report center builders
+    { key: 'reports_bi', group: 'recovery_team', label_en: 'Self-service BI (scoped)', label_ar: 'منشئ التقارير الذاتي (ضمن النطاق)', admin_default: true },
+    { key: 'reports_sql', group: 'recovery_team', label_en: 'SQL builder (all data, admins)', label_ar: 'منشئ استعلامات SQL (كل البيانات، للمدراء)', admin_default: true },
     // Phase 5: human calling
     { key: 'calls', group: 'daily_operations', label_en: 'Calls and call log', label_ar: 'المكالمات وسجلها', admin_default: true },
     { key: 'calls_make', group: 'daily_operations', label_en: 'Make calls (click-to-call, softphone)', label_ar: 'إجراء المكالمات', admin_default: true },

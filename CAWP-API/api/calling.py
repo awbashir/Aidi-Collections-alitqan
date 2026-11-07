@@ -24,7 +24,7 @@ Calling blocks ("blocked clients"; do-not-call is a supervisor decision since 20
   POST /v2/calling-blocks             block a client {case_id, reason}                  calls_supervise | calls_manage
   POST /v2/calling-blocks/<id>/release  lift {reason}                                   calls_supervise | calls_manage
 Calling settings (mine)
-  GET  /v2/me/calling                extension, preferences, window status, can_call   calls | calls_make
+  GET  /v2/me/calling                extension, preferences, softphone_enabled, window status, can_call   calls | calls_make
   PUT  /v2/me/calling/preferences    auto-answer + devices                            calls | calls_make
 Calling administration
   GET  /v2/calling/status            calling service / PBX session seen from the DB   calls_manage
@@ -69,6 +69,7 @@ from services.calling import queries
 from services.calling import review as review_svc
 from services.calling import rules
 from services.calling import settings as settings_svc
+from services.calling import softphone_access
 from services.calling import wrapup as wrap_svc
 from services.calling.common import (CALLS, CALLS_MAKE, CALLS_MANAGE, SUPERVISE_KEYS, can_supervise, me, page_args,
                                      permission_required)
@@ -315,6 +316,7 @@ def _my_calling() -> dict:
     else:
         reason = None                                  # P1: click-to-call is enabled (rechecked per call)
     return {"user_id": user_id, "extension": extension, "preferences": settings_svc.get_preferences(user_id),
+            "softphone_enabled": softphone_access.is_enabled(user_id),
             "window": window, "can_call": reason is None, "reason": reason,
             "active_attempt_id": queries.my_active_attempt_id(user_id),
             # 2026-10-17: blocking a client (do_not_call) is a supervisor decision

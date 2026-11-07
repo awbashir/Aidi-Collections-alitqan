@@ -22,6 +22,9 @@ recorded once and apply to all the client's accounts." Decision: one save applie
   the copies, so a callback opens (or a completion schedules) one follow-up, on the main
   account; a sibling's own open follow-up is left as it was. The copies still carry
   next_contact_date (the legacy timeline shows it).
+* 2026-11-04 (customer request: "separate the clients with the same identity by contract"): the
+  siblings are only the accounts in the SAME CONTRACT as the main case; the debtor's accounts in
+  other contracts never get the note (the preview does not list them either).
 * A note status that belongs to one contract is copied only to the siblings of that contract
   (`skipped`: status_not_for_contract); general statuses go to every sibling.
 * At most MAX_TARGETS siblings (a junk identity shared by many rows): more -> 422
@@ -49,6 +52,11 @@ MAX_TARGETS = 50
 
 _KEY_C = IDENTITY_KEY_SQL.format(col='c."identityNumber"')
 _KEY_ME = IDENTITY_KEY_SQL.format(col='me."identityNumber"')
+# 2026-11-04: only the accounts in the main case's contract (`p` = the sibling's portfolio)
+_SAME_CONTRACT = """
+       AND p.contract_id IS NOT DISTINCT FROM (SELECT mp.contract_id FROM clints mc
+                                                 LEFT JOIN portfolios mp ON mp.id = mc.portfolios_id
+                                                WHERE mc.id = CAST(:cid AS uuid))"""
 
 
 def _s():
@@ -100,6 +108,9 @@ _TARGETS_SQL = """
       LEFT JOIN users u ON u.id = c.user_id
      WHERE {key} = :norm AND c.id <> CAST(:cid AS uuid)
        AND c.is_archive IS NOT TRUE AND c.is_locked IS NOT TRUE
+       AND p.contract_id IS NOT DISTINCT FROM (SELECT mp.contract_id FROM clints mc
+                                                 LEFT JOIN portfolios mp ON mp.id = mc.portfolios_id
+                                                WHERE mc.id = CAST(:cid AS uuid))
      ORDER BY c.id
      LIMIT :lim
 """
@@ -139,9 +150,9 @@ def plan(case_id, status_id, session=None) -> dict:
     if not norm:
         return {"targets": [], "skipped": []}
     count = s.execute(text(f"""
-        SELECT count(*) FROM clints c
+        SELECT count(*) FROM clints c LEFT JOIN portfolios p ON p.id = c.portfolios_id
          WHERE {_KEY_C} = :norm AND c.id <> CAST(:cid AS uuid)
-           AND c.is_archive IS NOT TRUE AND c.is_locked IS NOT TRUE
+           AND c.is_archive IS NOT TRUE AND c.is_locked IS NOT TRUE{_SAME_CONTRACT}
     """), {"norm": norm, "cid": str(case_id)}).scalar()
     if count > MAX_TARGETS:
         raise ApiError(422, "too_many_accounts",
@@ -153,7 +164,7 @@ def plan(case_id, status_id, session=None) -> dict:
         SELECT c.id::text AS id, c."accountNumber" AS account_number, p.contract_id::text AS contract_id
           FROM clints c LEFT JOIN portfolios p ON p.id = c.portfolios_id
          WHERE {_KEY_C} = :norm AND c.id <> CAST(:cid AS uuid)
-           AND c.is_archive IS NOT TRUE AND c.is_locked IS NOT TRUE
+           AND c.is_archive IS NOT TRUE AND c.is_locked IS NOT TRUE{_SAME_CONTRACT}
          ORDER BY c.id
          FOR NO KEY UPDATE OF c
     """), {"norm": norm, "cid": str(case_id)}).mappings().all()

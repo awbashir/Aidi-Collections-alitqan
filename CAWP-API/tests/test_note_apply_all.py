@@ -1,7 +1,8 @@
 """One note for every account of the same debtor (customer feedback 2026-10-21, migration 0081,
 services/note_siblings.py): `apply_to_all_accounts` on the wrap-up, the manual call log, the
 legacy POST /comments and the follow-up completion. Siblings = the other ACTIVE accounts
-(not archived, not locked) with the same identity key, whatever their owner. The copy carries
+(not archived, not locked) with the same identity key IN THE SAME CONTRACT (2026-11-04), whatever
+their owner; the debtor's accounts in other contracts never get the note. The copy carries
 applied_from_comment_id; the promise and the follow-up stay on the main account; audited;
 the timeline and the call detail show where a note was applied."""
 from __future__ import annotations
@@ -41,8 +42,8 @@ def same_identity(conn, case, *others, spelled=None):
 
 
 def family(pgc, team):
-    """case1 (c1) + siblings: another collector's account (spelled with spaces, lower case),
-    an account of another contract and owner, an archived and a locked one."""
+    """case1 (c1) + a sibling: another collector's account (spelled with spaces, lower case); not
+    siblings: an account of another contract (2026-11-04), an archived and a locked one."""
     main = team["case1"]
     other_owner = make_case(pgc, team["c2"], team["portfolio"])
     other_contract = make_case(pgc, team["outsider"], team["other_portfolio"])
@@ -51,7 +52,8 @@ def family(pgc, team):
     idn = identity(pgc, main)
     same_identity(pgc, main, other_owner, spelled=" " + idn.lower() + " ")
     same_identity(pgc, main, other_contract, archived, locked)
-    return {"main": main, "siblings": sorted([other_owner, other_contract]), "archived": archived, "locked": locked}
+    return {"main": main, "siblings": [other_owner], "other_contract": other_contract, "archived": archived,
+            "locked": locked}
 
 
 def notes_of(conn, case):
@@ -105,8 +107,9 @@ def test_wrapup_applies_the_note_to_every_active_account(cl_client, hdr, team, p
         assert reason.startswith("applied from account ")
         # neither the promise nor the follow-up
         assert promises(pgc, sib) == 0 and open_follow_ups(pgc, sib) == 0
-    # archived and locked accounts never get it
+    # archived and locked accounts never get it, nor the debtor's account in another contract
     assert notes_of(pgc, fam["archived"]) == [] and notes_of(pgc, fam["locked"]) == []
+    assert notes_of(pgc, fam["other_contract"]) == []
     # the promise and the callback follow-up are on the main account only
     assert promises(pgc, fam["main"]) == 1 and open_follow_ups(pgc, fam["main"]) == 1
     after = q1(pgc, "SELECT after FROM audit_events WHERE action = 'note.apply_to_all_accounts' AND entity_id = %s",
@@ -156,12 +159,11 @@ def test_contract_status_is_copied_to_that_contract_only(cl_client, hdr, team, p
     st, body = manual(cl_client, hdr, team["c1"], fam["main"], note=note_body(comment_status_id=status),
                       **{FLAG: True})
     assert st == 201, body
-    same_contract = [s for s in fam["siblings"]
-                     if q1(pgc, "SELECT portfolios_id::text FROM clints WHERE id = %s", s)[0] == team["portfolio"]]
-    assert [x["case_id"] for x in body["data"]["wrapup"]["applied_to"]] == same_contract
+    # every sibling is in the main case's contract now (2026-11-04): the contract's status reaches all of them
+    assert [x["case_id"] for x in body["data"]["wrapup"]["applied_to"]] == fam["siblings"]
     after = q1(pgc, "SELECT after FROM audit_events WHERE action = 'note.apply_to_all_accounts' AND entity_id = %s",
                body["data"]["wrapup"]["note_id"])[0]
-    assert [x["reason"] for x in after["skipped"]] == ["status_not_for_contract"]
+    assert after["skipped"] == [] and notes_of(pgc, fam["other_contract"]) == []
 
 
 def test_too_many_accounts_writes_nothing(cl_client, hdr, team, pgc):
@@ -184,7 +186,8 @@ def legacy_family(db, owner, other_owner):
     for c in (sib, sib_unowned, archived, locked):
         run(db, 'UPDATE clints SET "identityNumber" = %s WHERE id = %s', idn, c)
     run(db, "UPDATE clints SET is_locked = true WHERE id = %s", locked)
-    return {"main": main, "siblings": sorted([sib, sib_unowned]), "archived": archived, "locked": locked}
+    # sib_unowned is in portfolio_b (contract_b): not a sibling since 2026-11-04
+    return {"main": main, "siblings": [sib], "other_contract": sib_unowned, "archived": archived, "locked": locked}
 
 
 def test_legacy_note_form(db):
@@ -206,7 +209,7 @@ def test_legacy_note_form(db):
              {"op": "call", "token": "T", "method": "GET", "path": f"/comments/clint/{fam['main']}"}]
     res = [r for r in run_app(steps) if r["op"] == "call"]
     preview, plain, applied, sib_timeline, main_timeline = res
-    assert preview["status"] == 200 and preview["body"]["data"]["count"] == 2, preview
+    assert preview["status"] == 200 and preview["body"]["data"]["count"] == 1, preview     # same contract only
     assert sorted(a["id"] for a in preview["body"]["data"]["accounts"]) == fam["siblings"]
     # without the flag: the legacy answer, unchanged
     assert plain["status"] == 200 and "applied_to" not in plain["body"] and "promise" not in plain["body"]
@@ -224,7 +227,7 @@ def test_legacy_note_form(db):
         assert aq1(db, "SELECT count(*) FROM follow_ups WHERE case_id = %s", (sib,))[0] == 0
         assert aq1(db, "SELECT c.applied_from_comment_id::text FROM clints k JOIN \"Comments\" c "
                        "ON c.id = k.last_comment_id WHERE k.id = %s", (sib,))[0] == main_id
-    for gone in (fam["archived"], fam["locked"]):
+    for gone in (fam["archived"], fam["locked"], fam["other_contract"]):
         assert aq1(db, 'SELECT count(*) FROM "Comments" WHERE clint_id = %s', (gone,))[0] == 0
     assert aq1(db, 'SELECT count(*) FROM "paymentDates" WHERE clint_id = %s', (fam["main"],))[0] == 1
     assert aq1(db, "SELECT count(*) FROM follow_ups WHERE case_id = %s AND status = 'open'", (fam["main"],))[0] == 1
@@ -268,6 +271,6 @@ def test_follow_up_completion(db):
         assert row == ("promised again", data["outcome_comment_id"], True)
         assert aq1(db, "SELECT count(*) FROM follow_ups WHERE case_id = %s", (sib,))[0] == 0
         assert aq1(db, 'SELECT count(*) FROM "paymentDates" WHERE clint_id = %s', (sib,))[0] == 0
-    for gone in (fam["archived"], fam["locked"]):
+    for gone in (fam["archived"], fam["locked"], fam["other_contract"]):
         assert aq1(db, 'SELECT count(*) FROM "Comments" WHERE clint_id = %s', (gone,))[0] == 0
     assert aq1(db, "SELECT count(*) FROM follow_ups WHERE case_id = %s AND status = 'open'", (fam["main"],))[0] == 1

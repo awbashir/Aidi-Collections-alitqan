@@ -61,6 +61,24 @@ Customer feedback 2026-10-21 (migration 0080, services/calling/campaign_rules.py
   attempts that provably never reached the customer (released no_customer_contact /
   cancel_unsent) do not count as tried. `max_attempts_per_day` and the cooldown stay PER CASE
   (any number): with 3 numbers and 3 attempts a day, each number is dialled once a day.
+
+Customer feedback 2026-10-24 (migration 0086, services/calling/campaign_cases.py):
+* `answered_in_campaign` (hard): once the customer ANSWERED a call of this campaign (the call was
+  bridged), none of their accounts is dialled again by it: the same case, every case with the
+  same identity key (services/same_identity.py), and any number that was answered (a number
+  answered on another debtor's case is skipped in the rotation; a case with no other callable
+  number is excluded, campaign_pool_state `answered_in_campaign` for good).
+* `customer_in_call` (goes away): another account of the same customer (identity key) is in a
+  call right now (an open reservation, any mode), so two collectors never ring one customer at
+  once. The dispatcher also takes an identity advisory lock and re-checks it under the lock.
+* `skip_any_payment: true` (top-level pool key, «استبعاد العملاء الذين لديهم أي سداد»): a case
+  with ANY approved, non-deleted, non-reversed payment is excluded (`case_has_payment`, hard).
+  Pending, rejected and reversed money never counts (as `case_paid`). Saved only when true.
+* `case_list: true` (top-level pool key, a criterion of its own): the pool is the campaign's
+  customer list (campaign_list_cases, filled from Excel or pasted ids), ANDed with any other
+  criterion.
+* `removed_by_user` (hard): the case was removed from this campaign by hand
+  (campaign_removed_cases), in any campaign.
 """
 from __future__ import annotations
 
@@ -73,10 +91,13 @@ from sqlalchemy import text
 from core.api_response import VALIDATION_FAILED, ApiError
 from services.calling.campaign_rules import STOPPED_SQL
 from services.calling.common import e164_from_contact, sess
+from services.same_identity import IDENTITY_KEY_SQL
 
 CALLBACK_GRACE_MINUTES = 15          # = rules.CALLBACK_GRACE
 MAX_LIST = 500
 UNASSIGNED_KEY = "unassigned_only"     # 2026-10-21: only cases with no collector
+CASE_LIST_KEY = "case_list"            # 2026-10-24: the campaign's customer list (0086)
+SKIP_PAID_KEY = "skip_any_payment"     # 2026-10-24: no case with any approved payment
 
 UUID_LIST_KEYS = {
     "customeFilterContractValue[]": "contracts",
@@ -117,13 +138,15 @@ CALLABLE_SQL = ("regexp_replace(regexp_replace(regexp_replace(btrim({col}), '[[:
 CONTACT_ELIGIBLE = ("NOT {k}.is_deleted AND NOT {k}.is_blocked AND {k}.is_active AND NOT {k}.is_archive")
 
 # pool classification, in reporting order (the first matching reason wins)
-REASONS = ("case_archived", "case_locked", "do_not_call", "calling_review_pending", "in_call",
-           "no_member_in_scope", "case_paid", "status_stops_campaigns", "no_callable_contact",
-           "callback_scheduled", "max_attempts_today", "cooldown", "recheck_later", "eligible")
+REASONS = ("case_archived", "case_locked", "removed_by_user", "do_not_call", "calling_review_pending", "in_call",
+           "customer_in_call", "answered_in_campaign", "no_member_in_scope", "case_paid", "case_has_payment",
+           "status_stops_campaigns", "no_callable_contact", "callback_scheduled", "max_attempts_today", "cooldown",
+           "recheck_later", "eligible")
 # exclusions that do not go away by themselves today (the rest may: a callback becomes due,
 # the cooldown passes, a call ends, a recheck time passes)
-HARD_REASONS = ("case_archived", "case_locked", "do_not_call", "calling_review_pending", "no_member_in_scope",
-                "case_paid", "status_stops_campaigns", "no_callable_contact", "max_attempts_today")
+HARD_REASONS = ("case_archived", "case_locked", "removed_by_user", "do_not_call", "calling_review_pending",
+                "answered_in_campaign", "no_member_in_scope", "case_paid", "case_has_payment",
+                "status_stops_campaigns", "no_callable_contact", "max_attempts_today")
 
 
 def _err(field, message, code="invalid"):
@@ -160,7 +183,7 @@ def validate_pool(pool) -> dict:
     silently widen the pool)."""
     if not isinstance(pool, dict):
         raise _err("pool", "pool must be an object with contract_ids, portfolio_ids and/or filter")
-    unknown = set(pool) - {"contract_ids", "portfolio_ids", "filter", UNASSIGNED_KEY}
+    unknown = set(pool) - {"contract_ids", "portfolio_ids", "filter", UNASSIGNED_KEY, CASE_LIST_KEY, SKIP_PAID_KEY}
     if unknown:
         raise _err("pool", f"unknown pool keys: {', '.join(sorted(unknown))}", "unknown")
     out = {"contract_ids": _uuid_list(pool.get("contract_ids") or [], "pool.contract_ids"),
@@ -205,8 +228,14 @@ def validate_pool(pool) -> dict:
             raise _err(f"pool.{UNASSIGNED_KEY}", "unassigned cases have no collector: remove the collector filter",
                        "conflicts_with_collector_filter")
         out[UNASSIGNED_KEY] = True
-    if not (out["contract_ids"] or out["portfolio_ids"] or f or out.get(UNASSIGNED_KEY)):
-        raise _err("pool", "the pool needs at least one criterion (contracts, portfolios or a filter)", "required")
+    for flag in (CASE_LIST_KEY, SKIP_PAID_KEY):
+        if pool.get(flag) is not None and not isinstance(pool.get(flag), bool):
+            raise _err(f"pool.{flag}", f"pool.{flag} must be true or false")
+        if pool.get(flag):
+            out[flag] = True
+    if not (out["contract_ids"] or out["portfolio_ids"] or f or out.get(UNASSIGNED_KEY) or out.get(CASE_LIST_KEY)):
+        raise _err("pool", "the pool needs at least one criterion (contracts, portfolios, a filter or a customer list)",
+                   "required")
     return out
 
 
@@ -353,8 +382,9 @@ def statuses_of(pool) -> set[str]:
 
 
 # --------------------------------------------------------------------------- SQL
-def definition_sql(pool: dict, prefix: str = "pd") -> tuple[str, str, dict]:
-    """(extra joins, WHERE fragment over c (clints), p (portfolios), k (contracts), params)."""
+def definition_sql(pool: dict, prefix: str = "pd", campaign_id=None) -> tuple[str, str, dict]:
+    """(extra joins, WHERE fragment over c (clints), p (portfolios), k (contracts), params).
+    `campaign_id` resolves a customer-list pool (no campaign yet: an empty list)."""
     joins, where, params = [], [], {}
     f = pool.get("filter") or {}
 
@@ -372,6 +402,13 @@ def definition_sql(pool: dict, prefix: str = "pd") -> tuple[str, str, dict]:
         where.append(f"c.user_id = ANY({ids('f_users', f['customeFilterUserValue[]'])})")
     if pool.get(UNASSIGNED_KEY):
         where.append("c.user_id IS NULL")
+    if pool.get(CASE_LIST_KEY):
+        if campaign_id is None:
+            where.append("FALSE")
+        else:
+            params[f"{prefix}_list"] = str(campaign_id)
+            where.append(f"EXISTS (SELECT 1 FROM campaign_list_cases {prefix}_lc WHERE {prefix}_lc.campaign_id = "
+                         f"CAST(:{prefix}_list AS uuid) AND {prefix}_lc.case_id = c.id)")
     statuses = [v for v in (f.get("customeFilterCommentStatusValue[]") or f.get("customeFilterStatusesValue") or [])
                 if v and v != "0"]
     subs = f.get("customeFilterCommentSubStatusValue[]") or []
@@ -482,7 +519,7 @@ def union_scope_clause(user_ids, prefix: str = "ms") -> tuple[str, dict]:
 
 
 def _pool_cte(campaign: dict, member_scope: tuple[str, dict] | None, extra_select: str = "") -> tuple[str, dict]:
-    joins, where, params = definition_sql(campaign["pool"])
+    joins, where, params = definition_sql(campaign["pool"], campaign_id=campaign.get("id"))
     own_sql, own_params = scope_clause(campaign["created_by"], "os")
     params.update(own_params)
     extra = ""
@@ -540,21 +577,61 @@ _MAXED = "(coalesce(att.today, 0) >= :max_per_day)"
 _COOLING = "(att.last_at IS NOT NULL AND att.last_at > :now - make_interval(mins => :cooldown))"
 _RECHECK = "(ps.recheck_after IS NOT NULL AND ps.recheck_after > :now)"
 _PAID = "(round(CAST(pool.amount AS numeric), 2) - bal.approved <= 0)"
+# 2026-10-24 (module docstring): any approved payment, when the pool asks for it
+_ANY_PAYMENT = "(CAST(:skip_any_payment AS boolean) AND bal.approved > 0)"
+_KEY_POOL = IDENTITY_KEY_SQL.format(col="pool.idn")
+_REMOVED = ("EXISTS (SELECT 1 FROM campaign_removed_cases rc WHERE rc.campaign_id = CAST(:campaign AS uuid) "
+            "AND rc.case_id = pool.id)")
+# the customer answered a call of this campaign: this case, or any account with the same identity key
+_ANSWERED = (f"(pool.id = ANY(CAST(:ans_cases AS uuid[])) OR (cardinality(CAST(:ans_keys AS text[])) > 0 "
+             f"AND {_KEY_POOL} = ANY(CAST(:ans_keys AS text[]))))")
+# another account of the same customer is in a call right now
+_CUSTOMER_IN_CALL = (f"(cardinality(CAST(:live_keys AS text[])) > 0 "
+                     f"AND {_KEY_POOL} = ANY(CAST(:live_keys AS text[])))")
 _STOPPED = "(" + STOPPED_SQL.format(c="pool") + ")"         # 0080: the latest note stops campaigns
 
 _LAST_CONTACT = "greatest(pool.last_comment_at, ps.last_tried_at)"
 _PRIORITY = "(fu.due_at IS NOT NULL)"          # the callback is callable now (future ones are excluded)
 
 
+ANSWERED_SQL = "coalesce(a.bridged_at, a.customer_answered_at) IS NOT NULL"
+
+
+def answered_facts(campaign_id) -> dict:
+    """What this campaign's ANSWERED calls rule out (2026-10-24): {"cases", "keys" (identity keys),
+    "numbers" (E.164 destinations)}. A customer leg that answered counts even when the bridge was
+    not seen (never re-ring someone who picked up)."""
+    rows = sess().execute(text(f"""
+        SELECT DISTINCT ca.case_id::text, {IDENTITY_KEY_SQL.format(col='c."identityNumber"')}, a.destination
+          FROM campaign_attempts ca
+          JOIN call_attempts a ON a.id = ca.attempt_id
+          LEFT JOIN clints c ON c.id = ca.case_id
+         WHERE ca.campaign_id = CAST(:c AS uuid) AND {ANSWERED_SQL}"""), {"c": str(campaign_id)}).all()
+    return {"cases": sorted({r[0] for r in rows}), "keys": sorted({r[1] for r in rows if r[1]}),
+            "numbers": {r[2] for r in rows if r[2]}}
+
+
+def live_identity_keys(session=None) -> list[str]:
+    """Identity keys of the customers in a call right now (an open reservation, any mode)."""
+    return sorted(r[0] for r in (session or sess()).execute(text(f"""
+        SELECT DISTINCT {IDENTITY_KEY_SQL.format(col='c."identityNumber"')}
+          FROM call_reservations x JOIN clints c ON c.id = x.case_id
+         WHERE x.released_at IS NULL""")).all() if r[0])
+
+
 def _fact_params(campaign: dict, clock: dict) -> dict:
     cooldown = int(campaign["cooldown_minutes"])
     since = min(clock["day_start"], clock["now"] - _dt.timedelta(minutes=cooldown))
+    answered = answered_facts(campaign["id"])
     return {"campaign": str(campaign["id"]), "now": clock["now"], "day_start": clock["day_start"], "since": since,
             "grace": CALLBACK_GRACE_MINUTES, "max_per_day": int(campaign["max_attempts_per_day"]),
-            "cooldown": cooldown}
+            "cooldown": cooldown, "ans_cases": answered["cases"], "ans_keys": answered["keys"],
+            "live_keys": live_identity_keys(),
+            "skip_any_payment": bool((campaign.get("pool") or {}).get(SKIP_PAID_KEY))}
 
 
-def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200, clock=None, exclude=()) -> list[dict]:
+def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200, clock=None, exclude=(),
+               fill: bool = False) -> list[dict]:
     """The member's next cases in dispatch order, pre-filtered by every SQL-checkable exclusion.
 
     Two stages so a large pool stays cheap: (1) the member's pool in dispatch order with the cheap
@@ -562,15 +639,29 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
     a time; (2) on that window only, the expensive ones (do-not-call, review flag, a call on the
     case, paid, attempts today, cooldown, no callable contact). Windows are read until `limit`
     candidates are found or the pool is exhausted. Measured on the full local copy: 330 ms for a
-    collector with 64k cases in one contract (one window), versus 1.2 s in one pass."""
+    collector with 64k cases in one contract (one window), versus 1.2 s in one pass.
+
+    `fill` (2026-10-25, campaigns.fill_random, 0087): the member has no callable case of their own;
+    any case of the pool (any owner, inside the creator's scope) in a RANDOM order (a fresh salt
+    per call, stable across the windows of that call). Every exclusion still applies."""
+    import secrets
     clock = clock or _clock()
     member_sql, member_params = scope_clause(member_id, "mb")
     if (campaign.get("pool") or {}).get(UNASSIGNED_KEY):          # the campaign grant (docstring)
         member_sql = f"({member_sql} OR c.user_id IS NULL)"
+    if fill:
+        member_sql, member_params = "TRUE", {}
+    order1 = ("md5(pool.id::text || :salt)" if fill
+              else f"{_PRIORITY} DESC, {_LAST_CONTACT} ASC NULLS FIRST, pool.id")
+    order2 = ("md5(pool.id::text || :salt)" if fill
+              else "pool.callback_due DESC, pool.last_contact ASC NULLS FIRST, pool.id")
+    order3 = ("md5(cand.case_id::text || :salt)" if fill
+              else "cand.callback_due DESC, cand.last_contact ASC NULLS FIRST, cand.case_id")
     cte, params = _pool_cte(campaign, (member_sql, member_params))
     params.update(_fact_params(campaign, clock))
     params["skip"] = [str(x) for x in exclude]
     params["win"] = int(window)
+    params["salt"] = secrets.token_hex(8)
     out, offset = [], 0
     while len(out) < limit:
         params.update(lim=int(limit - len(out)), off=offset)
@@ -583,7 +674,8 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
                   LEFT JOIN LATERAL (SELECT f.due_at FROM follow_ups f
                                       WHERE f.case_id = pool.id AND f.status = 'open' ORDER BY f.due_at LIMIT 1) fu ON true
                  WHERE NOT pool.is_archive AND NOT pool.is_locked AND NOT {_FUTURE_CALLBACK} AND NOT {_RECHECK}
-                 ORDER BY {_PRIORITY} DESC, {_LAST_CONTACT} ASC NULLS FIRST, pool.id
+                   AND NOT {_REMOVED}
+                 ORDER BY {order1}
                  LIMIT :win OFFSET :off),
             cand AS (
                 SELECT pool.id AS case_id, pool.idn, pool.callback_due, pool.last_contact,
@@ -597,13 +689,14 @@ def candidates(campaign: dict, member_id, *, limit: int = 20, window: int = 200,
                          AND (r.release_source IS NULL OR r.release_source NOT IN ('no_customer_contact', 'cancel_unsent'))
                   ) att ON true {_BALANCE}
                  WHERE NOT {_DNC} AND NOT {_REVIEW} AND NOT {_RESERVED} AND NOT {_PAID} AND NOT {_STOPPED}
+                   AND NOT {_ANSWERED} AND NOT {_CUSTOMER_IN_CALL} AND NOT {_ANY_PAYMENT}
                    AND NOT {_MAXED} AND NOT {_COOLING} AND {_CONTACT}
                    AND NOT (pool.id = ANY(CAST(:skip AS uuid[])))
-                 ORDER BY pool.callback_due DESC, pool.last_contact ASC NULLS FIRST, pool.id
+                 ORDER BY {order2}
                  LIMIT :lim)
             SELECT (SELECT count(*) FROM ordered) AS window_rows, cand.*
               FROM (SELECT 1) one LEFT JOIN cand ON true
-             ORDER BY cand.callback_due DESC, cand.last_contact ASC NULLS FIRST, cand.case_id"""),
+             ORDER BY {order3}"""),
             params).mappings().all()
         out.extend(dict(r) for r in rows if r["case_id"] is not None)
         if rows[0]["window_rows"] < window:
@@ -682,7 +775,8 @@ def rotation(numbers: list[dict], history: list[str]) -> tuple[dict | None, set]
     return nxt, tried & callable_
 
 
-def choose_contact(identity_number, *, campaign_id=None, case_id=None) -> tuple[dict | None, str | None]:
+def choose_contact(identity_number, *, campaign_id=None, case_id=None,
+                   skip_numbers=()) -> tuple[dict | None, str | None]:
     """The debtor's contact to call -> (contact row with `destination`, 'default' | 'fallback').
 
     Without a campaign: the first callable number (callable_numbers order: the DEFAULT when it
@@ -690,8 +784,13 @@ def choose_contact(identity_number, *, campaign_id=None, case_id=None) -> tuple[
     the next number of the rotation (module docstring); the contact also carries `rotation` =
     {"position", "of", "round_tried"} for the audit and the views. None -> the case is excluded
     (`no_callable_contact`). Nothing is guessed: a number that is not plausibly E.164 is never
-    used."""
+    used. `skip_numbers` (2026-10-24): destinations this campaign already reached (answered) are
+    left out of the rotation; when they were the only callable ones -> (None, "answered")."""
     numbers = callable_numbers(identity_number, case_id)
+    if numbers and skip_numbers:
+        numbers = [n for n in numbers if n["destination"] not in skip_numbers]
+        if not numbers:
+            return None, "answered"
     if not numbers:
         return None, None
     if campaign_id is None or case_id is None:
@@ -706,11 +805,15 @@ def choose_contact(identity_number, *, campaign_id=None, case_id=None) -> tuple[
 _CLASSIFY = f"""CASE
     WHEN pool.is_archive THEN 'case_archived'
     WHEN pool.is_locked THEN 'case_locked'
+    WHEN {_REMOVED} THEN 'removed_by_user'
     WHEN {_DNC} THEN 'do_not_call'
     WHEN {_REVIEW} THEN 'calling_review_pending'
     WHEN {_RESERVED} THEN 'in_call'
+    WHEN {_CUSTOMER_IN_CALL} THEN 'customer_in_call'
+    WHEN {_ANSWERED} OR (ps.excluded_reason = 'answered_in_campaign' AND {_RECHECK}) THEN 'answered_in_campaign'
     WHEN NOT pool.in_member_scope THEN 'no_member_in_scope'
     WHEN {_PAID} THEN 'case_paid'
+    WHEN {_ANY_PAYMENT} THEN 'case_has_payment'
     WHEN {_STOPPED} THEN 'status_stops_campaigns'
     WHEN NOT {_CONTACT} THEN 'no_callable_contact'
     WHEN {_FUTURE_CALLBACK} THEN 'callback_scheduled'
@@ -726,6 +829,8 @@ def _classified(campaign: dict, member_ids, clock) -> tuple[str, dict]:
     ms_sql, ms_params = union_scope_clause(member_ids)
     if member_ids and (campaign.get("pool") or {}).get(UNASSIGNED_KEY):   # the campaign grant
         ms_sql = f"({ms_sql} OR c.user_id IS NULL)"
+    if member_ids and campaign.get("fill_random"):                        # 2026-10-25: random fill
+        ms_sql, ms_params = "TRUE", {}
     # coalesce: an unassigned case (user_id NULL) makes a user-based scope test NULL, not false
     cte, params = _pool_cte(campaign, None, f", coalesce({ms_sql}, false) AS in_member_scope")
     params.update(ms_params)
@@ -740,14 +845,26 @@ def _classified(campaign: dict, member_ids, clock) -> tuple[str, dict]:
 
 
 def summary(campaign: dict, member_ids, clock=None) -> dict:
-    """Pool size, eligible now, remaining today and the exclusion reasons (one per case)."""
+    """Pool size, eligible now, remaining today and the exclusion reasons (one per case).
+    2026-10-24: `waiting` = the queue: in the pool, not excluded for good, and never dialled by this
+    campaign (a call that provably never reached the customer does not count)."""
     clock = clock or _clock()
     sql, params = _classified(campaign, member_ids, clock)
-    rows = sess().execute(text(f"SELECT reason, count(*) AS n FROM ({sql}) x GROUP BY reason"), params).all()
+    params["hard"] = list(HARD_REASONS)
+    rows = sess().execute(text(f"""
+        SELECT x.reason, count(*) AS n,
+               count(*) FILTER (WHERE x.reason <> ALL(CAST(:hard AS text[])) AND NOT EXISTS (
+                   SELECT 1 FROM campaign_attempts ca
+                     LEFT JOIN call_reservations r ON r.attempt_id = ca.attempt_id
+                    WHERE ca.campaign_id = CAST(:campaign AS uuid) AND ca.case_id = x.case_id
+                      AND (r.release_source IS NULL OR r.release_source NOT IN ('no_customer_contact', 'cancel_unsent'))
+               )) AS waiting
+          FROM ({sql}) x GROUP BY x.reason"""), params).all()
     counts = {r[0]: int(r[1]) for r in rows}
     size = sum(counts.values())
     hard = sum(counts.get(r, 0) for r in HARD_REASONS)
     return {"size": size, "eligible_now": counts.get("eligible", 0), "remaining_today": size - hard,
+            "waiting": sum(int(r[2]) for r in rows),
             "excluded": {r: counts[r] for r in REASONS if r in counts and r != "eligible"},
             "evaluated_at": clock["now"].isoformat()}
 
